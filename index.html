@@ -265,7 +265,30 @@ textarea.notes::placeholder{color:var(--dim)}
 .wk-head h2{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Inter'}
 .wk-row{display:flex;gap:12px;align-items:baseline;padding:5px 0;border-bottom:1px dashed var(--line)}
 .wk-row:last-of-type{border-bottom:none}
-.wk-row.now{margin:2px -8px;padding:6px 8px;background:var(--raised);border-radius:8px;border-bottom:none}
+.wk-row.now{margin:2px -8px;padding:7px 8px 7px 10px;background:var(--raised);border-radius:8px;border-bottom:none;box-shadow:inset 3px 0 0 var(--amber)}
+.wk-row.now .wk-item,.wk-row.now .wk-item.rest{color:var(--text);font-weight:600}
+.wk-detail{flex-basis:100%;font-size:11px;color:var(--dim);margin-top:3px;font-weight:400;line-height:1.4}
+.wk-row.now .wk-detail{color:var(--muted)}
+
+/* tap-to-expand day detail */
+.wk-row{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.wk-chev{flex:0 0 auto;align-self:center;color:var(--dim);font-size:11px;line-height:1}
+.wk-row.now .wk-chev,.wk-row.open .wk-chev{color:var(--amber)}
+.wk-expand{margin:2px 0 6px;animation:wkin .14s ease}
+@keyframes wkin{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.wd-sess{background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0}
+.wd-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px}
+.wd-gym{font-size:10px;color:var(--dim);font-weight:600}
+.wd-ex{padding:7px 0;border-bottom:1px dashed var(--line)}
+.wd-ex:last-of-type{border-bottom:none}
+.wd-exh{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.wd-name{font-size:13px;font-weight:600;color:var(--text)}
+.wd-name .star{color:var(--amber)}
+.wd-tgt{font-size:11px;color:var(--amber);font-weight:600;white-space:nowrap}
+.wd-last{font-size:10.5px;color:var(--dim);margin-top:3px}
+.wd-cue{font-size:11px;color:var(--dim);line-height:1.4;margin-top:4px}
+.wd-start{margin-top:10px;width:100%;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;color:var(--text);padding:10px;font-size:12.5px;font-weight:600;font-family:'Inter';cursor:pointer}
+.wd-start:active{background:var(--ink)}
 .wk-day{flex:0 0 74px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
 .wk-row.now .wk-day{color:var(--amber)}
 .wk-body{display:flex;flex-wrap:wrap;gap:5px 12px;flex:1}
@@ -279,6 +302,13 @@ textarea.notes::placeholder{color:var(--dim)}
 .wk-owed-lbl.done{color:var(--teal)}
 .wk-owed-btn{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--raised);border:1px solid var(--line-2);border-radius:10px;color:var(--text);padding:11px 12px;font-size:13px;font-weight:600;font-family:'Inter';cursor:pointer;margin-bottom:6px}
 .wk-owed-btn:active{background:var(--ink)}
+
+/* rest / cardio day prescription cards */
+.rest-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-bottom:8px}
+.rest-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.rest-name{font-size:15px;font-weight:600;color:var(--text);font-family:'Inter'}
+.rest-dur{font-size:12px;font-weight:600;color:var(--amber);letter-spacing:.02em;white-space:nowrap}
+.rest-cue{font-size:12px;color:var(--dim);line-height:1.45;margin-top:6px}
 .chart-sub{font-size:11.5px;color:var(--dim);margin-bottom:12px;font-family:'JetBrains Mono'}
 svg.chart{width:100%;height:130px;display:block;overflow:visible}
 select.pick{
@@ -482,9 +512,25 @@ const PROGRAM = {
       {k:'DF', n:'Dragon Flags',          s:3, r:8,  w:0,   u:'+lb',cue:'Hardest core movement you own. Control the descent entirely.'},
     ]},
 };
-const REST_DAYS = {3:{t:'Easy run + core',s:'3–4 miles, conversational pace. Zone 2. Then core if you feel like it.'},
-                   5:{t:'Full rest',s:'Nothing. This is when the work you did actually becomes muscle.'},
-                   0:{t:'Skating',s:'11 AM. Active recovery — ankle mobility, tibialis anterior.'}};
+const REST_DAYS = {
+  3:{t:'Easy Run + Core', s:'Zone 2 aerobic base plus a short core finisher — keeps fat-loss NEAT up without touching recovery.',
+     items:[
+       {n:'Easy Run',   d:'3–4 mi',        cue:'Conversational Zone 2 — you should hold a full sentence the whole way. Slow is the point; this is NEAT, not a workout.'},
+       {n:'Plank',      d:'3 × 45s',       cue:'Ribs down, glutes squeezed, straight line. No sagging hips.'},
+       {n:'Dead Bug',   d:'3 × 10 / side', cue:'Low back pinned flat to the floor. Slow, opposite arm + leg.'},
+       {n:'Side Plank', d:'2 × 30s / side',cue:'Stack the hips, don\'t let them drop. Anti-rotation for the obliques.'},
+     ]},
+  5:{t:'Full Rest', s:'Nothing structured — this is when the work you already did actually becomes muscle.',
+     items:[
+       {n:'Rest',              d:'all day', cue:'Genuinely nothing. Hit protein, 10k steps, sleep. Recovery is a training variable, not the absence of one.'},
+       {n:'Optional mobility', d:'10 min',  cue:'Only if you\'re restless: easy walk + hip/ankle stretches. Never let it turn into a session.'},
+     ]},
+  0:{t:'Skating', s:'Active recovery — ankle mobility and tib work through the movement itself.',
+     items:[
+       {n:'Ice Skating',      d:'45–60 min', cue:'Easy pace. The lateral push is the recovery stimulus — glide it, don\'t race it.'},
+       {n:'Pre-skate warm-up',d:'5 min',     cue:'Ankle circles + tibialis raises before you step on the ice.'},
+     ]},
+};
 const COLOURS = {legs:'#00C2A8',push:'#4C9BE8',pull:'#B57CF6',sprint:'#FF6B4A'};
 
 /* ═══════════════════════════════════════════════════════════
@@ -496,6 +542,7 @@ const COLOURS = {legs:'#00C2A8',push:'#4C9BE8',pull:'#B57CF6',sprint:'#FF6B4A'};
 const WEEK_DAYS=[1,2,3,4,5,6,0];                 // Monday-first
 const DOW_LABEL={0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
 const PRIORITY=['LA','PU','PL','LB'];            // must-not-skip lifts (sprints excluded — cardio is optional)
+const REST_COLOUR={3:'#6E8B84',5:'#404955',0:'#7A8496'};  // Wed easy run · Fri full rest · Sun skating (muted = not a lift)
 
 function mondayOf(d){
   const t=new Date(d); const off=(t.getDay()+6)%7;
@@ -521,17 +568,19 @@ function renderWeek(){
   const rows=WEEK_DAYS.map(dow=>{
     const codes=Object.keys(PROGRAM).filter(k=>PROGRAM[k].day===dow);
     const isToday=dow===todayDow;
-    let inner;
+    let inner, detail='';
     if(codes.length){
       inner=codes.map(c=>{
         const p=PROGRAM[c], col=COLOURS[p.colour]||'var(--dim)', ok=done.has(c);
         return `<span class="wk-item ${ok?'ok':''}"><span class="wk-dot" style="background:${col}"></span>${p.name}${ok?' <span class="wk-check">✓</span>':''}</span>`;
       }).join('');
     } else {
-      const r=REST_DAYS[dow];
-      inner=`<span class="wk-item rest">${r?r.t:'Rest'}</span>`;
+      const r=REST_DAYS[dow], rc=REST_COLOUR[dow]||'var(--line-2)';
+      inner=`<span class="wk-item rest"><span class="wk-dot" style="background:${rc}"></span>${r?r.t:'Rest'}</span>`;
+      if(isToday && r) detail=r.s;
     }
-    return `<div class="wk-row ${isToday?'now':''}"><span class="wk-day">${DOW_LABEL[dow]}${isToday?' · today':''}</span><span class="wk-body">${inner}</span></div>`;
+    const open=WK_OPEN===dow;
+    return `<div class="wk-row ${isToday?'now':''} ${open?'open':''}" onclick="toggleWk(${dow})"><span class="wk-day">${DOW_LABEL[dow]}${isToday?' · today':''}</span><span class="wk-body">${inner}${detail?`<span class="wk-detail">${detail}</span>`:''}</span><span class="wk-chev">${open?'▾':'▸'}</span></div>${open?`<div class="wk-expand">${weekDetail(dow)}</div>`:''}`;
   }).join('');
   const owed=owedThisWeek();
   const owedHtml=owed.length?`<div class="wk-owed">
@@ -543,6 +592,43 @@ function renderWeek(){
     ${rows}${owedHtml}
   </div>`;
 }
+/* Tap a day in the week panel → expand its full plan (lifts with targets +
+   last-logged, or the rest-day prescription). */
+function tgtStr(e){
+  let t=`${e.s}×${e.r}`;
+  if(e.w>0) t += e.u==='+lb' ? ` · +${e.w} lb` : ` · ${e.w} ${e.u==='reps'?'':e.u}`.trimEnd();
+  return t;
+}
+function weekDetail(dow){
+  const codes=Object.keys(PROGRAM).filter(k=>PROGRAM[k].day===dow);
+  if(codes.length){
+    return codes.map(c=>{
+      const p=PROGRAM[c], col=COLOURS[p.colour]||'var(--dim)';
+      const rows=p.ex.map(e=>{
+        const l=lastOf(e.k);
+        const last=l ? `Last ${(l.ws?l.ws.join(','):l.w)}${e.u==='+lb'?'+':''}×${l.r.join(',')} · ${ago(l.d)}`
+                     : 'First time — start at target';
+        return `<div class="wd-ex">
+          <div class="wd-exh"><span class="wd-name">${e.n.replace('★','<span class="star">★</span>')}</span><span class="wd-tgt mono">${tgtStr(e)}</span></div>
+          <div class="wd-last mono">${last}</div>
+          <div class="wd-cue">${e.cue}</div>
+        </div>`;
+      }).join('');
+      return `<div class="wd-sess" style="box-shadow:inset 2px 0 0 ${col}">
+        <div class="wd-h">${p.full}<span class="wd-gym mono">${p.gym}</span></div>
+        ${rows}
+        <button class="wd-start" onclick="startSession('${c}')">Start ${p.name} →</button>
+      </div>`;
+    }).join('');
+  }
+  const r=REST_DAYS[dow];
+  if(r&&r.items){
+    return `<div class="wd-sess">${r.items.map(it=>`
+      <div class="wd-ex"><div class="wd-exh"><span class="wd-name">${it.n}</span><span class="wd-tgt mono">${it.d}</span></div><div class="wd-cue">${it.cue}</div></div>`).join('')}</div>`;
+  }
+  return `<div class="wd-sess"><div class="wd-ex"><div class="wd-cue">Nothing scheduled — full rest.</div></div></div>`;
+}
+window.toggleWk=(dow)=>{ WK_OPEN=(WK_OPEN===dow)?null:dow; buzz(6); draw(); };
 
 /* ═══════════════════════════════════════════════════════════
    STORAGE  —  localStorage, with a memory fallback so the app
@@ -607,10 +693,7 @@ autoRestore();
    ═══════════════════════════════════════════════════════════ */
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const iso=d=>{
-  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
-};
+const iso=d=>d.toISOString().slice(0,10);
 const today=()=>iso(new Date());
 function ago(ds){
   const n=Math.round((new Date(today())-new Date(ds))/864e5);
@@ -660,7 +743,7 @@ function streak(){
 /* ═══════════════════════════════════════════════════════════
    TODAY  —  the screen that has to work between sets
    ═══════════════════════════════════════════════════════════ */
-let DRAFT=null, OPEN=null, INC=5;
+let DRAFT=null, OPEN=null, INC=5, WK_OPEN=null;
 
 function pickSession(){
   const dow=new Date().getDay();
@@ -685,11 +768,17 @@ function renderToday(){
 
   if(!DRAFT){
     if(!codes.length){
-      const r=REST_DAYS[dow]||{t:'Rest',s:'Nothing scheduled.'};
+      const r=REST_DAYS[dow]||{t:'Rest',s:'Nothing scheduled.',items:[]};
       ti.innerHTML=r.t;
       sb.textContent=r.s;
+      const rc=(r.items||[]).map(it=>`
+        <div class="rest-card">
+          <div class="rest-head"><span class="rest-name">${it.n}</span><span class="rest-dur mono">${it.d}</span></div>
+          <div class="rest-cue">${it.cue}</div>
+        </div>`).join('');
       body.innerHTML=renderWeek()+`
-        <div class="sec"><h2>Log something anyway</h2><div class="rule"></div></div>
+        ${rc?`<div class="sec"><h2>Today — ${r.t}</h2><div class="rule"></div></div>${rc}`:''}
+        <div class="sec"><h2>Prefer to lift instead?</h2><div class="rule"></div></div>
         ${Object.keys(PROGRAM).map(k=>`
           <button class="btn ghost" style="margin-bottom:8px" onclick="startSession('${k}')">
             <span style="color:${COLOURS[PROGRAM[k].colour]}">●</span> ${PROGRAM[k].full}

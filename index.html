@@ -740,12 +740,7 @@ function renderToday(){
           <div class="rest-cue">${it.cue}</div>
         </div>`).join('');
       body.innerHTML=renderWeek()+`
-        ${rc?`<div class="sec"><h2>Today's Plan</h2><div class="rule"></div></div>${rc}`:''}
-        <div class="sec"><h2>Or log a workout?</h2><div class="rule"></div></div>
-        ${Object.keys(PROGRAM).map(k=>`
-          <button class="btn primary" style="margin-bottom:8px" onclick="startSession('${k}')">
-            Start ${PROGRAM[k].name}
-          </button>`).join('')}`;
+        ${rc?`<div class="sec"><h2>Today's Plan</h2><div class="rule"></div></div>${rc}`:''}`;
       return;
     }
     ti.innerHTML=codes.map(c=>`<span class="accent">${PROGRAM[c].name}</span>`).join(' + ');

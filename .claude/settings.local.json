@@ -18,7 +18,8 @@
       "Bash(git commit -m 'Add detailed logging to config loading for debugging *)",
       "Bash(git commit -m 'Add fallback values for config variables *)",
       "Bash(git commit -m 'Fix PROGRAM not updating when config loads *)",
-      "Bash(git commit -m 'Show '\\\\''Start'\\\\'' buttons on rest days to allow optional logging *)"
+      "Bash(git commit -m 'Show '\\\\''Start'\\\\'' buttons on rest days to allow optional logging *)",
+      "Bash(git commit -m 'Remove '\\\\''Or log a workout'\\\\'' section from rest days *)"
     ]
   }
 }

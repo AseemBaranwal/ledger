@@ -1077,9 +1077,20 @@ window.restoreFromSheet=async()=>{
     if(!resp.ok) throw new Error(resp.statusText);
     const data=await resp.json();
     if(!data.sessions||!Array.isArray(data.sessions)) throw new Error('Invalid format');
-    const count=data.sessions.length+data.body.length;
-    if(confirm(`Restore ${data.sessions.length} sessions and ${data.body.length} scans from sheet? This will overwrite local data.`)){
-      DB.sessions=[...data.sessions];
+
+    // Deduplicate sessions by (date, session_code) pair
+    const dedupedSessions = {};
+    data.sessions.forEach(s => {
+      const key = s.d + '|' + s.s;
+      if (!dedupedSessions[key]) {
+        dedupedSessions[key] = s;
+      }
+    });
+
+    const sessions = Object.values(dedupedSessions);
+    const count=sessions.length+data.body.length;
+    if(confirm(`Restore ${sessions.length} sessions and ${data.body.length} scans from sheet? This will overwrite local data.`)){
+      DB.sessions=sessions;
       DB.body=[...data.body];
       DB.sessions.sort((a,b)=>a.d.localeCompare(b.d));
       DB.body.sort((a,b)=>a.d.localeCompare(b.d));

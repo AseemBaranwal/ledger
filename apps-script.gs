@@ -94,16 +94,19 @@ function doPost(e) {
 
 function parseSessionRows_(rows) {
   const sessions = {};
-  const currentSession = null;
 
   rows.forEach(row => {
     const [date, session, gym, exercise, weight, reps, sets, totalReps, volume, notes] = row;
-    if (!date) return;
+    if (!date || !session) return;
 
-    const key = date + session;
+    // Normalize date to ISO format
+    const dateStr = normalizeDateString_(date);
+    if (!dateStr) return;
+
+    const key = dateStr + '|' + session;
     if (!sessions[key]) {
       sessions[key] = {
-        d: date,
+        d: dateStr,
         s: session,
         g: gym || '',
         ex: [],
@@ -112,10 +115,17 @@ function parseSessionRows_(rows) {
     }
 
     if (exercise) {
+      const repsArray = reps
+        ? String(reps).split(',').map(r => {
+            const n = Number(r.trim());
+            return isNaN(n) ? 0 : n;
+          })
+        : [];
+
       sessions[key].ex.push({
-        k: exercise,
-        w: weight,
-        r: reps ? reps.split(',').map(Number) : []
+        k: String(exercise).trim(),
+        w: weight ? Number(weight) : null,
+        r: repsArray
       });
     }
   });
@@ -123,17 +133,39 @@ function parseSessionRows_(rows) {
   return Object.values(sessions);
 }
 
+function normalizeDateString_(val) {
+  if (!val) return null;
+
+  // If already ISO format, return as-is
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    return val;
+  }
+
+  // Try to parse as Date object or string
+  try {
+    const d = new Date(val);
+    if (isNaN(d)) return null;
+    return d.toISOString().split('T')[0];
+  } catch (e) {
+    return null;
+  }
+}
+
 function parseBodyRows_(rows) {
   return rows.map(row => {
     const [date, weight, bf, muscle, waist, ferritin] = row;
     if (!date) return null;
+
+    const dateStr = normalizeDateString_(date);
+    if (!dateStr) return null;
+
     return {
-      d: date,
-      wt: weight,
-      bf: bf,
-      smm: muscle || null,
-      waist: waist || null,
-      fer: ferritin || null
+      d: dateStr,
+      wt: weight ? Number(weight) : null,
+      bf: bf ? Number(bf) : null,
+      smm: muscle ? Number(muscle) : null,
+      waist: waist ? Number(waist) : null,
+      fer: ferritin ? Number(ferritin) : null
     };
   }).filter(x => x);
 }

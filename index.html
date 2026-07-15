@@ -365,7 +365,7 @@ pre.digest{
 
 <header class="top">
   <div class="top-in">
-    <div class="brand">LED<em>G</em>ER</div>
+    <div class="brand" onclick="TAB='today'; OPEN=null; DRAFT=null; buzz(8); window.scrollTo(0,0); draw()">LED<em>G</em>ER</div>
     <div class="top-meta">
       <b id="mDate">—</b>
       <span id="mStreak">—</span>
@@ -468,70 +468,8 @@ pre.digest{
    PROGRAM  —  Phase 1
    Codes are short on purpose: they keep the Claude digest tiny.
    ═══════════════════════════════════════════════════════════ */
-const PROGRAM = {
-  LA:{ name:'Lower A', full:'Lower A — Power & Strength', colour:'legs', gym:'RSL2', day:1,
-    ex:[
-      {k:'SQ', n:'Back Squat',            s:4, r:6,  w:75,  u:'lb', cue:'Your #1 priority. 0.44× bodyweight is where you start — not where you stay.'},
-      {k:'BSS',n:'Bulgarian Split Squat', s:4, r:8,  w:20,  u:'+lb',cue:'Front heel drive, chest up. Your best leg lift — build on it.'},
-      {k:'RDL',n:'Romanian Deadlift',     s:3, r:8,  w:65,  u:'lb', cue:'Back in the plan. Hinge at the hip, don\'t squat it. No more skipping this.'},
-      {k:'WL', n:'Walking Lunges',        s:3, r:12, w:20,  u:'lb', cue:'Per leg. Long stride, controlled.'},
-      {k:'SCR',n:'Standing Calf Raise ★', s:4, r:12, w:25,  u:'+lb',cue:'You have NEVER loaded these. Zero baseline = fastest gains in your body.'},
-      {k:'SEC',n:'Seated Calf Raise',     s:3, r:15, w:45,  u:'lb', cue:'Bent knee hits soleus — a different muscle from the standing version.'},
-      {k:'HLR',n:'Hanging Leg Raise',     s:3, r:12, w:0,   u:'+lb',cue:'Control the descent. No swinging.'},
-    ]},
-  SP:{ name:'Sprints', full:'Sprint Intervals', colour:'sprint', gym:'Track', day:2, cardio:true,
-    ex:[
-      {k:'SPR', n:'100m Sprints', s:1, r:8, w:0, u:'reps', cue:'85–90% effort. Walk back recovery (~90s). Start at 6 reps for weeks 1–2.'},
-    ]},
-  PU:{ name:'Push', full:'Push — Shoulder-dominant', colour:'push', gym:'RSL2', day:2,
-    ex:[
-      {k:'OHP',n:'Standing Overhead Press',s:4, r:6,  w:45,  u:'lb', cue:'The king for delts. Your DB press regressed to 30 in June — fix that here.'},
-      {k:'DBL',n:'DB Lateral Raise ★',    s:4, r:15, w:12.5,u:'lb', cue:'THE lift for your V-taper. Light, strict, feel the burn. Do not swing.'},
-      {k:'CLR',n:'Cable Lateral Raise',   s:3, r:15, w:10,  u:'lb', cue:'Second angle, constant tension through the whole range.'},
-      {k:'RDF',n:'Rear Delt Flye',        s:3, r:15, w:10,  u:'lb', cue:'Rounds the shoulder from behind. Often the missing piece.'},
-      {k:'IDP',n:'Incline DB Press',      s:3, r:8,  w:40,  u:'lb', cue:'MAINTENANCE ONLY. Chest is already ahead — do not add volume here.'},
-      {k:'OTE',n:'OH Tricep Extension',   s:3, r:12, w:25,  u:'lb', cue:'Maintenance. Elbows pinned.'},
-    ]},
-  PL:{ name:'Pull', full:'Pull — Back Width', colour:'pull', gym:'RSL2', day:4,
-    ex:[
-      {k:'WPU',n:'Weighted Pull-Ups',     s:4, r:5,  w:10,  u:'+lb',cue:'You went -30 assisted → bodyweight in 3 months. Now load it.'},
-      {k:'LPD',n:'Wide-Grip Lat Pulldown',s:4, r:10, w:100, u:'lb', cue:'Wide grip = lat width = the top half of the V. Pull to upper chest.'},
-      {k:'CSR',n:'Chest-Supported Row',   s:3, r:10, w:70,  u:'lb', cue:'Replaces seated rows — you broke form at 100. The pad kills the cheat.'},
-      {k:'FP', n:'Face Pulls',            s:3, r:15, w:35,  u:'lb', cue:'Elbows high, external rotation at the end.'},
-      {k:'SHR',n:'Shrugs',                s:3, r:12, w:60,  u:'lb', cue:'Traps frame the neck. Very visible. Hold a second at the top.'},
-      {k:'BC', n:'Bayesian Curls',        s:3, r:10, w:20,  u:'lb', cue:'MAINTENANCE. Arms are not your bottleneck.'},
-    ]},
-  LB:{ name:'Lower B', full:'Lower B — Glutes & Posterior', colour:'legs', gym:'RSL2', day:6,
-    ex:[
-      {k:'HT', n:'Hip Thrust ★',          s:4, r:10, w:95,  u:'lb', cue:'NEW. The #1 glute builder. Glutes are the athletic signature.'},
-      {k:'EHC',n:'Eccentric Ham Curl',    s:4, r:10, w:80,  u:'lb', cue:'4-second lowering ONLY. Hips pinned flat to the pad.'},
-      {k:'SU', n:'Step-Ups',              s:4, r:10, w:30,  u:'lb', cue:'Toes-only trail foot. Zero push-off from the back leg.'},
-      {k:'BJ', n:'Box Jumps',             s:4, r:5,  w:20,  u:'in', cue:'Explosive. This is what makes it an athlete\'s body, not a gym body.'},
-      {k:'SLC',n:'Single-Leg Calf Raise', s:4, r:15, w:15,  u:'+lb',cue:'Second calf hit of the week. They need the frequency.'},
-      {k:'CC', n:'Cable Crunches',        s:4, r:20, w:195, u:'lb', cue:'Home cable — displayed weight. Abs need load, not just reps.'},
-      {k:'DF', n:'Dragon Flags',          s:3, r:8,  w:0,   u:'+lb',cue:'Hardest core movement you own. Control the descent entirely.'},
-    ]},
-};
-const REST_DAYS = {
-  3:{t:'Easy Run + Core', s:'Zone 2 aerobic base plus a short core finisher — keeps fat-loss NEAT up without touching recovery.',
-     items:[
-       {n:'Easy Run',   d:'3–4 mi',        cue:'Conversational Zone 2 — you should hold a full sentence the whole way. Slow is the point; this is NEAT, not a workout.'},
-       {n:'Plank',      d:'3 × 45s',       cue:'Ribs down, glutes squeezed, straight line. No sagging hips.'},
-       {n:'Dead Bug',   d:'3 × 10 / side', cue:'Low back pinned flat to the floor. Slow, opposite arm + leg.'},
-       {n:'Side Plank', d:'2 × 30s / side',cue:'Stack the hips, don\'t let them drop. Anti-rotation for the obliques.'},
-     ]},
-  5:{t:'Full Rest', s:'Nothing structured — this is when the work you already did actually becomes muscle.',
-     items:[
-       {n:'Rest',              d:'all day', cue:'Genuinely nothing. Hit protein, 10k steps, sleep. Recovery is a training variable, not the absence of one.'},
-       {n:'Optional mobility', d:'10 min',  cue:'Only if you\'re restless: easy walk + hip/ankle stretches. Never let it turn into a session.'},
-     ]},
-  0:{t:'Skating', s:'Active recovery — ankle mobility and tib work through the movement itself.',
-     items:[
-       {n:'Ice Skating',      d:'45–60 min', cue:'Easy pace. The lateral push is the recovery stimulus — glide it, don\'t race it.'},
-       {n:'Pre-skate warm-up',d:'5 min',     cue:'Ankle circles + tibialis raises before you step on the ice.'},
-     ]},
-};
-const COLOURS = {legs:'#00C2A8',push:'#4C9BE8',pull:'#B57CF6',sprint:'#FF6B4A'};
+// Config loaded from config.json in loadConfig()
+let PROGRAM = {}, REST_DAYS = {}, COLOURS = {}, WEEK_DAYS = [], PRIORITY = [], REST_COLOUR = {};
 
 /* ═══════════════════════════════════════════════════════════
    WEEK AT A GLANCE — what's due when, and what's still owed.
@@ -539,10 +477,7 @@ const COLOURS = {legs:'#00C2A8',push:'#4C9BE8',pull:'#B57CF6',sprint:'#FF6B4A'};
    should always tell you what's left to hit. Priority lifts
    that fall on/before today and aren't logged yet = "owed".
    ═══════════════════════════════════════════════════════════ */
-const WEEK_DAYS=[1,2,3,4,5,6,0];                 // Monday-first
 const DOW_LABEL={0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
-const PRIORITY=['LA','PU','PL','LB'];            // must-not-skip lifts (sprints excluded — cardio is optional)
-const REST_COLOUR={3:'#6E8B84',5:'#404955',0:'#7A8496'};  // Wed easy run · Fri full rest · Sun skating (muted = not a lift)
 
 function mondayOf(d){
   const t=new Date(d); const off=(t.getDay()+6)%7;
@@ -629,6 +564,27 @@ function weekDetail(dow){
   return `<div class="wd-sess"><div class="wd-ex"><div class="wd-cue">Nothing scheduled — full rest.</div></div></div>`;
 }
 window.toggleWk=(dow)=>{ WK_OPEN=(WK_OPEN===dow)?null:dow; buzz(6); draw(); };
+
+/* ═══════════════════════════════════════════════════════════
+   CONFIG  —  Training program loaded from config.json
+   ═══════════════════════════════════════════════════════════ */
+let CONFIG = null;
+async function loadConfig(){
+  try{
+    const resp = await fetch('config.json');
+    CONFIG = await resp.json();
+    window.PROGRAM = CONFIG.program;
+    window.REST_DAYS = CONFIG.restDays;
+    window.COLOURS = CONFIG.colours;
+    window.WEEK_DAYS = CONFIG.schedule.weekDays;
+    window.PRIORITY = CONFIG.schedule.priority;
+    window.REST_COLOUR = CONFIG.schedule.restColour;
+    draw();
+  }catch(e){
+    console.error('Failed to load config.json:', e);
+  }
+}
+loadConfig();
 
 /* ═══════════════════════════════════════════════════════════
    STORAGE  —  localStorage, with a memory fallback so the app

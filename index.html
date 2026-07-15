@@ -469,7 +469,9 @@ pre.digest{
    Codes are short on purpose: they keep the Claude digest tiny.
    ═══════════════════════════════════════════════════════════ */
 // Config loaded from config.json in loadConfig()
-let PROGRAM = {}, REST_DAYS = {}, COLOURS = {}, WEEK_DAYS = [], PRIORITY = [], REST_COLOUR = {};
+// Minimal fallback in case fetch fails
+let PROGRAM = {}, REST_DAYS = {}, COLOURS = {legs:'#00C2A8',push:'#4C9BE8',pull:'#B57CF6',sprint:'#FF6B4A'},
+    WEEK_DAYS = [1,2,3,4,5,6,0], PRIORITY = ['LA','PU','PL','LB'], REST_COLOUR = {};
 
 /* ═══════════════════════════════════════════════════════════
    WEEK AT A GLANCE — what's due when, and what's still owed.

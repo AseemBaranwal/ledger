@@ -1028,7 +1028,10 @@ function renderSync(){
     <div class="field"><label>Apps Script Web App URL</label>
       <input id="su" type="url" placeholder="https://script.google.com/macros/s/.../exec"
              value="${DB.sheetUrl||''}" style="font-size:13px"></div>
-    <button class="btn ghost" onclick="DB.sheetUrl=$('#su').value.trim()||null;save(DB);toast(DB.sheetUrl?'Sheet connected':'Sheet disconnected')">Save URL</button>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="DB.sheetUrl=$('#su').value.trim()||null;save(DB);toast(DB.sheetUrl?'Sheet connected':'Sheet disconnected')">Save URL</button>
+      <button class="btn ghost" onclick="restoreFromSheet()" ${!DB.sheetUrl?'disabled style="opacity:.5;cursor:not-allowed"':''}>Restore data</button>
+    </div>
     <div style="height:24px"></div>`;
 }
 window.copyDigest=async()=>{
@@ -1065,6 +1068,27 @@ async function pushSheet(){
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body:JSON.stringify({type:'session',...s})});
   }catch(e){ /* silent — local save already succeeded */ }
+}
+window.restoreFromSheet=async()=>{
+  if(!DB.sheetUrl){ toast('No sheet URL configured'); return; }
+  try{
+    const url=DB.sheetUrl.replace(/\/exec$/,'/exec?action=export');
+    const resp=await fetch(url);
+    if(!resp.ok) throw new Error(resp.statusText);
+    const data=await resp.json();
+    if(!data.sessions||!Array.isArray(data.sessions)) throw new Error('Invalid format');
+    const count=data.sessions.length+data.body.length;
+    if(confirm(`Restore ${data.sessions.length} sessions and ${data.body.length} scans from sheet? This will overwrite local data.`)){
+      DB.sessions=[...data.sessions];
+      DB.body=[...data.body];
+      DB.sessions.sort((a,b)=>a.d.localeCompare(b.d));
+      DB.body.sort((a,b)=>a.d.localeCompare(b.d));
+      save(DB); draw(); toast(`Restored ${count} records from sheet`);
+    }
+  }catch(e){
+    toast('Failed to restore: '+e.message);
+    console.error(e);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

@@ -16,16 +16,42 @@
  *  4. Deploy → New deployment → type: Web app
  *       Execute as:        Me
  *       Who has access:    Anyone
- *     (It only ever appends rows. It never reads or returns anything.)
+ *     (It only appends rows and serves data. It never deletes.)
  *  5. Copy the /exec URL it gives you.
  *  6. In Ledger → Sync tab → paste it into "Apps Script Web App URL" → Save.
  *
  * That's it. Sessions now write to both your phone and the Sheet.
+ * If you clear your browser, restore from Sheets using the same URL.
  */
 
 const HEADERS = [
   'date', 'session', 'gym', 'exercise', 'weight', 'reps', 'sets', 'total_reps', 'volume', 'notes'
 ];
+
+function doGet(e) {
+  try {
+    const action = e.parameter.action || 'export';
+
+    if (action === 'export') {
+      const sh = ensureSheet_();
+      const bs = ensureBodySheet_();
+
+      const sessRows = sh.getDataRange().getValues().slice(1);
+      const bodyRows = bs.getDataRange().getValues().slice(1);
+
+      const sessions = parseSessionRows_(sessRows);
+      const body = parseBodyRows_(bodyRows);
+
+      const data = { sessions, body, lastSync: null };
+      return ContentService.createTextOutput(JSON.stringify(data))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput('ok');
+  } catch (err) {
+    return ContentService.createTextOutput('error: ' + err.message);
+  }
+}
 
 function doPost(e) {
   try {
@@ -64,6 +90,52 @@ function doPost(e) {
   } catch (err) {
     return ContentService.createTextOutput('error: ' + err.message);
   }
+}
+
+function parseSessionRows_(rows) {
+  const sessions = {};
+  const currentSession = null;
+
+  rows.forEach(row => {
+    const [date, session, gym, exercise, weight, reps, sets, totalReps, volume, notes] = row;
+    if (!date) return;
+
+    const key = date + session;
+    if (!sessions[key]) {
+      sessions[key] = {
+        d: date,
+        s: session,
+        g: gym || '',
+        ex: [],
+        n: notes || ''
+      };
+    }
+
+    if (exercise) {
+      sessions[key].ex.push({
+        k: exercise,
+        w: weight,
+        r: reps ? reps.split(',').map(Number) : []
+      });
+    }
+  });
+
+  return Object.values(sessions);
+}
+
+function parseBodyRows_(rows) {
+  return rows.map(row => {
+    const [date, weight, bf, muscle, waist, ferritin] = row;
+    if (!date) return null;
+    return {
+      d: date,
+      wt: weight,
+      bf: bf,
+      smm: muscle || null,
+      waist: waist || null,
+      fer: ferritin || null
+    };
+  }).filter(x => x);
 }
 
 function ensureSheet_() {

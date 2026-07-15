@@ -13,7 +13,9 @@
       "Bash(git commit -m 'Improve toast notifications: shorter duration \\(1s\\) and auto-clear text *)",
       "Bash(git commit -m 'Fix timezone bug: use local date instead of UTC *)",
       "Bash(git commit -m 'Move training program config to external JSON file + add Ledger logo nav *)",
-      "Bash(git commit -m 'Fix config loading race condition *)"
+      "Bash(git commit -m 'Fix config loading race condition *)",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('/Users/aseem/Downloads/ledger/config.json'\\), null, 2\\)\\)\")",
+      "Bash(git commit -m 'Add detailed logging to config loading for debugging *)"
     ]
   }
 }

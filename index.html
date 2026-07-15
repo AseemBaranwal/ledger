@@ -572,20 +572,22 @@ let CONFIG = null;
 let CONFIG_READY = false;
 async function loadConfig(){
   try{
-    const resp = await fetch('config.json');
-    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    console.log('Attempting to load config.json...');
+    const resp = await fetch('./config.json');
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
     CONFIG = await resp.json();
-    window.PROGRAM = CONFIG.program;
-    window.REST_DAYS = CONFIG.restDays;
-    window.COLOURS = CONFIG.colours;
-    window.WEEK_DAYS = CONFIG.schedule.weekDays;
-    window.PRIORITY = CONFIG.schedule.priority;
-    window.REST_COLOUR = CONFIG.schedule.restColour;
+    console.log('Config loaded:', CONFIG);
+    window.PROGRAM = CONFIG.program || {};
+    window.REST_DAYS = CONFIG.restDays || {};
+    window.COLOURS = CONFIG.colours || {};
+    window.WEEK_DAYS = CONFIG.schedule?.weekDays || [1,2,3,4,5,6,0];
+    window.PRIORITY = CONFIG.schedule?.priority || [];
+    window.REST_COLOUR = CONFIG.schedule?.restColour || {};
     CONFIG_READY = true;
-    console.log('✓ Config loaded');
+    console.log('✓ Config ready. PROGRAM keys:', Object.keys(PROGRAM));
   }catch(e){
     console.error('Failed to load config.json:', e);
-    toast('Error loading training program');
+    console.error('Stack:', e.stack);
   }
 }
 

@@ -12,7 +12,8 @@
       "Bash(git commit -m 'Add auto-restore from sheets on app startup if no local data *)",
       "Bash(git commit -m 'Improve toast notifications: shorter duration \\(1s\\) and auto-clear text *)",
       "Bash(git commit -m 'Fix timezone bug: use local date instead of UTC *)",
-      "Bash(git commit -m 'Move training program config to external JSON file + add Ledger logo nav *)"
+      "Bash(git commit -m 'Move training program config to external JSON file + add Ledger logo nav *)",
+      "Bash(git commit -m 'Fix config loading race condition *)"
     ]
   }
 }

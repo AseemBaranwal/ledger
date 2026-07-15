@@ -569,9 +569,11 @@ window.toggleWk=(dow)=>{ WK_OPEN=(WK_OPEN===dow)?null:dow; buzz(6); draw(); };
    CONFIG  —  Training program loaded from config.json
    ═══════════════════════════════════════════════════════════ */
 let CONFIG = null;
+let CONFIG_READY = false;
 async function loadConfig(){
   try{
     const resp = await fetch('config.json');
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
     CONFIG = await resp.json();
     window.PROGRAM = CONFIG.program;
     window.REST_DAYS = CONFIG.restDays;
@@ -579,12 +581,13 @@ async function loadConfig(){
     window.WEEK_DAYS = CONFIG.schedule.weekDays;
     window.PRIORITY = CONFIG.schedule.priority;
     window.REST_COLOUR = CONFIG.schedule.restColour;
-    draw();
+    CONFIG_READY = true;
+    console.log('✓ Config loaded');
   }catch(e){
     console.error('Failed to load config.json:', e);
+    toast('Error loading training program');
   }
 }
-loadConfig();
 
 /* ═══════════════════════════════════════════════════════════
    STORAGE  —  localStorage, with a memory fallback so the app
@@ -1320,7 +1323,12 @@ function draw(){
 $$('.tab').forEach(t=>t.onclick=()=>{
   TAB=t.dataset.p; buzz(8); window.scrollTo(0,0); draw();
 });
-draw();
+
+// Wait for config to load, then initialize
+(async()=>{
+  await loadConfig();
+  draw();
+})();
 </script>
 </body>
 </html>

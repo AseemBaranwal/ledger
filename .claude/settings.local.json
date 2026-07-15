@@ -9,7 +9,8 @@
       "Bash(osascript)",
       "Bash(osascript -e 'tell application \"Google Chrome\" to activate' -e 'delay 0.5' -e 'key code 0 using command down' -e 'delay 0.3' -e 'key code 51' -e 'delay 0.5' -e 'key code 9 using command down' -e 'delay 1')",
       "Bash(git commit -m 'Fix: re-render after saving sheet URL so restore button enables immediately *)",
-      "Bash(git commit -m 'Add auto-restore from sheets on app startup if no local data *)"
+      "Bash(git commit -m 'Add auto-restore from sheets on app startup if no local data *)",
+      "Bash(git commit -m 'Improve toast notifications: shorter duration \\(1s\\) and auto-clear text *)"
     ]
   }
 }

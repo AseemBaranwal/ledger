@@ -541,8 +541,11 @@ function fmtD(ds){
   return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 }
 function toast(m){
-  const t=$('#toast'); t.textContent=m; t.classList.add('up');
-  clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove('up'),1900);
+  const t=$('#toast');
+  clearTimeout(t._timeout);
+  t.textContent=m;
+  t.classList.add('up');
+  t._timeout=setTimeout(()=>{ t.classList.remove('up'); t.textContent=''; },1000);
 }
 function buzz(ms=12){ if(navigator.vibrate) try{navigator.vibrate(ms)}catch(e){} }
 function lastOf(k){

@@ -1049,7 +1049,7 @@ function renderSync(){
       <input id="su" type="url" placeholder="https://script.google.com/macros/s/.../exec"
              value="${DB.sheetUrl||''}" style="font-size:13px"></div>
     <div class="btn-row">
-      <button class="btn ghost" onclick="DB.sheetUrl=$('#su').value.trim()||null;save(DB);toast(DB.sheetUrl?'Sheet connected':'Sheet disconnected')">Save URL</button>
+      <button class="btn ghost" onclick="DB.sheetUrl=$('#su').value.trim()||null;save(DB);draw();toast(DB.sheetUrl?'Sheet connected':'Sheet disconnected')">Save URL</button>
       <button class="btn ghost" onclick="restoreFromSheet()" ${!DB.sheetUrl?'disabled style="opacity:.5;cursor:not-allowed"':''}>Restore data</button>
     </div>
     <div style="height:24px"></div>`;

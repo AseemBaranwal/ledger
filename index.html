@@ -258,6 +258,27 @@ textarea.notes::placeholder{color:var(--dim)}
 .chart-hd h3{font-size:15px;font-family:'Bricolage Grotesque';font-weight:700}
 .chart-hd .delta{margin-left:auto;font-family:'JetBrains Mono';font-size:13px;font-weight:700}
 .delta.up{color:var(--teal)} .delta.dn{color:var(--coral)} .delta.flat{color:var(--dim)}
+
+/* week-at-a-glance */
+.wk-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-bottom:16px}
+.wk-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.wk-head h2{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Inter'}
+.wk-row{display:flex;gap:12px;align-items:baseline;padding:5px 0;border-bottom:1px dashed var(--line)}
+.wk-row:last-of-type{border-bottom:none}
+.wk-row.now{margin:2px -8px;padding:6px 8px;background:var(--raised);border-radius:8px;border-bottom:none}
+.wk-day{flex:0 0 74px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.wk-row.now .wk-day{color:var(--amber)}
+.wk-body{display:flex;flex-wrap:wrap;gap:5px 12px;flex:1}
+.wk-item{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text);font-weight:500}
+.wk-item.rest{color:var(--dim);font-weight:400}
+.wk-item.ok{color:var(--dim)}
+.wk-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.wk-check{color:var(--teal);font-weight:700}
+.wk-owed{margin-top:10px;padding-top:11px;border-top:1px solid var(--line)}
+.wk-owed-lbl{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--coral);margin-bottom:8px}
+.wk-owed-lbl.done{color:var(--teal)}
+.wk-owed-btn{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--raised);border:1px solid var(--line-2);border-radius:10px;color:var(--text);padding:11px 12px;font-size:13px;font-weight:600;font-family:'Inter';cursor:pointer;margin-bottom:6px}
+.wk-owed-btn:active{background:var(--ink)}
 .chart-sub{font-size:11.5px;color:var(--dim);margin-bottom:12px;font-family:'JetBrains Mono'}
 svg.chart{width:100%;height:130px;display:block;overflow:visible}
 select.pick{
@@ -467,6 +488,63 @@ const REST_DAYS = {3:{t:'Easy run + core',s:'3–4 miles, conversational pace. Z
 const COLOURS = {legs:'#00C2A8',push:'#4C9BE8',pull:'#B57CF6',sprint:'#FF6B4A'};
 
 /* ═══════════════════════════════════════════════════════════
+   WEEK AT A GLANCE — what's due when, and what's still owed.
+   The schedule bends (log any session any day), but the week
+   should always tell you what's left to hit. Priority lifts
+   that fall on/before today and aren't logged yet = "owed".
+   ═══════════════════════════════════════════════════════════ */
+const WEEK_DAYS=[1,2,3,4,5,6,0];                 // Monday-first
+const DOW_LABEL={0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
+const PRIORITY=['LA','PU','PL','LB'];            // must-not-skip lifts (sprints excluded — cardio is optional)
+
+function mondayOf(d){
+  const t=new Date(d); const off=(t.getDay()+6)%7;
+  t.setDate(t.getDate()-off); return iso(t);
+}
+function weekSpan(){
+  const mon=mondayOf(new Date());
+  const s=new Date(mon); s.setDate(s.getDate()+6);
+  return {mon, sun:iso(s)};
+}
+function doneThisWeek(){
+  const {mon,sun}=weekSpan(); const set=new Set();
+  (DB.sessions||[]).forEach(x=>{ if(x.d>=mon && x.d<=sun) set.add(x.s); });
+  return set;
+}
+function owedThisWeek(){
+  const done=doneThisWeek();
+  const todayPos=WEEK_DAYS.indexOf(new Date().getDay());
+  return PRIORITY.filter(k=>WEEK_DAYS.indexOf(PROGRAM[k].day)<=todayPos && !done.has(k));
+}
+function renderWeek(){
+  const done=doneThisWeek(), todayDow=new Date().getDay();
+  const rows=WEEK_DAYS.map(dow=>{
+    const codes=Object.keys(PROGRAM).filter(k=>PROGRAM[k].day===dow);
+    const isToday=dow===todayDow;
+    let inner;
+    if(codes.length){
+      inner=codes.map(c=>{
+        const p=PROGRAM[c], col=COLOURS[p.colour]||'var(--dim)', ok=done.has(c);
+        return `<span class="wk-item ${ok?'ok':''}"><span class="wk-dot" style="background:${col}"></span>${p.name}${ok?' <span class="wk-check">✓</span>':''}</span>`;
+      }).join('');
+    } else {
+      const r=REST_DAYS[dow];
+      inner=`<span class="wk-item rest">${r?r.t:'Rest'}</span>`;
+    }
+    return `<div class="wk-row ${isToday?'now':''}"><span class="wk-day">${DOW_LABEL[dow]}${isToday?' · today':''}</span><span class="wk-body">${inner}</span></div>`;
+  }).join('');
+  const owed=owedThisWeek();
+  const owedHtml=owed.length?`<div class="wk-owed">
+    <span class="wk-owed-lbl">Still owed this week</span>
+    ${owed.map(c=>`<button class="wk-owed-btn" onclick="startSession('${c}')"><span class="wk-dot" style="background:${COLOURS[PROGRAM[c].colour]}"></span>${PROGRAM[c].full} →</button>`).join('')}
+  </div>`:`<div class="wk-owed"><span class="wk-owed-lbl done">All priority lifts hit ✓</span></div>`;
+  return `<div class="wk-card">
+    <div class="wk-head"><h2>This week</h2><div class="rule"></div></div>
+    ${rows}${owedHtml}
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
    STORAGE  —  localStorage, with a memory fallback so the app
    still runs in sandboxed previews where storage is blocked.
    ═══════════════════════════════════════════════════════════ */
@@ -607,7 +685,7 @@ function renderToday(){
       const r=REST_DAYS[dow]||{t:'Rest',s:'Nothing scheduled.'};
       ti.innerHTML=r.t;
       sb.textContent=r.s;
-      body.innerHTML=`
+      body.innerHTML=renderWeek()+`
         <div class="sec"><h2>Log something anyway</h2><div class="rule"></div></div>
         ${Object.keys(PROGRAM).map(k=>`
           <button class="btn ghost" style="margin-bottom:8px" onclick="startSession('${k}')">
@@ -617,7 +695,7 @@ function renderToday(){
     }
     ti.innerHTML=codes.map(c=>`<span class="accent">${PROGRAM[c].name}</span>`).join(' + ');
     sb.textContent=codes.map(c=>PROGRAM[c].full).join('  ·  ');
-    body.innerHTML=codes.map(c=>`
+    body.innerHTML=renderWeek()+codes.map(c=>`
       <button class="btn primary" style="margin-bottom:8px" onclick="startSession('${c}')">
         Start ${PROGRAM[c].name}
       </button>`).join('') + `

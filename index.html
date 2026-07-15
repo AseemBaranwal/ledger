@@ -1078,6 +1078,28 @@ window.restoreFromSheet=async()=>{
     const data=await resp.json();
     if(!data.sessions||!Array.isArray(data.sessions)) throw new Error('Invalid format');
 
+    // Validate and fix dates
+    data.sessions.forEach((s, i) => {
+      if (!s.d || typeof s.d !== 'string') {
+        console.warn(`Session ${i} has invalid date:`, s.d, 'full session:', s);
+      }
+      // Test if date is valid
+      const testDate = new Date(s.d + 'T00:00:00Z');
+      if (isNaN(testDate)) {
+        console.warn(`Session ${i} date "${s.d}" is invalid format`);
+      }
+    });
+
+    data.body.forEach((b, i) => {
+      if (!b.d || typeof b.d !== 'string') {
+        console.warn(`Body scan ${i} has invalid date:`, b.d, 'full record:', b);
+      }
+      const testDate = new Date(b.d + 'T00:00:00Z');
+      if (isNaN(testDate)) {
+        console.warn(`Body scan ${i} date "${b.d}" is invalid format`);
+      }
+    });
+
     // Deduplicate sessions by (date, session_code) pair
     const dedupedSessions = {};
     data.sessions.forEach(s => {
@@ -1098,7 +1120,8 @@ window.restoreFromSheet=async()=>{
     }
   }catch(e){
     toast('Failed to restore: '+e.message);
-    console.error(e);
+    console.error('Restore error:', e);
+    console.error('Check browser console for date details');
   }
 }
 

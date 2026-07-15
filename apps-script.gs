@@ -59,19 +59,22 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
 
     if (body.type === 'session') {
-      const rows = body.ex.map(x => {
+      const rows = body.ex.map((x, idx) => {
         const totalReps = x.r.reduce((a, b) => a + b, 0);
+        // Get weight for each set, fall back to single weight if using old format
+        const weights = x.ws || Array(x.r.length).fill(x.w);
+        const avgWeight = weights.length ? weights.reduce((a,b)=>a+b,0)/weights.length : x.w;
         return [
           body.d,
           body.s,
           body.g || '',
           x.k,
-          x.w,
-          x.r.join(','),
-          x.r.length,
+          weights.join(','),  // weights for each set
+          x.r.join(','),       // reps for each set
+          x.r.length,          // number of sets
           totalReps,
-          Math.round(totalReps * (x.w || 1)),
-          body.n || ''
+          Math.round(totalReps * avgWeight),
+          idx === 0 ? (body.n || '') : ''  // Only write notes on first exercise row
         ];
       });
       if (rows.length) {
@@ -94,8 +97,9 @@ function doPost(e) {
 
 function parseSessionRows_(rows) {
   const sessions = {};
+  const sessionNotes = {};
 
-  rows.forEach(row => {
+  rows.forEach((row, rowIdx) => {
     const [date, session, gym, exercise, weight, reps, sets, totalReps, volume, notes] = row;
     if (!date || !session) return;
 
@@ -104,13 +108,19 @@ function parseSessionRows_(rows) {
     if (!dateStr) return;
 
     const key = dateStr + '|' + session;
+
+    // Store notes only from first row of each session
+    if (!sessions[key] && notes) {
+      sessionNotes[key] = notes;
+    }
+
     if (!sessions[key]) {
       sessions[key] = {
         d: dateStr,
         s: session,
         g: gym || '',
         ex: [],
-        n: notes || ''
+        n: sessionNotes[key] || ''
       };
     }
 
@@ -122,11 +132,34 @@ function parseSessionRows_(rows) {
           })
         : [];
 
-      sessions[key].ex.push({
+      const weightsStr = String(weight || '');
+      const weightsArray = weightsStr
+        ? weightsStr.split(',').map(w => {
+            const n = Number(w.trim());
+            return isNaN(n) ? null : n;
+          })
+        : [];
+
+      const exObj = {
         k: String(exercise).trim(),
-        w: weight ? Number(weight) : null,
         r: repsArray
-      });
+      };
+
+      // If per-set weights exist, use ws. Otherwise fallback to single weight
+      if (weightsArray.length > 0 && weightsArray.some(w => w !== null)) {
+        exObj.ws = weightsArray;
+      } else {
+        exObj.w = weightsArray.length > 0 && weightsArray[0] !== null ? weightsArray[0] : null;
+      }
+
+      sessions[key].ex.push(exObj);
+    }
+  });
+
+  // Ensure all sessions have their notes
+  Object.keys(sessions).forEach(key => {
+    if (!sessions[key].n && sessionNotes[key]) {
+      sessions[key].n = sessionNotes[key];
     }
   });
 

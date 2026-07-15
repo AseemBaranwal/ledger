@@ -521,7 +521,13 @@ function lastOf(k){
   } return null;
 }
 function volume(s){
-  return s.ex.reduce((t,e)=>t+e.r.reduce((a,r)=>a+r*(e.w||1),0),0);
+  return s.ex.reduce((t,e)=>{
+    const setVols = e.r.map((r,i)=>{
+      const w = e.ws ? (e.ws[i]||1) : (e.w||1);
+      return r*w;
+    });
+    return t + setVols.reduce((a,v)=>a+v,0);
+  },0);
 }
 function streak(){
   // consecutive weeks with >= 3 logged sessions
@@ -607,7 +613,7 @@ function renderToday(){
         <div class="ex-name">${def.n.replace('★','<span class="star">★</span>')}</div>
         <div class="ex-target mono">${def.s}×${def.r}</div>
       </div>
-      ${l?`<div class="ex-last mono">Last: <b>${l.w}${def.u==='+lb'?' extra':''} × ${l.r.join(',')}</b> · ${ago(l.d)}</div>`:
+      ${l?`<div class="ex-last mono">Last: <b>${(l.ws?l.ws.join(','):l.w)}${def.u==='+lb'?' extra':''} × ${l.r.join(',')}</b> · ${ago(l.d)}</div>`:
            `<div class="ex-last">First time. Start at the target and see how it moves.</div>`}
       <div class="ex-cue">${def.cue}</div>
 
@@ -661,12 +667,20 @@ window.bump=(i,dir)=>{
 window.setW=(i,v)=>{ DRAFT.ex[i].w=Math.max(0,parseFloat(v)||0); draw(); };
 window.openReps=(i,j)=>{ OPEN=i; draw(); };
 window.logRep=(i,v)=>{
-  DRAFT.ex[i].r.push(v);
+  const ex=DRAFT.ex[i];
+  ex.r.push(v);
+  // Track weight for each set
+  if(!ex.ws) ex.ws=[];
+  ex.ws.push(ex.w);
   const def=PROGRAM[DRAFT.s].ex.find(x=>x.k===DRAFT.ex[i].k);
   OPEN = DRAFT.ex[i].r.length>=def.s ? null : i;
   buzz(18); draw(); startRest();
 };
-window.clearSet=(i,j)=>{ DRAFT.ex[i].r.splice(j,1); buzz(8); draw(); };
+window.clearSet=(i,j)=>{
+  DRAFT.ex[i].r.splice(j,1);
+  if(DRAFT.ex[i].ws) DRAFT.ex[i].ws.splice(j,1);
+  buzz(8); draw();
+};
 window.finish=()=>{
   const logged=DRAFT.ex.filter(e=>e.r.length);
   if(!logged.length){ toast('Nothing logged yet'); return; }
@@ -682,9 +696,11 @@ function checkPRs(s){
   const prs=[];
   s.ex.forEach(e=>{
     if(!e.r.length)return;
+    const curMax = e.ws ? Math.max(...e.ws) : (e.w||0);
     const prior=DB.sessions.filter(x=>x!==s && x.d<s.d)
-      .flatMap(x=>x.ex.filter(y=>y.k===e.k)).map(y=>y.w);
-    if(prior.length && e.w>Math.max(...prior)) prs.push(e.k);
+      .flatMap(x=>x.ex.filter(y=>y.k===e.k))
+      .map(y=> y.ws ? Math.max(...y.ws) : (y.w||0));
+    if(prior.length && curMax>Math.max(...prior)) prs.push(e.k);
   });
   return prs;
 }
@@ -745,8 +761,12 @@ function renderHist(){
         <div class="hdetail ${EXPAND===id?'on':''}">
           ${s.ex.map(e=>{
             const def=(PROGRAM[s.s]?.ex||[]).find(x=>x.k===e.k);
+            const sets=e.r.map((r,i)=>{
+              const w=e.ws?e.ws[i]:e.w;
+              return `${w||'BW'}×${r}`;
+            }).join(', ');
             return `<div class="ln"><span class="k">${def?def.n.replace(' ★',''):e.k}</span>
-              <span>${e.w||'BW'} × ${e.r.join(', ')}</span></div>`;
+              <span>${sets}</span></div>`;
           }).join('')}
           ${s.n?`<div style="padding-top:8px;color:var(--dim);font-family:Inter;font-size:12px">“${s.n}”</div>`:''}
         </div>

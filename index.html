@@ -493,6 +493,37 @@ function blank(){
 }
 let DB = load();
 
+// Auto-restore from sheets if no local data but sheet URL exists
+async function autoRestore(){
+  if(!DB.sessions.length && DB.sheetUrl){
+    try{
+      const url=DB.sheetUrl.replace(/\/exec$/,'/exec?action=export');
+      const resp=await fetch(url);
+      if(!resp.ok) return;
+      const data=await resp.json();
+      if(!data.sessions||!Array.isArray(data.sessions)) return;
+
+      // Deduplicate sessions by (date, session_code) pair
+      const dedupedSessions = {};
+      data.sessions.forEach(s => {
+        const key = s.d + '|' + s.s;
+        if (!dedupedSessions[key]) {
+          dedupedSessions[key] = s;
+        }
+      });
+
+      DB.sessions = Object.values(dedupedSessions);
+      DB.body = [...data.body];
+      DB.sessions.sort((a,b)=>a.d.localeCompare(b.d));
+      DB.body.sort((a,b)=>a.d.localeCompare(b.d));
+      save(DB);
+    }catch(e){
+      // Silently fail - user can manually restore if needed
+    }
+  }
+}
+autoRestore();
+
 /* ═══════════════════════════════════════════════════════════
    HELPERS
    ═══════════════════════════════════════════════════════════ */

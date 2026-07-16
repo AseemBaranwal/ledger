@@ -1,23 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useUIStore } from '@/store'
+import { playRestChime } from '@/services/audio'
 import styles from '../../styles/components.module.css'
-
-function playTimerSound() {
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = 800
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.5)
-  } catch (e) {
-    // ignore
-  }
-}
 
 function buzz(pattern: number | number[] = 12) {
   if (navigator.vibrate) {
@@ -52,7 +36,7 @@ export function RestTimer() {
   useEffect(() => {
     if (timerActive && timerSeconds <= 0) {
       buzz([60, 50, 60])
-      playTimerSound()
+      playRestChime()
       setTimer(0, false)
     }
   }, [timerActive, timerSeconds, setTimer])

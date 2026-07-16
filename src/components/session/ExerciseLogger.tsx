@@ -2,6 +2,7 @@ import { useSessionStore, useUIStore } from '@/store'
 import type { ProgramExercise } from '@/types'
 import { lastOf } from '@/services/trendCalculations'
 import { ago } from '@/services/dateUtils'
+import { unlockAudioContext } from '@/services/audio'
 import styles from '../../styles/components.module.css'
 
 interface ExerciseLoggerProps {
@@ -37,6 +38,7 @@ export function ExerciseLogger({ def, index }: ExerciseLoggerProps) {
   const isOpen = openExerciseIndex === index
 
   const handleLogRep = (v: number) => {
+    unlockAudioContext() // must happen inside this click handler, not later, or mobile browsers mute it
     logRep(index, v)
     setOpenExerciseIndex(ex.r.length + 1 >= def.s ? null : index)
     useUIStore.getState().setTimer(90, true)

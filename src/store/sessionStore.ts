@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Session, Exercise, RestItem } from '@/types'
+import { pushSession } from '@/services/appScript'
+import { useConfigStore } from './configStore'
+import { useUIStore } from './uiStore'
 
 interface DraftExercise extends Exercise {
   w: number // live working weight for this session
@@ -11,6 +14,7 @@ interface SessionStore {
   draft: Session | null
   draftEx: DraftExercise[] | null // live weights while logging a PROGRAM session
   draftItems: RestItem[] | null // live done-state while logging a REST session
+  pendingSync: string[] // session ids not yet confirmed pushed to the sheet
 
   startSession: (code: string, exList: { k: string; w: number }[], gym: string) => void
   startRestSession: (dow: number, title: string, items: RestItem[]) => void
@@ -23,6 +27,7 @@ interface SessionStore {
   updateNotes: (notes: string) => void
   saveDraft: () => number // returns count of PRs
   clearDraft: () => void
+  flushPendingSync: () => void
 }
 
 // Migrate old data from vanilla JS app
@@ -41,6 +46,22 @@ const migrateOldData = (): Session[] => {
   return []
 }
 
+// Fire the sheet push and update the pending-sync queue based on the outcome.
+// mode:'no-cors' means we can't see whether Apps Script actually processed the
+// request, only whether the network call itself completed — so "resolved" is
+// the best signal of success we have. A thrown error (offline, DNS, etc.)
+// queues the session id so flushPendingSync() can retry it later.
+async function syncSession(session: Session, markPending: (id: string) => void, clearPending: (id: string) => void) {
+  const sheetUrl = useConfigStore.getState().sheetUrl
+  if (!sheetUrl || !session.id) return
+  try {
+    await pushSession(sheetUrl, session)
+    clearPending(session.id)
+  } catch (e) {
+    markPending(session.id)
+  }
+}
+
 export const useSessionStore = create<SessionStore>()(
   persist(
     (set, get) => ({
@@ -48,6 +69,7 @@ export const useSessionStore = create<SessionStore>()(
       draft: null,
       draftEx: null,
       draftItems: null,
+      pendingSync: [],
 
       startSession: (code, exList, gym) => {
         const today = new Date()
@@ -142,7 +164,8 @@ export const useSessionStore = create<SessionStore>()(
           sessionToSave = { ...state.draft, ex: loggedEx }
         }
 
-        const newSessions = [...state.sessions, { ...sessionToSave, id: Date.now().toString() }]
+        const savedSession = { ...sessionToSave, id: Date.now().toString() }
+        const newSessions = [...state.sessions, savedSession]
         newSessions.sort((a, b) => a.d.localeCompare(b.d))
 
         let prCount = 0
@@ -159,10 +182,41 @@ export const useSessionStore = create<SessionStore>()(
         }
 
         set({ sessions: newSessions, draft: null, draftEx: null, draftItems: null })
+
+        // Push PROGRAM sessions to the sheet (fire-and-forget, non-blocking).
+        // REST sessions are local-only, matching the original app's behavior.
+        if (!isRest) {
+          const markPending = (id: string) => {
+            set((s) => (s.pendingSync.includes(id) ? s : { pendingSync: [...s.pendingSync, id] }))
+            useUIStore.getState().showNotification('Could not sync to sheet — will retry', 'error')
+          }
+          const clearPending = (id: string) => {
+            set((s) => ({ pendingSync: s.pendingSync.filter((x) => x !== id) }))
+          }
+          syncSession(savedSession, markPending, clearPending)
+        }
+
         return prCount
       },
 
       clearDraft: () => set({ draft: null, draftEx: null, draftItems: null }),
+
+      flushPendingSync: () => {
+        const state = get()
+        if (!state.pendingSync.length) return
+        state.pendingSync.forEach((id) => {
+          const session = state.sessions.find((s) => s.id === id)
+          if (!session) {
+            set((s) => ({ pendingSync: s.pendingSync.filter((x) => x !== id) }))
+            return
+          }
+          const markPending = () => {} // already pending
+          const clearPending = (sid: string) => {
+            set((s) => ({ pendingSync: s.pendingSync.filter((x) => x !== sid) }))
+          }
+          syncSession(session, markPending, clearPending)
+        })
+      },
     }),
     {
       name: 'ledger.sessions',

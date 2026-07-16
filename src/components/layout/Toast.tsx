@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useUIStore } from '@/store'
-import styles from '@/styles/App.module.css'
+import styles from '../../styles/App.module.css'
 
 export function Toast() {
   const notifications = useUIStore((s) => s.notifications)

@@ -29,7 +29,8 @@
       "Bash(npm install *)",
       "Bash(npm run *)",
       "Bash(git commit -m 'Phase 2: Create Zustand stores \\(4\\) *)",
-      "Bash(git commit -m 'Phase 3: Create layout components *)"
+      "Bash(git commit -m 'Phase 3: Create layout components *)",
+      "Bash(git commit -m 'Phase 4: Tab components with app integration *)"
     ]
   }
 }

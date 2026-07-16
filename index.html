@@ -779,7 +779,7 @@ function renderToday(){
     <div class="card ${item.done?'done':''}">
       <div class="ex-head">
         <div class="ex-name">${item.n}</div>
-        <div class="ex-target mono">${item.d}</div>
+        <div class="ex-target mono"><input type="text" style="background:none;border:none;text-align:right;color:var(--dim);width:80px;padding:0;font-family:JetBrains Mono" value="${item.actual_d||item.d}" onchange="DRAFT.items[${i}].actual_d=this.value;draw()" placeholder="${item.d}"></div>
       </div>
       <div style="padding:0 14px 12px">
         <button class="btn ${item.done?'primary':'ghost'}" onclick="DRAFT.items[${i}].done=!DRAFT.items[${i}].done;draw()" style="margin-bottom:8px">

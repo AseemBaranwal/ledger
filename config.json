@@ -14,6 +14,7 @@
           "r": 6,
           "w": 75,
           "u": "lb",
+          "group": "Legs",
           "cue": "Your #1 priority. 0.44× bodyweight is where you start — not where you stay."
         },
         {
@@ -23,6 +24,7 @@
           "r": 8,
           "w": 20,
           "u": "+lb",
+          "group": "Legs",
           "cue": "Front heel drive, chest up. Your best leg lift — build on it."
         },
         {
@@ -32,6 +34,7 @@
           "r": 8,
           "w": 65,
           "u": "lb",
+          "group": "Legs",
           "cue": "Back in the plan. Hinge at the hip, don't squat it. No more skipping this."
         },
         {
@@ -41,6 +44,7 @@
           "r": 12,
           "w": 20,
           "u": "lb",
+          "group": "Legs",
           "cue": "Per leg. Long stride, controlled."
         },
         {
@@ -50,6 +54,7 @@
           "r": 12,
           "w": 25,
           "u": "+lb",
+          "group": "Legs",
           "cue": "You have NEVER loaded these. Zero baseline = fastest gains in your body."
         },
         {
@@ -59,6 +64,7 @@
           "r": 15,
           "w": 45,
           "u": "lb",
+          "group": "Legs",
           "cue": "Bent knee hits soleus — a different muscle from the standing version."
         },
         {
@@ -68,6 +74,7 @@
           "r": 12,
           "w": 0,
           "u": "+lb",
+          "group": "Legs",
           "cue": "Control the descent. No swinging."
         }
       ]
@@ -87,6 +94,7 @@
           "r": 8,
           "w": 0,
           "u": "reps",
+          "group": "Sprint",
           "cue": "85–90% effort. Walk back recovery (~90s). Start at 6 reps for weeks 1–2."
         }
       ]
@@ -105,6 +113,7 @@
           "r": 6,
           "w": 45,
           "u": "lb",
+          "group": "Push",
           "cue": "The king for delts. Your DB press regressed to 30 in June — fix that here."
         },
         {
@@ -114,6 +123,7 @@
           "r": 15,
           "w": 12.5,
           "u": "lb",
+          "group": "Push",
           "cue": "THE lift for your V-taper. Light, strict, feel the burn. Do not swing."
         },
         {
@@ -123,6 +133,7 @@
           "r": 15,
           "w": 10,
           "u": "lb",
+          "group": "Push",
           "cue": "Second angle, constant tension through the whole range."
         },
         {
@@ -132,6 +143,7 @@
           "r": 15,
           "w": 10,
           "u": "lb",
+          "group": "Push",
           "cue": "Rounds the shoulder from behind. Often the missing piece."
         },
         {
@@ -141,6 +153,7 @@
           "r": 8,
           "w": 40,
           "u": "lb",
+          "group": "Push",
           "cue": "MAINTENANCE ONLY. Chest is already ahead — do not add volume here."
         },
         {
@@ -150,6 +163,7 @@
           "r": 12,
           "w": 25,
           "u": "lb",
+          "group": "Push",
           "cue": "Maintenance. Elbows pinned."
         }
       ]
@@ -168,6 +182,7 @@
           "r": 5,
           "w": 10,
           "u": "+lb",
+          "group": "Pull",
           "cue": "You went -30 assisted → bodyweight in 3 months. Now load it."
         },
         {
@@ -177,6 +192,7 @@
           "r": 10,
           "w": 100,
           "u": "lb",
+          "group": "Pull",
           "cue": "Wide grip = lat width = the top half of the V. Pull to upper chest."
         },
         {
@@ -186,6 +202,7 @@
           "r": 10,
           "w": 70,
           "u": "lb",
+          "group": "Pull",
           "cue": "Replaces seated rows — you broke form at 100. The pad kills the cheat."
         },
         {
@@ -195,6 +212,7 @@
           "r": 15,
           "w": 35,
           "u": "lb",
+          "group": "Pull",
           "cue": "Elbows high, external rotation at the end."
         },
         {
@@ -204,6 +222,7 @@
           "r": 12,
           "w": 60,
           "u": "lb",
+          "group": "Pull",
           "cue": "Traps frame the neck. Very visible. Hold a second at the top."
         },
         {
@@ -213,6 +232,7 @@
           "r": 10,
           "w": 20,
           "u": "lb",
+          "group": "Pull",
           "cue": "MAINTENANCE. Arms are not your bottleneck."
         }
       ]
@@ -231,6 +251,7 @@
           "r": 10,
           "w": 95,
           "u": "lb",
+          "group": "Legs",
           "cue": "NEW. The #1 glute builder. Glutes are the athletic signature."
         },
         {
@@ -240,6 +261,7 @@
           "r": 10,
           "w": 80,
           "u": "lb",
+          "group": "Legs",
           "cue": "4-second lowering ONLY. Hips pinned flat to the pad."
         },
         {
@@ -249,6 +271,7 @@
           "r": 10,
           "w": 30,
           "u": "lb",
+          "group": "Legs",
           "cue": "Toes-only trail foot. Zero push-off from the back leg."
         },
         {
@@ -258,6 +281,7 @@
           "r": 5,
           "w": 20,
           "u": "in",
+          "group": "Legs",
           "cue": "Explosive. This is what makes it an athlete's body, not a gym body."
         },
         {
@@ -267,6 +291,7 @@
           "r": 15,
           "w": 15,
           "u": "+lb",
+          "group": "Legs",
           "cue": "Second calf hit of the week. They need the frequency."
         },
         {
@@ -276,6 +301,7 @@
           "r": 20,
           "w": 195,
           "u": "lb",
+          "group": "Legs",
           "cue": "Home cable — displayed weight. Abs need load, not just reps."
         },
         {
@@ -285,6 +311,7 @@
           "r": 8,
           "w": 0,
           "u": "+lb",
+          "group": "Legs",
           "cue": "Hardest core movement you own. Control the descent entirely."
         }
       ]

@@ -3,10 +3,14 @@ import type { Session } from '@/types'
 export async function pushSession(sheetUrl: string, session: Session): Promise<void> {
   if (!sheetUrl) throw new Error('Sheet URL not configured')
 
+  // text/plain is required here, not application/json: it's the request
+  // stays within Apps Script's no-cors expectations. application/json isn't
+  // a CORS-safelisted content type for a no-cors request, so some mobile
+  // browsers drop/alter the request entirely rather than sending it as-is.
   const response = await fetch(sheetUrl, {
     method: 'POST',
     mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ type: 'session', ...session }),
   })
 

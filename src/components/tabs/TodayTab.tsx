@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
 import { ExerciseLogger } from '@/components/session'
 import { iso, mondayOf } from '@/services/dateUtils'
@@ -82,6 +82,13 @@ export function TodayTab() {
     const r = restDays[dow] || { t: 'Rest', s: '', items: [] }
     startRestSession(dow, r.t, r.items || [])
   }
+
+  // "Start X" is usually clicked from deep inside an expanded day mid-page —
+  // without this the logging view renders at whatever scroll position the
+  // overview happened to be at, landing the user in the middle of the page.
+  useEffect(() => {
+    if (draft) window.scrollTo(0, 0)
+  }, [draft?.s, draft?.type])
 
   // ─── WEEK CARD ───
   const done = doneThisWeek()

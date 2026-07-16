@@ -22,7 +22,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
             className={`${styles.tab} ${activeTab === tab.id ? styles.on : ''}`}
             onClick={() => onTabChange(tab.id as any)}
           >
-            <span>{tab.icon}</span>
+            <span style={{ fontSize: '20px' }}>{tab.icon}</span>
             {tab.label}
           </button>
         ))}

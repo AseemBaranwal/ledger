@@ -47,9 +47,9 @@ export function TrendsTab() {
   const SimpleLineChart = ({ data, maxVal }: { data: Array<{ date: string; weight: number }>; maxVal: number }) => {
     if (data.length < 2) return <div style={{ color: 'var(--dim)', fontSize: '12px' }}>No data yet</div>
 
-    const width = 300
-    const height = 80
-    const padding = 10
+    const width = 100
+    const height = 40
+    const padding = 3
     const plotWidth = width - padding * 2
     const plotHeight = height - padding * 2
 
@@ -61,10 +61,16 @@ export function TrendsTab() {
     const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
 
     return (
-      <svg width={width} height={height} style={{ display: 'block', marginBottom: '8px' }} viewBox={`0 0 ${width} ${height}`}>
-        <path d={pathD} stroke="var(--amber)" strokeWidth="2" fill="none" />
+      <svg
+        width="100%"
+        height="60px"
+        style={{ display: 'block', marginBottom: '8px' }}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <path d={pathD} stroke="var(--amber)" strokeWidth="0.8" fill="none" />
         {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="3" fill="var(--amber)" />
+          <circle key={i} cx={p.x} cy={p.y} r="1.5" fill="var(--amber)" />
         ))}
       </svg>
     )

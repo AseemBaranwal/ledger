@@ -4,6 +4,7 @@ import styles from '../../styles/components.module.css'
 
 export function TodayTab() {
   const draft = useSessionStore((s) => s.draft)
+  const sessions = useSessionStore((s) => s.sessions)
   const program = useConfigStore((s) => s.program)
   const restDays = useConfigStore((s) => s.restDays)
   const [today] = useState(new Date())
@@ -11,6 +12,12 @@ export function TodayTab() {
 
   const todayRest = restDays[dayOfWeek]
   const todayProgram = Object.values(program).find((p) => p.day === dayOfWeek)
+
+  // Get owed sessions for the week
+  const owedSessions = Object.entries(program)
+    .filter(([_, p]) => [1, 2, 4, 6].includes(p.day)) // Priority lifts
+    .filter(([code]) => !sessions.some((s) => s.s === code && s.d.startsWith(today.toISOString().split('T')[0].slice(0, 7)))) // Not logged this week
+    .map(([code, session]) => ({ code, session }))
 
   if (!draft) {
     return (
@@ -51,6 +58,39 @@ export function TodayTab() {
           </div>
         ) : (
           <p style={{ color: 'var(--dim)' }}>No session planned for today</p>
+        )}
+
+        {/* This Week Section */}
+        {owedSessions.length > 0 && (
+          <div style={{ marginTop: '24px' }}>
+            <h3 style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
+              OWED THIS WEEK
+            </h3>
+            {owedSessions.map(({ code, session }) => (
+              <button
+                key={code}
+                className={styles.btn}
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--line)',
+                  marginBottom: '8px',
+                }}
+                onClick={() => {
+                  useSessionStore.setState({
+                    draft: {
+                      d: today.toISOString().split('T')[0],
+                      s: code,
+                      g: session.gym,
+                      ex: session.ex.map((e) => ({ k: e.k, r: [], ws: [] })),
+                      type: 'PROGRAM',
+                    },
+                  })
+                }}
+              >
+                Start {session.name}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     )

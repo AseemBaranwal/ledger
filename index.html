@@ -644,7 +644,10 @@ autoRestore();
    ═══════════════════════════════════════════════════════════ */
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const iso=d=>d.toISOString().slice(0,10);
+const iso=d=>{
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+};
 const today=()=>iso(new Date());
 function ago(ds){
   const n=Math.round((new Date(today())-new Date(ds))/864e5);

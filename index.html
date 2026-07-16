@@ -581,6 +581,31 @@ async function loadConfig(){
   }
 }
 
+/* Load exercise starting weights from Google Sheet (non-blocking) */
+async function loadWeightsFromSheet(){
+  if(!DB.sheetUrl) return;
+  try{
+    const url = DB.sheetUrl.replace(/\/exec$/, '/exec?action=weights');
+    const resp = await fetch(url);
+    if(!resp.ok) return;
+    const data = await resp.json();
+    if(!data.weights || !Array.isArray(data.weights)) return;
+
+    // Override starting weights from sheet: [{code, weight}, ...]
+    data.weights.forEach(w => {
+      for(const sessionData of Object.values(PROGRAM)){
+        const ex = sessionData.ex?.find(e => e.k === w.code);
+        if(ex){
+          ex.w = parseFloat(w.weight) || ex.w;
+          console.log(`Updated ${w.code} starting weight to ${ex.w}`);
+        }
+      }
+    });
+  }catch(e){
+    // Silent fail - use config defaults as fallback
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════
    STORAGE  —  localStorage, with a memory fallback so the app
    still runs in sandboxed previews where storage is blocked.
@@ -1023,7 +1048,7 @@ function barChart(pts, colour, h=110){
   </svg>`;
 }
 
-let TRLIFT='SQ';
+let TRLIFT='SQ', TREND_GROUP=null;
 function renderTrends(){
   const b=$('#trBody');
   if(DB.sessions.length<1){
@@ -1031,23 +1056,25 @@ function renderTrends(){
       <div class="sm">Log two sessions of the same lift and the line appears.</div></div>`;
     return;
   }
+
   const allK=[...new Set(DB.sessions.flatMap(s=>s.ex.map(e=>e.k)))];
   const nameOf=k=>{
     for(const p of Object.values(PROGRAM)){const e=p.ex.find(x=>x.k===k); if(e)return e.n.replace(' ★','');}
     return k;
   };
+  const groupOf=k=>{
+    for(const p of Object.values(PROGRAM)){const e=p.ex.find(x=>x.k===k); if(e)return e.group||'Other';}
+    return 'Other';
+  };
   const colOf=k=>{
     for(const [c,p] of Object.entries(PROGRAM)) if(p.ex.some(x=>x.k===k)) return COLOURS[p.colour];
     return '#FFB020';
   };
-  if(!allK.includes(TRLIFT)) TRLIFT=allK[0];
 
-  // lift progression
-  const pts=DB.sessions.filter(s=>s.ex.some(e=>e.k===TRLIFT))
-    .map(s=>{const e=s.ex.find(x=>x.k===TRLIFT);
-      return {v:e.w, l:fmtD(s.d).replace(/^\w+, /,''), d:s.d};});
-  const dl = pts.length>1 ? pts.at(-1).v-pts[0].v : 0;
-  const dcls = dl>0?'up':dl<0?'dn':'flat';
+  // Get all unique groups and filter exercises
+  const allGroups=[...new Set(allK.map(groupOf))];
+  if(!TREND_GROUP || !allGroups.includes(TREND_GROUP)) TREND_GROUP=allGroups[0];
+  const groupExercises=allK.filter(k=>groupOf(k)===TREND_GROUP);
 
   // weekly consistency (last 8 weeks)
   const wk={};
@@ -1071,7 +1098,8 @@ function renderTrends(){
   });
   const gtot=Object.values(grp).reduce((a,b)=>a+b,0)||1;
 
-  b.innerHTML=`
+  // Build HTML with group filter dropdown and exercise trends
+  let html=`
     <div class="stat-grid">
       <div class="stat"><div class="l">Sessions</div><div class="v">${DB.sessions.length}</div>
         <div class="d">${DB.sessions.length?ago(DB.sessions.at(-1).d):'—'} last</div></div>
@@ -1079,19 +1107,32 @@ function renderTrends(){
         <div class="d">3+ sessions/wk</div></div>
     </div>
 
-    <select class="pick" onchange="TRLIFT=this.value;draw()">
-      ${allK.map(k=>`<option value="${k}" ${k===TRLIFT?'selected':''}>${nameOf(k)}</option>`).join('')}
-    </select>
+    <select class="pick" onchange="TREND_GROUP=this.value;draw()">
+      ${allGroups.map(g=>`<option value="${g}" ${g===TREND_GROUP?'selected':''}>${g}</option>`).join('')}
+    </select>`;
 
-    <div class="chart-card">
-      <div class="chart-hd">
-        <h3>${nameOf(TRLIFT)}</h3>
-        <span class="delta ${dcls}">${dl>0?'+':''}${dl} lb</span>
-      </div>
-      <div class="chart-sub">${pts.length} session${pts.length>1?'s':''} · now ${pts.at(-1)?.v ?? '—'} lb</div>
-      ${lineChart(pts, colOf(TRLIFT))}
-    </div>
+  // Show trends for each exercise in the selected group
+  if(groupExercises.length){
+    groupExercises.forEach(k=>{
+      const pts=DB.sessions.filter(s=>s.ex.some(e=>e.k===k))
+        .map(s=>{const e=s.ex.find(x=>x.k===k);
+          return {v:e.w, l:fmtD(s.d).replace(/^\w+, /,''), d:s.d};});
+      const dl = pts.length>1 ? pts.at(-1).v-pts[0].v : 0;
+      const dcls = dl>0?'up':dl<0?'dn':'flat';
 
+      html+=`
+      <div class="chart-card">
+        <div class="chart-hd">
+          <h3>${nameOf(k)}</h3>
+          <span class="delta ${dcls}">${dl>0?'+':''}${dl} lb</span>
+        </div>
+        <div class="chart-sub">${pts.length} session${pts.length>1?'s':''} · now ${pts.at(-1)?.v ?? '—'} lb</div>
+        ${lineChart(pts, colOf(k))}
+      </div>`;
+    });
+  }
+
+  html+=`
     <div class="chart-card">
       <div class="chart-hd"><h3>Consistency</h3>
         <span class="delta ${weeks.at(-1).v>=3?'up':'dn'}">${weeks.at(-1).v} this wk</span></div>
@@ -1114,6 +1155,8 @@ function renderTrends(){
         Legs should be the biggest bar. For 14 months it was the smallest — that's the thing this plan exists to fix.
       </div>
     </div>`;
+
+  b.innerHTML=html;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1351,6 +1394,7 @@ $$('.tab').forEach(t=>t.onclick=()=>{
 // Wait for config to load, then initialize
 (async()=>{
   await loadConfig();
+  await loadWeightsFromSheet(); // Non-blocking weights override
   draw();
 })();
 </script>

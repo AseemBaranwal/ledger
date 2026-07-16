@@ -27,7 +27,8 @@
       "Bash(git commit -m 'Add beep sound when rest timer expires *)",
       "Bash(node -e \"const fs=require\\('fs'\\); fs.readFileSync\\('index.html', 'utf-8'\\); console.log\\('✓ HTML file is readable'\\);\")",
       "Bash(npm install *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git commit -m 'Phase 2: Create Zustand stores \\(4\\) *)"
     ]
   }
 }

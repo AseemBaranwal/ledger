@@ -1,127 +1,142 @@
-import { useState, useMemo } from 'react'
-import { useSessionStore, useConfigStore } from '@/store'
+import { useSessionStore, useUIStore } from '@/store'
+import type { ProgramExercise } from '@/types'
+import { lastOf } from '@/services/trendCalculations'
+import { ago } from '@/services/dateUtils'
 import styles from '../../styles/components.module.css'
 
 interface ExerciseLoggerProps {
-  exercise: any
+  def: ProgramExercise
   index: number
 }
 
-export function ExerciseLogger({ exercise, index }: ExerciseLoggerProps) {
-  const draft = useSessionStore((s) => s.draft)
-  const program = useConfigStore((s) => s.program)
+const INCREMENTS = [2.5, 5, 10, 25]
+
+function repOpts(target: number): number[] {
+  const o = new Set<number>()
+  for (let v = Math.max(1, target - 4); v <= target + 4; v++) o.add(v)
+  return [...o]
+}
+
+export function ExerciseLogger({ def, index }: ExerciseLoggerProps) {
+  const draftEx = useSessionStore((s) => s.draftEx)
+  const sessions = useSessionStore((s) => s.sessions)
+  const bumpWeight = useSessionStore((s) => s.bumpWeight)
+  const setWeight = useSessionStore((s) => s.setWeight)
   const logRep = useSessionStore((s) => s.logRep)
+  const clearSet = useSessionStore((s) => s.clearSet)
 
-  const exerciseDef = useMemo(() => {
-    if (!program || !draft?.s) return null
-    const session = program[draft.s]
-    return session?.ex?.find((e: any) => e.k === exercise.k)
-  }, [program, draft, exercise])
+  const weightIncrement = useUIStore((s) => s.weightIncrement)
+  const setWeightIncrement = useUIStore((s) => s.setWeightIncrement)
+  const openExerciseIndex = useUIStore((s) => s.openExerciseIndex)
+  const setOpenExerciseIndex = useUIStore((s) => s.setOpenExerciseIndex)
 
-  const [weight, setWeight] = useState(exerciseDef?.w || 0)
+  if (!draftEx || !draftEx[index]) return null
+  const ex = draftEx[index]
+  const last = lastOf(sessions, def.k)
+  const full = ex.r.length >= def.s
+  const isOpen = openExerciseIndex === index
 
-  if (!draft || !draft.ex || !exerciseDef) return null
-
-  const currentEx = draft.ex[index]
-  const repsLogged = currentEx?.r?.length || 0
-
-  const handleLogRep = () => {
-    logRep(index, exerciseDef.r, [weight])
+  const handleLogRep = (v: number) => {
+    logRep(index, v)
+    setOpenExerciseIndex(ex.r.length + 1 >= def.s ? null : index)
+    useUIStore.getState().setTimer(90, true)
   }
 
   return (
-    <div className={styles.card} style={{ marginBottom: '12px' }}>
-      <div style={{ padding: '12px' }}>
-        <div style={{ marginBottom: '8px' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '4px' }}>
-            {exerciseDef.n}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-            {exerciseDef.s} × {exerciseDef.r} reps
-          </div>
+    <div className={`${styles.card} ${full ? styles.done : ''}`}>
+      <div className={styles.exHead}>
+        <div className={styles.exName}>
+          {def.n.includes('★') ? (
+            <>
+              {def.n.replace('★', '')}
+              <span className={styles.star}> ★</span>
+            </>
+          ) : def.n}
         </div>
-
-        {exerciseDef.cue && (
-          <div style={{ fontSize: '12px', color: 'var(--dim)', marginBottom: '12px', fontStyle: 'italic' }}>
-            {exerciseDef.cue}
-          </div>
-        )}
-
-        {/* Weight Stepper */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
-          <button
-            className={styles.btn}
-            style={{
-              width: '40px',
-              padding: '8px',
-              background: 'var(--surface)',
-              border: '1px solid var(--line)',
-            }}
-            onClick={() => setWeight(Math.max(0, weight - 2.5))}
-          >
-            −
-          </button>
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <input
-              type="number"
-              value={weight}
-              onChange={(e) => setWeight(parseFloat(e.target.value) || 0)}
-              style={{
-                width: '70px',
-                fontSize: '20px',
-                fontWeight: 'bold',
-                textAlign: 'center',
-                background: 'var(--surface)',
-                border: '1px solid var(--line)',
-                padding: '8px',
-                borderRadius: '4px',
-                color: 'var(--amber)',
-              }}
-            />
-            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
-              {exerciseDef.u}
-            </div>
-          </div>
-          <button
-            className={styles.btn}
-            style={{
-              width: '40px',
-              padding: '8px',
-              background: 'var(--amber)',
-              color: '#14181D',
-              border: 'none',
-            }}
-            onClick={() => setWeight(weight + 2.5)}
-          >
-            +
-          </button>
-        </div>
-
-        {/* Set Tracker */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-          {Array.from({ length: exerciseDef.s }).map((_, i) => (
-            <button
-              key={i}
-              onClick={handleLogRep}
-              style={{
-                padding: '12px 8px',
-                background: i < repsLogged ? 'var(--amber)' : 'var(--surface)',
-                border: `2px solid ${i < repsLogged ? 'var(--amber)' : 'var(--line)'}`,
-                borderRadius: '6px',
-                color: i < repsLogged ? '#14181D' : 'var(--muted)',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-              }}
-            >
-              SET {i + 1}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px', textAlign: 'center' }}>
-          {repsLogged} of {exerciseDef.s} sets logged
+        <div className={`${styles.exTarget} mono`}>
+          {def.s}×{def.r}
         </div>
       </div>
+
+      {last ? (
+        <div className={`${styles.exLast} mono`}>
+          Last: <b>{last.ws ? last.ws.join(',') : last.w}{def.u === '+lb' ? ' extra' : ''} × {last.r.join(',')}</b> · {ago(last.d)}
+        </div>
+      ) : (
+        <div className={styles.exLast}>First time. Start at the target and see how it moves.</div>
+      )}
+
+      <div className={styles.exCue}>{def.cue}</div>
+
+      <div className={styles.stepper}>
+        <button className={styles.stepBtn} onClick={() => bumpWeight(index, -1, weightIncrement)}>
+          −
+        </button>
+        <div className={styles.stepVal}>
+          <input
+            className="mono"
+            type="number"
+            inputMode="decimal"
+            value={ex.w}
+            onChange={(e) => setWeight(index, parseFloat(e.target.value) || 0)}
+            onFocus={(e) => e.target.select()}
+          />
+          <span className={styles.unit}>{def.u === '+lb' ? 'EXTRA LB' : def.u.toUpperCase()}</span>
+        </div>
+        <button className={styles.stepBtn} onClick={() => bumpWeight(index, 1, weightIncrement)}>
+          +
+        </button>
+      </div>
+
+      <div className={styles.incSel}>
+        {INCREMENTS.map((v) => (
+          <button
+            key={v}
+            className={`${styles.inc} ${weightIncrement === v ? styles.on : ''}`}
+            onClick={() => setWeightIncrement(v)}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.sets}>
+        {Array.from({ length: Math.max(def.s, ex.r.length) }).map((_, j) => {
+          const v = ex.r[j]
+          if (v == null) {
+            return (
+              <button key={j} className={styles.blk} onClick={() => setOpenExerciseIndex(index)}>
+                <span className={styles.n}>–</span>
+                <span className={styles.lab}>Set {j + 1}</span>
+              </button>
+            )
+          }
+          const cls = v > def.r ? styles.over : v < def.r ? styles.under : styles.filled
+          return (
+            <button key={j} className={`${styles.blk} ${cls}`} onClick={() => clearSet(index, j)}>
+              <span className={styles.n}>{v}</span>
+              <span className={styles.lab}>Set {j + 1}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {isOpen && (
+        <div className={styles.reps}>
+          {repOpts(def.r).map((v) => (
+            <button
+              key={v}
+              className={`${styles.rep} ${v === def.r ? styles.tgt : ''}`}
+              onClick={() => handleLogRep(v)}
+            >
+              {v}
+            </button>
+          ))}
+          <button className={`${styles.rep} ${styles.x}`} onClick={() => setOpenExerciseIndex(null)}>
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   )
 }

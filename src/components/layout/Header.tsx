@@ -11,11 +11,11 @@ export function Header({ date, streak, onLogoClick }: HeaderProps) {
     <header className={styles.header}>
       <div className={styles.headerIn}>
         <div className={styles.brand} onClick={onLogoClick}>
-          Ledger <em>.</em>
+          LED<em>G</em>ER
         </div>
         <div className={styles.topMeta}>
           <b>{date}</b>
-          <span>{streak} workouts</span>
+          <span>{streak ? `${streak} week streak` : 'no streak yet'}</span>
         </div>
       </div>
     </header>

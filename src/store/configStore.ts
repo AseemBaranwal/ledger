@@ -5,6 +5,7 @@ interface ConfigStore {
   program: Program
   restDays: RestDays
   colours: Record<string, string>
+  schedule: { weekDays: number[]; priority: string[]; restColour: Record<string, string> }
   sheetUrl: string
   loading: boolean
   error: string | null
@@ -25,6 +26,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   program: DEFAULT_CONFIG.program,
   restDays: DEFAULT_CONFIG.restDays,
   colours: DEFAULT_CONFIG.colours,
+  schedule: DEFAULT_CONFIG.schedule,
   sheetUrl: localStorage.getItem('ledger.sheetUrl') || '',
   loading: true,
   error: null,
@@ -39,6 +41,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
         program: config.program,
         restDays: config.restDays,
         colours: config.colours,
+        schedule: config.schedule || DEFAULT_CONFIG.schedule,
         loading: false,
       })
     } catch (error) {

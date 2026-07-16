@@ -8,6 +8,9 @@ interface UIStore {
   notifications: Notification[]
   timerActive: boolean
   timerSeconds: number
+  weightIncrement: number
+  openExerciseIndex: number | null
+  openWeekDay: number | null
 
   setTab: (tab: 'today' | 'history' | 'trends' | 'sync') => void
   toggleExpandHistory: (id: string) => void
@@ -16,6 +19,9 @@ interface UIStore {
   dismissNotification: (id: string) => void
   setTimer: (seconds: number, active: boolean) => void
   tickTimer: () => void
+  setWeightIncrement: (inc: number) => void
+  setOpenExerciseIndex: (i: number | null) => void
+  toggleWeekDay: (dow: number) => void
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -25,6 +31,9 @@ export const useUIStore = create<UIStore>((set) => ({
   notifications: [],
   timerActive: false,
   timerSeconds: 0,
+  weightIncrement: 5,
+  openExerciseIndex: null,
+  openWeekDay: null,
 
   setTab: (tab) => set({ activeTab: tab }),
 
@@ -60,4 +69,12 @@ export const useUIStore = create<UIStore>((set) => ({
       timerActive: newSeconds > 0,
     }
   }),
+
+  setWeightIncrement: (inc) => set({ weightIncrement: inc }),
+
+  setOpenExerciseIndex: (i) => set({ openExerciseIndex: i }),
+
+  toggleWeekDay: (dow) => set((state) => ({
+    openWeekDay: state.openWeekDay === dow ? null : dow,
+  })),
 }))

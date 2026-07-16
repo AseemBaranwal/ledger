@@ -31,7 +31,7 @@ describe('trendCalculations', () => {
       ws: [75, 75, 75, 74],
     }
     const vol = calculateVolume(ex, 24)
-    expect(vol).toBeCloseTo(1799, 0)
+    expect(vol).toBeCloseTo(1794, 0)
   })
 
   it('getMaxWeight() should return highest weight', () => {
@@ -43,19 +43,17 @@ describe('trendCalculations', () => {
     expect(getMaxWeight(ex)).toBe(75)
   })
 
-  it('checkPRs() should find max weight across sessions', () => {
-    const sessions: Session[] = [
-      {
-        d: '2026-07-15',
-        s: 'LA',
-        ex: [{ k: 'SQ', r: [6], ws: [75, 75, 75] }],
-      },
-      {
-        d: '2026-07-14',
-        s: 'LA',
-        ex: [{ k: 'SQ', r: [6], ws: [74, 74, 74] }],
-      },
-    ]
-    expect(checkPRs(sessions, 'SQ')).toBe(75)
+  it('checkPRs() should flag exercises that hit a new max weight', () => {
+    const prior: Session = {
+      d: '2026-07-14',
+      s: 'LA',
+      ex: [{ k: 'SQ', r: [6], ws: [74, 74, 74] }],
+    }
+    const latest: Session = {
+      d: '2026-07-15',
+      s: 'LA',
+      ex: [{ k: 'SQ', r: [6], ws: [75, 75, 75] }],
+    }
+    expect(checkPRs(latest, [prior, latest])).toEqual(['SQ'])
   })
 })

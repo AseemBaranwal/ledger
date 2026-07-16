@@ -269,7 +269,7 @@
 }
 
 /* ── sticky rest timer ───────────────────────────────────── */
-.rest {
+.restTimer {
   position: fixed;
   left: 0;
   right: 0;
@@ -279,7 +279,7 @@
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.rest.up {
+.restTimer.up {
   transform: none;
 }
 
@@ -692,4 +692,313 @@ svg.chart {
   color: #FFC4C4;
   margin-bottom: 12px;
   line-height: 1.5;
+}
+
+/* ── week-at-a-glance ────────────────────────────────────── */
+.wkCard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.wkHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.wkHead h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: 'Inter';
+}
+
+.wkRow {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--line);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wkRow:last-of-type {
+  border-bottom: none;
+}
+
+.wkRow.now {
+  margin: 2px -8px;
+  padding: 7px 8px 7px 10px;
+  background: var(--raised);
+  border-radius: 8px;
+  border-bottom: none;
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+
+.wkRow.now .wkItem,
+.wkRow.now .wkItem.rest {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.wkDetail {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 3px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.wkRow.now .wkDetail {
+  color: var(--muted);
+}
+
+.wkChev {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.wkRow.now .wkChev,
+.wkRow.open .wkChev {
+  color: var(--amber);
+}
+
+.wkExpand {
+  margin: 2px 0 6px;
+  animation: wkin 0.14s ease;
+}
+
+@keyframes wkin {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.wdSess {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 6px 0;
+}
+
+.wdH {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.wdGym {
+  font-size: 10px;
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.wdEx {
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.wdEx:last-of-type {
+  border-bottom: none;
+}
+
+.wdExh {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.wdName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wdName .star {
+  color: var(--amber);
+}
+
+.wdTgt {
+  font-size: 11px;
+  color: var(--amber);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wdLast {
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-top: 3px;
+}
+
+.wdCue {
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.wdStart {
+  margin-top: 10px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: 'Inter';
+  cursor: pointer;
+}
+
+.wdStart:active {
+  background: var(--ink);
+}
+
+.wkDay {
+  flex: 0 0 74px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.wkRow.now .wkDay {
+  color: var(--amber);
+}
+
+.wkBody {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  flex: 1;
+}
+
+.wkItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.wkItem.rest {
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.wkItem.ok {
+  color: var(--dim);
+}
+
+.wkDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.wkCheck {
+  color: var(--teal);
+  font-weight: 700;
+}
+
+.wkOwed {
+  margin-top: 10px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+.wkOwedLbl {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--coral);
+  margin-bottom: 8px;
+}
+
+.wkOwedLbl.done {
+  color: var(--teal);
+}
+
+.wkOwedBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 11px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Inter';
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.wkOwedBtn:active {
+  background: var(--ink);
+}
+
+/* ── rest / cardio day prescription cards ───────────────── */
+.restCard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+
+.restHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.restName {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'Inter';
+}
+
+.restDur {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.restCue {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.45;
+  margin-top: 6px;
 }

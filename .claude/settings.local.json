@@ -39,7 +39,8 @@
       "Bash(git commit -m 'Remove node_modules and dist from git tracking *)",
       "Bash(git commit -m 'Fix: Restore old data, expandable history, and charts *)",
       "Bash(git commit -m 'Fix: History expandable, charts rendering, icon size, and weekly view *)",
-      "Bash(git commit -m 'Restore week calendar view to Today tab *)"
+      "Bash(git commit -m 'Restore week calendar view to Today tab *)",
+      "Bash(git commit -m 'Rebuild Today tab with complete UX workflow *)"
     ]
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useConfigStore, useUIStore } from '@/store'
+import { useConfigStore, useUIStore, useSessionStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
 import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 import styles from '@/styles/App.module.css'
@@ -9,6 +9,7 @@ export default function App() {
   const setTab = useUIStore((s) => s.setTab)
   const loadConfig = useConfigStore((s) => s.loadConfig)
   const loadWeights = useConfigStore((s) => s.loadWeights)
+  const clearDraft = useSessionStore((s) => s.clearDraft)
 
   useEffect(() => {
     // Initialize config and weights
@@ -28,7 +29,7 @@ export default function App() {
 
   return (
     <div className={styles.root}>
-      <Header date={todayStr} streak={0} onLogoClick={() => setTab('today')} />
+      <Header date={todayStr} streak={0} onLogoClick={() => { clearDraft(); setTab('today') }} />
 
       <main className={styles.wrap}>
         {activeTab === 'today' && <TodayTab />}

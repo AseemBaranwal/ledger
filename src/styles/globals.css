@@ -1,0 +1,91 @@
+/* ─────────────────────────────────────────────────────────────
+   LEDGER — a training log built to be used one-handed, in a gym,
+   between sets, with sweaty hands and bad lighting.
+   Signature: every set you finish fills a block. The work stacks up
+   in front of you. An exercise is done when its row is solid.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --ink: #14181D;        /* base */
+  --surface: #191E25;    /* cards */
+  --raised: #212832;     /* inputs, steppers */
+  --line: #2C343E;       /* hairlines */
+  --line-2: #3A4552;
+  --text: #E8ECF1;
+  --muted: #7E8A98;
+  --dim: #5A6572;
+
+  --amber: #FFB020;      /* the work colour. logged, done, PR */
+  --amber-dim: #8A5F14;
+  --teal: #00C2A8;       /* gain, progress, up */
+  --coral: #FF5C5C;      /* miss, warning, down */
+  --violet: #8B7CF6;     /* body / composition */
+
+  --legs: #00C2A8;
+  --push: #4C9BE8;
+  --pull: #B57CF6;
+  --sprint: #FF6B4A;
+
+  --r: 12px;
+  --tap: 52px;           /* minimum thumb target */
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  overscroll-behavior-y: contain;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+h1, h2, h3, .display {
+  font-family: 'Bricolage Grotesque', 'Inter', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+input, textarea, select {
+  font: inherit;
+  color: inherit;
+}
+
+.empty {
+  text-align: center;
+  padding: 52px 20px;
+  color: var(--dim);
+}
+
+.empty .big {
+  font-size: 15px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}

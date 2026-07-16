@@ -24,7 +24,10 @@
       "Bash(git commit -m 'Make rest activity duration editable *)",
       "Bash(git commit -m 'Archive Body tab and simplify Sync section *)",
       "Bash(git commit -m 'Fix critical timezone bug: use local date in iso\\(\\) function *)",
-      "Bash(git commit -m 'Add beep sound when rest timer expires *)"
+      "Bash(git commit -m 'Add beep sound when rest timer expires *)",
+      "Bash(node -e \"const fs=require\\('fs'\\); fs.readFileSync\\('index.html', 'utf-8'\\); console.log\\('✓ HTML file is readable'\\);\")",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
     ]
   }
 }

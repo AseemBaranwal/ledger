@@ -1,0 +1,18 @@
+{
+  "name": "Ledger — Training Log",
+  "short_name": "Ledger",
+  "description": "Log lifts between sets. See if the number is going up.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14181D",
+  "theme_color": "#14181D",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -721,6 +721,12 @@ function newDraft(code){
       return {k:e.k, w:(l&&l.w!=null)?l.w:e.w, r:[]};
     }), n:'' };
 }
+window.startRestSession=(dow)=>{
+  const r=REST_DAYS[dow]||{t:'Rest',s:'',items:[]};
+  DRAFT={ d:today(), s:`REST_${dow}`, g:r.t,
+    items:r.items.map(it=>({n:it.n, d:it.d, done:false})), n:'' };
+  OPEN=null; draw(); buzz();
+}
 function renderToday(){
   const dow=new Date().getDay();
   const codes=pickSession();
@@ -739,8 +745,9 @@ function renderToday(){
           <div class="rest-head"><span class="rest-name">${it.n}</span><span class="rest-dur mono">${it.d}</span></div>
           <div class="rest-cue">${it.cue}</div>
         </div>`).join('');
+      const restBtn = r.items?.length ? `<button class="btn primary" style="margin-bottom:8px" onclick="startRestSession(${dow})">${r.items.length > 1 ? 'Start ' + r.t : 'Start ' + r.items[0].n}</button>` : '';
       body.innerHTML=renderWeek()+`
-        ${rc?`<div class="sec"><h2>Today's Plan</h2><div class="rule"></div></div>${rc}`:''}`;
+        ${rc?`<div class="sec"><h2>Today's Plan</h2><div class="rule"></div></div>${rc}${restBtn}`:''}`;
       return;
     }
     ti.innerHTML=codes.map(c=>`<span class="accent">${PROGRAM[c].name}</span>`).join(' + ');
@@ -758,57 +765,76 @@ function renderToday(){
   }
 
   // ── active session ──
-  const p=PROGRAM[DRAFT.s], col=COLOURS[p.colour];
+  const isRest = DRAFT.s.startsWith('REST_');
+  const p = isRest ? {name:DRAFT.g, colour:'legs'} : PROGRAM[DRAFT.s];
+  const col = isRest ? '#00C2A8' : COLOURS[p.colour];
   ti.innerHTML=`<span style="color:${col}">${p.name}</span>`;
-  const done=DRAFT.ex.filter(e=>e.r.length).length;
-  sb.innerHTML=`<span class="pill" style="background:${col}22;color:${col}"><span class="dot"></span>${p.gym}</span>
-                &nbsp;<span class="mono" style="color:var(--dim)">${done}/${DRAFT.ex.length} exercises</span>`;
+  const done = isRest ? DRAFT.items.filter(i=>i.done).length : DRAFT.ex.filter(e=>e.r.length).length;
+  const total = isRest ? DRAFT.items.length : DRAFT.ex.length;
+  sb.innerHTML=`<span class="pill" style="background:${col}22;color:${col}"><span class="dot"></span>${DRAFT.g}</span>
+                &nbsp;<span class="mono" style="color:var(--dim)">${done}/${total} ${isRest?'activities':'exercises'}</span>`;
 
-  body.innerHTML = DRAFT.ex.map((e,i)=>{
-    const def=p.ex.find(x=>x.k===e.k);
-    const l=lastOf(e.k);
-    const full=e.r.length>=def.s;
-    const isOpen=OPEN===i;
-    return `
-    <div class="card ${full?'done':''}">
+  if(isRest){
+    body.innerHTML = DRAFT.items.map((item,i)=>`
+    <div class="card ${item.done?'done':''}">
       <div class="ex-head">
-        <div class="ex-name">${def.n.replace('★','<span class="star">★</span>')}</div>
-        <div class="ex-target mono">${def.s}×${def.r}</div>
+        <div class="ex-name">${item.n}</div>
+        <div class="ex-target mono">${item.d}</div>
       </div>
-      ${l?`<div class="ex-last mono">Last: <b>${(l.ws?l.ws.join(','):l.w)}${def.u==='+lb'?' extra':''} × ${l.r.join(',')}</b> · ${ago(l.d)}</div>`:
-           `<div class="ex-last">First time. Start at the target and see how it moves.</div>`}
-      <div class="ex-cue">${def.cue}</div>
-
-      <div class="stepper">
-        <button class="step-btn" onclick="bump(${i},-1)">−</button>
-        <div class="step-val">
-          <input class="mono" type="number" inputmode="decimal" value="${e.w}"
-                 onchange="setW(${i},this.value)" onfocus="this.select()">
-          <span class="unit">${def.u==='+lb'?'EXTRA LB':def.u.toUpperCase()}</span>
+      <div style="padding:0 14px 12px">
+        <button class="btn ${item.done?'primary':'ghost'}" onclick="DRAFT.items[${i}].done=!DRAFT.items[${i}].done;draw()" style="margin-bottom:8px">
+          ${item.done?'✓ Done':'Mark Done'}
+        </button>
+      </div>
+    </div>`).join('');
+  } else {
+    body.innerHTML = DRAFT.ex.map((e,i)=>{
+      const def=p.ex.find(x=>x.k===e.k);
+      const l=lastOf(e.k);
+      const full=e.r.length>=def.s;
+      const isOpen=OPEN===i;
+      return `
+      <div class="card ${full?'done':''}">
+        <div class="ex-head">
+          <div class="ex-name">${def.n.replace('★','<span class="star">★</span>')}</div>
+          <div class="ex-target mono">${def.s}×${def.r}</div>
         </div>
-        <button class="step-btn" onclick="bump(${i},1)">+</button>
-      </div>
-      <div class="inc-sel">
-        ${[2.5,5,10,25].map(v=>`<button class="inc ${INC===v?'on':''}" onclick="INC=${v};draw()">${v}</button>`).join('')}
-      </div>
+        ${l?`<div class="ex-last mono">Last: <b>${(l.ws?l.ws.join(','):l.w)}${def.u==='+lb'?' extra':''} × ${l.r.join(',')}</b> · ${ago(l.d)}</div>`:
+             `<div class="ex-last">First time. Start at the target and see how it moves.</div>`}
+        <div class="ex-cue">${def.cue}</div>
 
-      <div class="sets">
-        ${Array.from({length:Math.max(def.s,e.r.length)},(_,j)=>{
-          const v=e.r[j];
-          if(v==null) return `<button class="blk" onclick="openReps(${i},${j})"><span class="n">–</span><span class="lab">Set ${j+1}</span></button>`;
-          const cls = v>def.r?'over' : v<def.r?'under' : 'filled';
-          return `<button class="blk ${cls}" onclick="clearSet(${i},${j})"><span class="n">${v}</span><span class="lab">Set ${j+1}</span></button>`;
-        }).join('')}
-      </div>
+        <div class="stepper">
+          <button class="step-btn" onclick="bump(${i},-1)">−</button>
+          <div class="step-val">
+            <input class="mono" type="number" inputmode="decimal" value="${e.w}"
+                   onchange="setW(${i},this.value)" onfocus="this.select()">
+            <span class="unit">${def.u==='+lb'?'EXTRA LB':def.u.toUpperCase()}</span>
+          </div>
+          <button class="step-btn" onclick="bump(${i},1)">+</button>
+        </div>
+        <div class="inc-sel">
+          ${[2.5,5,10,25].map(v=>`<button class="inc ${INC===v?'on':''}" onclick="INC=${v};draw()">${v}</button>`).join('')}
+        </div>
 
-      ${isOpen?`<div class="reps">
-        ${repOpts(def.r).map(v=>`<button class="rep ${v===def.r?'tgt':''}" onclick="logRep(${i},${v})">${v}</button>`).join('')}
-        <button class="rep x" onclick="OPEN=null;draw()">✕</button>
-      </div>`:''}
-    </div>`;
-  }).join('') + `
+        <div class="sets">
+          ${Array.from({length:Math.max(def.s,e.r.length)},(_,j)=>{
+            const v=e.r[j];
+            if(v==null) return `<button class="blk" onclick="openReps(${i},${j})"><span class="n">–</span><span class="lab">Set ${j+1}</span></button>`;
+            const cls = v>def.r?'over' : v<def.r?'under' : 'filled';
+            return `<button class="blk ${cls}" onclick="clearSet(${i},${j})"><span class="n">${v}</span><span class="lab">Set ${j+1}</span></button>`;
+          }).join('')}
+        </div>
+
+        ${isOpen?`<div class="reps">
+          ${repOpts(def.r).map(v=>`<button class="rep ${v===def.r?'tgt':''}" onclick="logRep(${i},${v})">${v}</button>`).join('')}
+          <button class="rep x" onclick="OPEN=null;draw()">✕</button>
+        </div>`:''}
+      </div>`;
+    }).join('');
+  }
+  body.innerHTML += `
     <div class="sec"><h2>Notes</h2><div class="rule"></div></div>
-    <textarea class="notes" placeholder="Form, energy, anything worth remembering. Gym if it wasn't ${p.gym}."
+    <textarea class="notes" placeholder="Form, energy, anything worth remembering. Gym if it wasn't ${DRAFT.g}."
       oninput="DRAFT.n=this.value">${DRAFT.n||''}</textarea>
     <div style="height:12px"></div>
     <button class="btn primary" onclick="finish()">Save session</button>
@@ -844,15 +870,22 @@ window.clearSet=(i,j)=>{
   buzz(8); draw();
 };
 window.finish=()=>{
-  const logged=DRAFT.ex.filter(e=>e.r.length);
-  if(!logged.length){ toast('Nothing logged yet'); return; }
-  DB.sessions.push({...DRAFT, ex:logged});
+  const isRest = DRAFT.s.startsWith('REST_');
+  if(isRest){
+    const logged=DRAFT.items.filter(i=>i.done);
+    if(!logged.length){ toast('Mark at least one activity done'); return; }
+  } else {
+    const logged=DRAFT.ex.filter(e=>e.r.length);
+    if(!logged.length){ toast('Nothing logged yet'); return; }
+  }
+
+  DB.sessions.push({...DRAFT, ...(isRest?{items:DRAFT.items}:{ex:DRAFT.ex.filter(e=>e.r.length)})});
   DB.sessions.sort((a,b)=>a.d.localeCompare(b.d));
   save(DB);
-  const prs=checkPRs(DRAFT);
+  const prs=isRest?[]:checkPRs(DRAFT);
   DRAFT=null; OPEN=null; stopRest(); draw();
   toast(prs.length?`Saved · ${prs.length} PR${prs.length>1?'s':''} 🔥`:'Session saved');
-  if(DB.sheetUrl) pushSheet();
+  if(DB.sheetUrl && !isRest) pushSheet();
 };
 function checkPRs(s){
   const prs=[];

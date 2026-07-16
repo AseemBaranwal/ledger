@@ -404,15 +404,7 @@ pre.digest{
       <div id="trBody"></div>
     </section>
 
-    <!-- ══════════ BODY ══════════ -->
-    <section class="panel" id="p-body">
-      <div class="hero">
-        <div class="eyebrow">The number that actually matters</div>
-        <h1>Body</h1>
-        <div class="hero-sub">Rescan every 4–6 weeks. Not weekly — the noise will mislead you.</div>
-      </div>
-      <div id="bBody"></div>
-    </section>
+    <!-- ══════════ BODY (archived) ══════════ -->
 
     <!-- ══════════ SYNC ══════════ -->
     <section class="panel" id="p-sync">
@@ -451,10 +443,6 @@ pre.digest{
     <button class="tab" data-p="trend">
       <svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/><path d="M3 21h18"/></svg>
       Trends
-    </button>
-    <button class="tab" data-p="body">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M6 21v-3a6 6 0 0112 0v3"/></svg>
-      Body
     </button>
     <button class="tab" data-p="sync">
       <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0114-5m2 5a8 8 0 01-14 5"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>
@@ -1211,35 +1199,11 @@ function digest(since){
 }
 function renderSync(){
   const b=$('#sBody');
-  const since=DB.lastSync;
-  const d=digest(since);
-  const est=Math.round(d.length/3.7);
   b.innerHTML=`
     ${!PERSISTS?`<div class="warn"><b>Preview mode.</b> Browser storage is blocked here, so nothing saves between reloads. Deploy to Netlify and it persists properly on your phone.</div>`:''}
 
-    <div class="note">Tap <b>Copy for Claude</b> and paste it into the chat. The format is deliberately terse — a full week costs roughly <b>${est} tokens</b> instead of ten times that as raw JSON.</div>
-
-    <button class="btn primary" onclick="copyDigest()">Copy for Claude</button>
-    <div style="height:8px"></div>
-    <div class="btn-row">
-      <button class="btn ghost" onclick="DB.lastSync=null;save(DB);draw()">Export everything</button>
-      <button class="btn ghost" onclick="markSynced()">Mark as sent</button>
-    </div>
-
-    <div class="sec"><h2>Preview</h2><div class="rule"></div>
-      <div class="cnt">${since?`since ${since}`:'all time'}</div></div>
-    <pre class="digest">${d.replace(/</g,'&lt;')}</pre>
-
-    <div class="sec"><h2>Backup</h2><div class="rule"></div></div>
-    <div class="note">Your data lives only on this phone. Download a backup now and then — if you clear your browser, it's gone.</div>
-    <div class="btn-row">
-      <button class="btn ghost" onclick="dl()">Download backup</button>
-      <button class="btn ghost" onclick="$('#imp').click()">Restore</button>
-    </div>
-    <input id="imp" type="file" accept="application/json" style="display:none" onchange="imp(this)">
-
-    <div class="sec"><h2>Google Sheet (optional)</h2><div class="rule"></div></div>
-    <div class="note">Paste an Apps Script URL and every saved session also appends to your Sheet — then Claude reads it straight from your Drive and you never paste anything. Setup steps are in <b>README.md</b>.</div>
+    <div class="sec"><h2>Google Sheet Sync</h2><div class="rule"></div></div>
+    <div class="note">Configure your Apps Script URL to sync sessions to sheets.</div>
     <div class="field"><label>Apps Script Web App URL</label>
       <input id="su" type="url" placeholder="https://script.google.com/macros/s/.../exec"
              value="${DB.sheetUrl||''}" style="font-size:13px"></div>
@@ -1247,7 +1211,15 @@ function renderSync(){
       <button class="btn ghost" onclick="DB.sheetUrl=$('#su').value.trim()||null;save(DB);draw();toast(DB.sheetUrl?'Sheet connected':'Sheet disconnected')">Save URL</button>
       <button class="btn ghost" onclick="restoreFromSheet()" ${!DB.sheetUrl?'disabled style="opacity:.5;cursor:not-allowed"':''}>Restore data</button>
     </div>
-    <div style="height:24px"></div>`;
+
+    <div class="sec"><h2>Backup</h2><div class="rule"></div></div>
+    <div class="note">Download a backup for safekeeping.</div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="dl()">Download</button>
+      <button class="btn ghost" onclick="$('#imp').click()">Restore</button>
+    </div>
+    <input id="imp" type="file" accept="application/json" style="display:none" onchange="imp(this)">
+    <div style="height:20px"></div>`;
 }
 window.copyDigest=async()=>{
   const t=digest(DB.lastSync);

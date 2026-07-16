@@ -21,7 +21,8 @@
       "Bash(git commit -m 'Show '\\\\''Start'\\\\'' buttons on rest days to allow optional logging *)",
       "Bash(git commit -m 'Remove '\\\\''Or log a workout'\\\\'' section from rest days *)",
       "Bash(git commit -m 'Add ability to log rest day activities \\(Easy Run, Ice Skating, etc\\) *)",
-      "Bash(git commit -m 'Make rest activity duration editable *)"
+      "Bash(git commit -m 'Make rest activity duration editable *)",
+      "Bash(git commit -m 'Archive Body tab and simplify Sync section *)"
     ]
   }
 }

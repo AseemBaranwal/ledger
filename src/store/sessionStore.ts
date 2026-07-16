@@ -13,10 +13,26 @@ interface SessionStore {
   logRep: (exerciseIndex: number, reps: number, weights: number[]) => void
 }
 
+// Migrate old data from vanilla JS app
+const migrateOldData = (): Session[] => {
+  try {
+    const oldData = localStorage.getItem('ledger.v1')
+    if (oldData) {
+      const parsed = JSON.parse(oldData)
+      if (parsed.sessions && Array.isArray(parsed.sessions)) {
+        return parsed.sessions
+      }
+    }
+  } catch (e) {
+    console.warn('Could not migrate old data:', e)
+  }
+  return []
+}
+
 export const useSessionStore = create<SessionStore>()(
   persist(
     (set) => ({
-      sessions: [],
+      sessions: migrateOldData(),
       draft: null,
 
       addSession: (session) => set((state) => ({

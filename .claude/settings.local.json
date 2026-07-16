@@ -33,7 +33,11 @@
       "Bash(git commit -m 'Phase 4: Tab components with app integration *)",
       "Bash(git commit -m 'Phase 5-6: Session components + Services *)",
       "Bash(git commit -m 'Phase 7: Add unit tests *)",
-      "Bash(git commit -m 'Phase 8-9: PWA setup, CI/CD, documentation, final QA *)"
+      "Bash(git commit -m 'Phase 8-9: PWA setup, CI/CD, documentation, final QA *)",
+      "Bash(git config *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m 'Remove node_modules and dist from git tracking *)",
+      "Bash(git commit -m 'Fix: Restore old data, expandable history, and charts *)"
     ]
   }
 }

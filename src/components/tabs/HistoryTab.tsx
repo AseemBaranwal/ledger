@@ -3,6 +3,7 @@ import styles from '../../styles/components.module.css'
 
 export function HistoryTab() {
   const sessions = useSessionStore((s) => s.sessions)
+  const expandedRow = useUIStore((s) => s.expandedHistoryRow)
   const toggleExpand = useUIStore((s) => s.toggleExpandHistory)
 
   const groupedByWeek = sessions.reduce(
@@ -30,21 +31,37 @@ export function HistoryTab() {
                 Week {week[0].d}
               </h3>
               {week.map((session) => (
-                <div
-                  key={session.id}
-                  className={styles.hrow}
-                  onClick={() => toggleExpand(session.id!)}
-                  style={{ cursor: 'pointer', marginBottom: '8px' }}
-                >
-                  <div className={styles.bar} style={{ background: 'var(--amber)' }} />
-                  <div className={styles.m}>
-                    <div className={styles.t}>{session.s || 'REST'}</div>
-                    <div className={styles.s}>{session.d}</div>
+                <div key={session.id}>
+                  <div
+                    className={styles.hrow}
+                    onClick={() => toggleExpand(session.id!)}
+                    style={{ cursor: 'pointer', marginBottom: '8px' }}
+                  >
+                    <div className={styles.bar} style={{ background: 'var(--amber)' }} />
+                    <div className={styles.m}>
+                      <div className={styles.t}>{session.s || 'REST'}</div>
+                      <div className={styles.s}>{session.d}</div>
+                    </div>
+                    <div className={styles.v}>
+                      <b>{session.ex?.length || 0}</b>
+                      exercises
+                    </div>
                   </div>
-                  <div className={styles.v}>
-                    <b>{session.ex?.length || 0}</b>
-                    exercises
-                  </div>
+                  {expandedRow === session.id && (
+                    <div className={styles.hdetail} style={{ display: 'block', marginBottom: '12px' }}>
+                      {session.ex?.map((e) => (
+                        <div key={e.k} className={styles.ln}>
+                          <span className={styles.k}>{e.k}</span>
+                          <span>{e.ws ? e.ws.join(',') : e.w || 0} × {e.r.join(',')}</span>
+                        </div>
+                      ))}
+                      {session.n && (
+                        <div style={{ padding: '8px 0', color: 'var(--muted)', fontSize: '11px' }}>
+                          📝 {session.n}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

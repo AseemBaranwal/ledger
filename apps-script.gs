@@ -22,21 +22,50 @@
  *
  * That's it. Sessions now write to both your phone and the Sheet.
  * If you clear your browser, restore from Sheets using the same URL.
+ *
+ * SETS COLUMN FORMAT
+ * ───────────────────
+ * Each set is written as "reps*weight" (e.g. a set of 8 reps at 45 lb is
+ * "8*45"), and a whole exercise row's sets are comma-joined: "8*45,8*55,6*55".
+ * A bodyweight set with no logged weight is written as just the rep count
+ * ("8"). This keeps each set self-contained instead of splitting reps and
+ * weights across two parallel columns you have to zip together by index —
+ * much easier to read at a glance, and for Claude to parse directly.
+ *
+ * The column is forced to plain-text format (see FORCE_TEXT_COLUMNS below)
+ * because Google Sheets will otherwise silently reinterpret a value like
+ * "100,100,100,100" as the NUMBER 100100100100 (it matches the thousands-
+ * separator pattern) and corrupt the data. Don't remove that formatting call.
+ *
+ * MIGRATING AN EXISTING SHEET
+ * ────────────────────────────
+ * If your Sessions sheet still has the old separate weight/reps columns,
+ * run migrateSessionsSheetFormat_ once from the Apps Script editor (select
+ * it in the function dropdown, click Run). It duplicates the sheet as a
+ * timestamped backup tab first, then rewrites the original in place — it
+ * never deletes anything, so the old data is always recoverable from the
+ * backup tab if something looks wrong.
  */
 
 const HEADERS = [
-  'date', 'session', 'gym', 'exercise', 'weight', 'reps', 'sets', 'total_reps', 'volume', 'notes'
+  'date', 'session', 'gym', 'exercise', 'sets', 'set_count', 'total_reps', 'volume', 'notes'
 ];
+const SETS_COL = HEADERS.indexOf('sets') + 1; // 1-indexed, for range formatting
 
 function doGet(e) {
   try {
     const action = e.parameter.action || 'export';
 
+    if (action === 'migrate') {
+      migrateSessionsSheetFormat_();
+      return ContentService.createTextOutput('migration attempted — check the Sessions sheet and look for a new Sessions_backup_* tab');
+    }
+
     if (action === 'export') {
       const sh = ensureSheet_();
       const bs = ensureBodySheet_();
 
-      const sessRows = sh.getDataRange().getValues().slice(1);
+      const sessRows = dropHeaderRowIfPresent_(sh.getDataRange().getValues());
       const bodyRows = bs.getDataRange().getValues().slice(1);
 
       const sessions = parseSessionRows_(sessRows);
@@ -61,24 +90,24 @@ function doPost(e) {
     if (body.type === 'session') {
       const rows = body.ex.map((x, idx) => {
         const totalReps = x.r.reduce((a, b) => a + b, 0);
-        // Get weight for each set, fall back to single weight if using old format
         const weights = x.ws || Array(x.r.length).fill(x.w);
-        const avgWeight = weights.length ? weights.reduce((a,b)=>a+b,0)/weights.length : x.w;
+        const volume = x.r.reduce((sum, r, i) => sum + r * (weights[i] || 0), 0);
         return [
           body.d,
           body.s,
           body.g || '',
           x.k,
-          weights.join(','),  // weights for each set
-          x.r.join(','),       // reps for each set
-          x.r.length,          // number of sets
+          formatSets_(x.r, weights),
+          x.r.length,
           totalReps,
-          Math.round(totalReps * avgWeight),
+          Math.round(volume),
           idx === 0 ? (body.n || '') : ''  // Only write notes on first exercise row
         ];
       });
       if (rows.length) {
-        sh.getRange(sh.getLastRow() + 1, 1, rows.length, HEADERS.length).setValues(rows);
+        const startRow = sh.getLastRow() + 1;
+        sh.getRange(startRow, 1, rows.length, HEADERS.length).setValues(rows);
+        forceTextFormat_(sh, startRow, rows.length);
       }
     }
 
@@ -95,21 +124,86 @@ function doPost(e) {
   }
 }
 
+// One set → "reps*weight", or just "reps" when there's no weight to log
+// (bodyweight movements). weight === null/undefined means "not logged".
+function formatSets_(reps, weights) {
+  return reps.map((r, i) => {
+    const w = weights[i];
+    return (w === null || w === undefined || w === '') ? String(r) : (r + '*' + w);
+  }).join(',');
+}
+
+// Inverse of formatSets_. Returns {r: number[], ws: number[]|undefined} —
+// ws is only set if at least one set in the row actually had a weight logged.
+function parseSets_(setsStr) {
+  if (!setsStr) return { r: [], ws: undefined };
+  const parts = String(setsStr).split(',').map(function (p) { return p.trim(); }).filter(Boolean);
+  const r = [];
+  const ws = [];
+  let hasWeight = false;
+  parts.forEach(function (p) {
+    const star = p.indexOf('*');
+    if (star >= 0) {
+      r.push(Number(p.slice(0, star)));
+      ws.push(Number(p.slice(star + 1)));
+      hasWeight = true;
+    } else {
+      r.push(Number(p));
+      ws.push(null);
+    }
+  });
+  return { r: r, ws: hasWeight ? ws : undefined };
+}
+
+// Reverses the exact corruption Sheets applies to a value like
+// "100,100,100,100": it strips the commas and reads it as one number,
+// 100100100100. Splitting that number's digits back into 3-digit groups
+// from the left recovers the original values — but only trust the result
+// if it cleanly divides into exactly the number of sets we expected.
+function recoverCorruptedWeight_(value, expectedCount) {
+  const digits = String(Math.trunc(Math.abs(value)));
+  if (digits.length % 3 !== 0) return null;
+  const groups = [];
+  for (let i = 0; i < digits.length; i += 3) {
+    groups.push(Number(digits.slice(i, i + 3)));
+  }
+  return groups.length === expectedCount ? groups : null;
+}
+
+// Google Sheets auto-detects a string like "100,100,100,100" as the number
+// 100100100100 (it matches the thousands-separator pattern) unless the cell
+// is explicitly plain-text formatted. Call this after every write to the
+// sets column so that never silently corrupts data again.
+function forceTextFormat_(sh, startRow, numRows) {
+  sh.getRange(startRow, SETS_COL, numRows, 1).setNumberFormat('@');
+}
+
+// Only drop row 1 if it's actually the header row (literal label strings).
+// A blind .slice(1) is what silently ate real session data on this sheet
+// before: the "Sessions" tab existed but had no header written yet, so the
+// very first session landed in row 1 and every export since then quietly
+// discarded it assuming it was labels.
+function dropHeaderRowIfPresent_(rows) {
+  if (rows.length && rows[0][0] === 'date' && rows[0][1] === 'session') {
+    return rows.slice(1);
+  }
+  return rows;
+}
+
 function parseSessionRows_(rows) {
   const sessions = {};
   const sessionNotes = {};
 
-  rows.forEach((row, rowIdx) => {
-    const [date, session, gym, exercise, weight, reps, sets, totalReps, volume, notes] = row;
+  rows.forEach(function (row) {
+    const date = row[0], session = row[1], gym = row[2], exercise = row[3],
+          sets = row[4], notes = row[8];
     if (!date || !session) return;
 
-    // Normalize date to ISO format
     const dateStr = normalizeDateString_(date);
     if (!dateStr) return;
 
     const key = dateStr + '|' + session;
 
-    // Store notes only from first row of each session
     if (!sessions[key] && notes) {
       sessionNotes[key] = notes;
     }
@@ -125,39 +219,18 @@ function parseSessionRows_(rows) {
     }
 
     if (exercise) {
-      const repsArray = reps
-        ? String(reps).split(',').map(r => {
-            const n = Number(r.trim());
-            return isNaN(n) ? 0 : n;
-          })
-        : [];
-
-      const weightsStr = String(weight || '');
-      const weightsArray = weightsStr
-        ? weightsStr.split(',').map(w => {
-            const n = Number(w.trim());
-            return isNaN(n) ? null : n;
-          })
-        : [];
-
-      const exObj = {
-        k: String(exercise).trim(),
-        r: repsArray
-      };
-
-      // If per-set weights exist, use ws. Otherwise fallback to single weight
-      if (weightsArray.length > 0 && weightsArray.some(w => w !== null)) {
-        exObj.ws = weightsArray;
+      const parsed = parseSets_(sets);
+      const exObj = { k: String(exercise).trim(), r: parsed.r };
+      if (parsed.ws) {
+        exObj.ws = parsed.ws;
       } else {
-        exObj.w = weightsArray.length > 0 && weightsArray[0] !== null ? weightsArray[0] : null;
+        exObj.w = null;
       }
-
       sessions[key].ex.push(exObj);
     }
   });
 
-  // Ensure all sessions have their notes
-  Object.keys(sessions).forEach(key => {
+  Object.keys(sessions).forEach(function (key) {
     if (!sessions[key].n && sessionNotes[key]) {
       sessions[key].n = sessionNotes[key];
     }
@@ -169,12 +242,10 @@ function parseSessionRows_(rows) {
 function normalizeDateString_(val) {
   if (!val) return null;
 
-  // If already ISO format, return as-is
   if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
     return val;
   }
 
-  // Try to parse as Date object or string
   try {
     const d = new Date(val);
     if (isNaN(d)) return null;
@@ -185,8 +256,8 @@ function normalizeDateString_(val) {
 }
 
 function parseBodyRows_(rows) {
-  return rows.map(row => {
-    const [date, weight, bf, muscle, waist, ferritin] = row;
+  return rows.map(function (row) {
+    const date = row[0], weight = row[1], bf = row[2], muscle = row[3], waist = row[4], ferritin = row[5];
     if (!date) return null;
 
     const dateStr = normalizeDateString_(date);
@@ -200,7 +271,7 @@ function parseBodyRows_(rows) {
       waist: waist ? Number(waist) : null,
       fer: ferritin ? Number(ferritin) : null
     };
-  }).filter(x => x);
+  }).filter(function (x) { return x; });
 }
 
 function ensureSheet_() {
@@ -231,4 +302,113 @@ function ensureBodySheet_() {
     sh.setFrozenRows(1);
   }
   return sh;
+}
+
+/**
+ * ONE-TIME MIGRATION — run manually from the Apps Script editor.
+ * Old layout: date, session, gym, exercise, weight, reps, sets(count),
+ *             total_reps, volume, notes
+ * New layout: date, session, gym, exercise, sets(reps*weight list),
+ *             set_count, total_reps, volume, notes
+ *
+ * Backs up the current sheet as "Sessions_backup_<timestamp>" first, then
+ * rewrites "Sessions" in place. Safe to re-run: if the header row already
+ * matches the new format, it does nothing.
+ */
+function migrateSessionsSheetFormat_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName('Sessions');
+  if (!sh) {
+    Logger.log('No Sessions sheet found — nothing to migrate.');
+    return;
+  }
+
+  const data = sh.getDataRange().getValues();
+  if (!data.length) {
+    Logger.log('Sessions sheet is empty — nothing to migrate.');
+    return;
+  }
+  if (JSON.stringify(data[0]) === JSON.stringify(HEADERS)) {
+    Logger.log('Sessions sheet is already in the new format. Nothing to do.');
+    return;
+  }
+
+  // Some sheets never got a real header row: if the "Sessions" tab already
+  // existed (but empty) before the very first session was logged,
+  // ensureSheet_ never ran its header-bootstrap branch, and doPost wrote
+  // that first session straight into row 1 — permanently burying the
+  // header and, worse, causing doGet to silently drop that entire row
+  // every time it exports (it unconditionally slices off "row 1" assuming
+  // it's a header). Detect that case and treat row 1 as real data instead
+  // of discarding it.
+  const hasRealHeaderRow = data[0][0] === 'date' && data[0][1] === 'session';
+  const oldRows = hasRealHeaderRow ? data.slice(1) : data;
+  if (!hasRealHeaderRow) {
+    Logger.log('No header row found — row 1 looks like real session data, not labels. ' +
+      'Treating all ' + oldRows.length + ' rows (including row 1) as data to migrate. ' +
+      'This also recovers whatever was silently dropped from every export until now.');
+  }
+
+  // Back up first. Never touch the original data before this succeeds.
+  const backupName = 'Sessions_backup_' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  sh.copyTo(ss).setName(backupName);
+  Logger.log('Backed up current sheet as "' + backupName + '"');
+  const newRows = oldRows.map(function (row) {
+    const date = row[0], session = row[1], gym = row[2], exercise = row[3],
+          weight = row[4], reps = row[5], notes = row[9];
+    if (!date && !session) return null; // skip fully blank rows
+
+    const repsArray = reps
+      ? String(reps).split(',').map(function (r) {
+          const n = Number(String(r).trim());
+          return isNaN(n) ? 0 : n;
+        })
+      : [];
+
+    let weightsArray = String(weight || '')
+      ? String(weight).split(',').map(function (w) {
+          const n = Number(String(w).trim());
+          return isNaN(n) ? null : n;
+        })
+      : [];
+    if (weightsArray.length > 0 && weightsArray.length < repsArray.length) {
+      const first = weightsArray.filter(function (w) { return w !== null; })[0];
+      if (first !== undefined) {
+        // The exact corruption this migration exists to fix: Sheets sometimes
+        // silently turns "100,100,100,100" into the number 100100100100 (it
+        // matches the thousands-separator pattern). If the single leftover
+        // value is implausibly large for a real weight, try reversing that
+        // exact transform — split its digits back into 3-digit groups —
+        // before falling back to just broadcasting it to every set.
+        let recovered = null;
+        if (weightsArray.length === 1 && Math.abs(first) > 999) {
+          recovered = recoverCorruptedWeight_(first, repsArray.length);
+        }
+        weightsArray = recovered || Array(repsArray.length).fill(first);
+      }
+    }
+
+    const setsStr = formatSets_(repsArray, weightsArray);
+    const totalReps = repsArray.reduce(function (a, b) { return a + b; }, 0);
+    const volume = repsArray.reduce(function (sum, r, i) {
+      return sum + r * (weightsArray[i] || 0);
+    }, 0);
+
+    return [date, session, gym, exercise, setsStr, repsArray.length, totalReps, Math.round(volume), notes || ''];
+  }).filter(function (r) { return r; });
+
+  sh.clearContents();
+  sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+  sh.getRange(1, 1, 1, HEADERS.length)
+    .setFontWeight('bold')
+    .setBackground('#14181D')
+    .setFontColor('#FFB020');
+  sh.setFrozenRows(1);
+
+  if (newRows.length) {
+    sh.getRange(2, 1, newRows.length, HEADERS.length).setValues(newRows);
+    forceTextFormat_(sh, 2, newRows.length);
+  }
+
+  Logger.log('Migrated ' + newRows.length + ' rows to the new format. Backup: "' + backupName + '"');
 }

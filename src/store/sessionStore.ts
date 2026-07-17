@@ -15,6 +15,7 @@ interface SessionStore {
   draftEx: DraftExercise[] | null // live weights while logging a PROGRAM session
   draftItems: RestItem[] | null // live done-state while logging a REST session
   pendingSync: string[] // session ids not yet confirmed pushed to the sheet
+  lastSyncedAt: number | null // ms epoch of the last successful push or manual sync
 
   startSession: (code: string, exList: { k: string; w: number }[], gym: string) => void
   startRestSession: (dow: number, title: string, items: RestItem[]) => void
@@ -28,6 +29,7 @@ interface SessionStore {
   saveDraft: () => number // returns count of PRs
   clearDraft: () => void
   flushPendingSync: () => void
+  markSynced: () => void
 }
 
 // Migrate old data from vanilla JS app
@@ -57,6 +59,7 @@ async function syncSession(session: Session, markPending: (id: string) => void, 
   try {
     await pushSession(sheetUrl, session)
     clearPending(session.id)
+    useSessionStore.setState({ lastSyncedAt: Date.now() })
   } catch (e) {
     markPending(session.id)
   }
@@ -70,6 +73,7 @@ export const useSessionStore = create<SessionStore>()(
       draftEx: null,
       draftItems: null,
       pendingSync: [],
+      lastSyncedAt: null,
 
       startSession: (code, exList, gym) => {
         const today = new Date()
@@ -217,6 +221,8 @@ export const useSessionStore = create<SessionStore>()(
           syncSession(session, markPending, clearPending)
         })
       },
+
+      markSynced: () => set({ lastSyncedAt: Date.now() }),
     }),
     {
       name: 'ledger.sessions',

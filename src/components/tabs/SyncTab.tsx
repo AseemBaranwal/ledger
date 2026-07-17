@@ -2,50 +2,45 @@ import { useState } from 'react'
 import { useConfigStore, useSessionStore, useUIStore } from '@/store'
 import { restoreFromSheet, pushSession } from '@/services/appScript'
 import type { Session } from '@/types'
+import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
 const dedupKey = (s: Session) => `${s.d}|${s.s}`
+
+function timeAgo(ms: number | null): string {
+  if (!ms) return 'never'
+  const diff = Date.now() - ms
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return 'just now'
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  return `${day}d ago`
+}
 
 export function SyncTab() {
   const sheetUrl = useConfigStore((s) => s.sheetUrl)
   const updateSheetUrl = useConfigStore((s) => s.updateSheetUrl)
   const loadWeights = useConfigStore((s) => s.loadWeights)
   const showNotification = useUIStore((s) => s.showNotification)
+  const sessions = useSessionStore((s) => s.sessions)
+  const pendingSync = useSessionStore((s) => s.pendingSync)
+  const lastSyncedAt = useSessionStore((s) => s.lastSyncedAt)
+  const flushPendingSync = useSessionStore((s) => s.flushPendingSync)
+  const markSynced = useSessionStore((s) => s.markSynced)
+
   const [url, setUrl] = useState(sheetUrl)
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  const connected = Boolean(sheetUrl)
+  const urlDirty = url !== sheetUrl
 
   const handleSaveUrl = () => {
     updateSheetUrl(url)
     showNotification('Sheet URL saved', 'success')
-  }
-
-  // Pull-only, but merges rather than overwrites: anything local that isn't
-  // in the sheet yet (e.g. a session that failed to push) is kept, not wiped.
-  const handleRestore = async () => {
-    if (!sheetUrl) {
-      showNotification('Sheet URL not configured', 'error')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const data = await restoreFromSheet(sheetUrl)
-      const remoteSessions: Session[] = Array.isArray(data.sessions) ? data.sessions : []
-      const localKeys = new Set(useSessionStore.getState().sessions.map(dedupKey))
-      const toPull = remoteSessions.filter((s) => !localKeys.has(dedupKey(s)))
-
-      if (toPull.length) {
-        useSessionStore.setState((state) => ({
-          sessions: [...state.sessions, ...toPull].sort((a, b) => a.d.localeCompare(b.d)),
-        }))
-      }
-      showNotification(`Restored ${toPull.length} new session${toPull.length === 1 ? '' : 's'}`, 'success')
-    } catch (error) {
-      showNotification('Failed to restore from sheet', 'error')
-    } finally {
-      setLoading(false)
-    }
   }
 
   // Full reconciliation: whatever's only in the sheet gets pulled in, whatever's
@@ -87,11 +82,40 @@ export function SyncTab() {
         }))
       }
 
+      markSynced()
       showNotification(`Synced — pushed ${pushed}, pulled ${toPull.length}`, 'success')
     } catch (error) {
       showNotification('Sync failed: ' + (error as Error).message, 'error')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  // Pull-only, but merges rather than overwrites: anything local that isn't
+  // in the sheet yet (e.g. a session that failed to push) is kept, not wiped.
+  const handleRestore = async () => {
+    if (!sheetUrl) {
+      showNotification('Sheet URL not configured', 'error')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const data = await restoreFromSheet(sheetUrl)
+      const remoteSessions: Session[] = Array.isArray(data.sessions) ? data.sessions : []
+      const localKeys = new Set(useSessionStore.getState().sessions.map(dedupKey))
+      const toPull = remoteSessions.filter((s) => !localKeys.has(dedupKey(s)))
+
+      if (toPull.length) {
+        useSessionStore.setState((state) => ({
+          sessions: [...state.sessions, ...toPull].sort((a, b) => a.d.localeCompare(b.d)),
+        }))
+      }
+      showNotification(`Restored ${toPull.length} new session${toPull.length === 1 ? '' : 's'}`, 'success')
+    } catch (error) {
+      showNotification('Failed to restore from sheet', 'error')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -107,69 +131,181 @@ export function SyncTab() {
     }
   }
 
-  return (
-    <div style={{ padding: '20px' }}>
-      <h2 style={{ marginBottom: '16px' }}>Sync & Backup</h2>
+  const handleDownloadBackup = () => {
+    const data = { sessions, exportedAt: new Date().toISOString() }
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    const today = new Date().toISOString().split('T')[0]
+    a.download = `ledger-backup-${today}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    showNotification('Backup downloaded', 'success')
+  }
 
-      <div className={styles.field}>
-        <label>Apps Script URL</label>
-        <input
-          type="text"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://script.google.com/macros/d/..."
-          style={{ fontSize: '12px' }}
-        />
+  const handleRestoreFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result))
+        const fileSessions: Session[] = Array.isArray(parsed.sessions) ? parsed.sessions : []
+        const localKeys = new Set(useSessionStore.getState().sessions.map(dedupKey))
+        const toAdd = fileSessions.filter((s) => !localKeys.has(dedupKey(s)))
+        if (toAdd.length) {
+          useSessionStore.setState((state) => ({
+            sessions: [...state.sessions, ...toAdd].sort((a, b) => a.d.localeCompare(b.d)),
+          }))
+        }
+        showNotification(`Restored ${toAdd.length} session${toAdd.length === 1 ? '' : 's'} from file`, 'success')
+      } catch (e) {
+        showNotification('That file is not a valid Ledger backup', 'error')
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  return (
+    <div>
+      <div className={appStyles.hero}>
+        <div className={appStyles.eyebrow}>Hand the data over</div>
+        <h1>Sync</h1>
       </div>
 
-      <button className={styles.btn} style={{ background: 'var(--amber)', color: '#14181D' }} onClick={handleSaveUrl}>
-        Save URL
-      </button>
-
-      <div style={{ marginTop: '20px' }}>
-        <h3 style={{ fontSize: '13px', marginBottom: '10px' }}>Sync Now</h3>
-        <button
-          className={styles.btn}
-          style={{ background: 'var(--amber)', color: '#14181D' }}
-          onClick={handleSyncNow}
-          disabled={syncing}
-        >
-          {syncing ? 'Syncing…' : 'Pull + Push'}
-        </button>
-        <div className={styles.note} style={{ marginTop: '8px' }}>
-          Compares what's in the sheet against what's on this device, pulls down anything missing locally, and
-          pushes up anything the sheet doesn't have yet. Never deletes or overwrites — only adds.
+      {/* Status card */}
+      <div className={styles.card} style={{ padding: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+          <span
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: connected ? 'var(--teal)' : 'var(--coral)',
+              flex: 'none',
+            }}
+          />
+          <span style={{ fontSize: '13px', fontWeight: 600 }}>
+            {connected ? 'Connected to sheet' : 'No sheet configured'}
+          </span>
+        </div>
+        <div className={styles.statGrid} style={{ marginBottom: 0 }}>
+          <div className={styles.stat}>
+            <div className={styles.l}>Local sessions</div>
+            <div className={`${styles.v} mono`}>{sessions.length}</div>
+          </div>
+          <div className={styles.stat}>
+            <div className={styles.l}>Pending sync</div>
+            <div className={`${styles.v} mono`} style={{ color: pendingSync.length ? 'var(--coral)' : 'var(--teal)' }}>
+              {pendingSync.length}
+            </div>
+            <div className={`${styles.d} mono`}>
+              {pendingSync.length ? 'will retry automatically' : 'all caught up'}
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: '11px', color: 'var(--dim)', marginTop: '10px', fontFamily: 'JetBrains Mono' }}>
+          Last synced: {timeAgo(lastSyncedAt)}
         </div>
       </div>
 
-      <div style={{ marginTop: '20px' }}>
-        <h3 style={{ fontSize: '13px', marginBottom: '10px' }}>Restore</h3>
+      {/* Primary action */}
+      <div style={{ marginTop: '16px' }}>
         <button
-          className={styles.btn}
-          style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}
-          onClick={handleRestore}
-          disabled={loading}
+          className={`${styles.btn} ${styles.primary}`}
+          onClick={handleSyncNow}
+          disabled={syncing || !connected}
         >
-          {loading ? 'Restoring...' : 'Restore from Sheet'}
+          {syncing ? 'Syncing…' : 'Sync Now — Pull + Push'}
         </button>
+        <div className={styles.note} style={{ marginTop: '8px', marginBottom: 0 }}>
+          Compares what's in the sheet against what's on this device, pulls down anything missing locally, and
+          pushes up anything the sheet doesn't have yet. Never deletes or overwrites — only adds.
+        </div>
+        {pendingSync.length > 0 && (
+          <button
+            className={`${styles.btn} ${styles.quiet}`}
+            style={{ marginTop: '8px' }}
+            onClick={() => {
+              flushPendingSync()
+              showNotification('Retrying pending sessions…', 'info')
+            }}
+          >
+            Retry {pendingSync.length} pending now
+          </button>
+        )}
       </div>
 
-      <div style={{ marginTop: '20px' }}>
-        <h3 style={{ fontSize: '13px', marginBottom: '10px' }}>Weights</h3>
-        <button
-          className={styles.btn}
-          style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}
-          onClick={handleLoadWeights}
-          disabled={loading}
-        >
-          {loading ? 'Loading...' : 'Load Weights from Sheet'}
-        </button>
+      {/* Advanced */}
+      <div className={styles.sec} style={{ cursor: 'pointer' }} onClick={() => setAdvancedOpen(!advancedOpen)}>
+        <h2>Advanced</h2>
+        <div className={styles.rule} />
+        <span style={{ fontSize: '11px', color: 'var(--dim)' }}>{advancedOpen ? '▾' : '▸'}</span>
       </div>
 
-      <div className={styles.note} style={{ marginTop: '20px' }}>
-        💡 <b>Sync:</b> Sessions auto-save to sheet when you finish logging. Use Sync Now if a session was logged
-        offline or on another device and hasn't shown up yet.
+      {advancedOpen && (
+        <div>
+          <div className={styles.field}>
+            <label>Apps Script URL</label>
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://script.google.com/macros/s/..."
+              style={{ fontSize: '12px' }}
+            />
+          </div>
+          <button
+            className={`${styles.btn} ${styles.ghost}`}
+            onClick={handleSaveUrl}
+            disabled={!urlDirty}
+            style={{ marginBottom: '20px' }}
+          >
+            {urlDirty ? 'Save URL' : 'URL saved'}
+          </button>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+            <button className={`${styles.btn} ${styles.ghost}`} onClick={handleRestore} disabled={loading || !connected}>
+              {loading ? 'Working…' : 'Restore from Sheet'}
+            </button>
+            <button className={`${styles.btn} ${styles.ghost}`} onClick={handleLoadWeights} disabled={loading || !connected}>
+              {loading ? 'Working…' : 'Load Weights'}
+            </button>
+          </div>
+
+          <div className={styles.sec}>
+            <h2>Local backup</h2>
+            <div className={styles.rule} />
+          </div>
+          <div className={styles.note}>Download a copy of everything on this device, or restore from a file.</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className={`${styles.btn} ${styles.ghost}`} onClick={handleDownloadBackup}>
+              Download
+            </button>
+            <button
+              className={`${styles.btn} ${styles.ghost}`}
+              onClick={() => document.getElementById('backup-file-input')?.click()}
+            >
+              Restore from file
+            </button>
+          </div>
+          <input
+            id="backup-file-input"
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handleRestoreFile(file)
+              e.target.value = ''
+            }}
+          />
+        </div>
+      )}
+
+      <div className={styles.note} style={{ marginTop: '24px' }}>
+        💡 <b>Sync:</b> Sessions push to the sheet automatically when you finish logging. Sync Now is there for when
+        a session was logged offline, on another device, or a push silently failed.
       </div>
+      <div style={{ height: '20px' }} />
     </div>
   )
 }

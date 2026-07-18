@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { scopedStorage } from '@/services/userScope'
-import { sendChatMessage, applyWeightSuggestion, type ChatMessage, type ChatSuggestion, type ChatUsage } from '@/services/chat'
+import { sendChatMessage, applyWeightSuggestion, fetchChatHistory, type ChatMessage, type ChatSuggestion, type ChatUsage } from '@/services/chat'
 import { useConfigStore } from './configStore'
 
 // A message the UI has fully rendered — extends the wire ChatMessage with a
@@ -25,6 +25,7 @@ interface ChatStore {
   error: string | null
 
   sendMessage: (text: string) => Promise<void>
+  loadHistory: () => Promise<void>
   acceptSuggestion: (messageId: string, suggestionIndex: number, weight: number) => Promise<void>
   dismissSuggestion: (messageId: string, suggestionIndex: number) => void
   clearError: () => void
@@ -64,6 +65,30 @@ export const useChatStore = create<ChatStore>()(
           set((state) => ({ messages: [...state.messages, assistantMessage], sending: false, statusMessage: null, lastUsage: usage }))
         } catch (e) {
           set({ sending: false, statusMessage: null, error: e instanceof Error ? e.message : 'Could not reach the coach' })
+        }
+      },
+
+      // Called once when the Coach tab mounts. Refreshes from the durable
+      // server copy so a reload — or opening the app on a different device —
+      // shows the real conversation instead of whatever this one browser's
+      // local cache happened to have. Skipped while a send is in flight: if
+      // the tab was left mid-turn and reopened, overwriting messages here
+      // would wipe the optimistic user message that hasn't round-tripped
+      // yet — it'll just pick up the fresh copy on the next mount instead.
+      loadHistory: async () => {
+        if (get().sending) return
+        try {
+          const history = await fetchChatHistory()
+          if (!history.length) return
+          const mapped: DisplayMessage[] = history.map((m) => ({
+            id: `srv-${m.id}`,
+            role: m.role,
+            content: m.content,
+            suggestions: m.suggestions?.length ? m.suggestions.map((s) => ({ ...s, status: 'pending' as const })) : undefined,
+          }))
+          set({ messages: mapped })
+        } catch {
+          // best-effort — keep whatever's cached locally (e.g. offline)
         }
       },
 

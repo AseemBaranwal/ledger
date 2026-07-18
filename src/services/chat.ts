@@ -36,6 +36,35 @@ async function authedFetch(path: string, body: unknown): Promise<Response> {
   })
 }
 
+async function authedGet(path: string): Promise<Response> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Not signed in')
+  return fetch(path, { headers: { Authorization: `Bearer ${token}` } })
+}
+
+export interface HistoryMessage {
+  id: number
+  role: 'user' | 'assistant'
+  content: string
+  suggestions: ChatSuggestion[] | null
+}
+
+// Called once when the Coach tab mounts — the durable copy of the
+// conversation lives server-side now (see supabase/chat_messages.sql), so
+// it survives a reload and follows the owner across devices, unlike the
+// local zustand-persisted cache which is just a fast-boot copy of whatever
+// this one browser last saw.
+export async function fetchChatHistory(): Promise<HistoryMessage[]> {
+  const res = await authedGet('/api/chat/history')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Could not load chat history')
+  }
+  const data = await res.json()
+  return Array.isArray(data.messages) ? data.messages : []
+}
+
 // The endpoint streams newline-delimited JSON rather than one buffered
 // response — a multi-step tool loop can genuinely take longer than Vercel's
 // 25s time-to-first-byte limit for Edge Functions, so the server starts

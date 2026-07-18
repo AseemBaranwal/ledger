@@ -38,6 +38,7 @@ export function CoachTab() {
   const lastUsage = useChatStore((s) => s.lastUsage)
   const error = useChatStore((s) => s.error)
   const sendMessage = useChatStore((s) => s.sendMessage)
+  const loadHistory = useChatStore((s) => s.loadHistory)
   const acceptSuggestion = useChatStore((s) => s.acceptSuggestion)
   const dismissSuggestion = useChatStore((s) => s.dismissSuggestion)
   const clearError = useChatStore((s) => s.clearError)
@@ -45,6 +46,14 @@ export function CoachTab() {
 
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Refresh from the server's durable copy every time the tab opens, so a
+  // reload or a different device shows the real conversation, not just
+  // whatever this browser cached locally.
+  useEffect(() => {
+    loadHistory()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })

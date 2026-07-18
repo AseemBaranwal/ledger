@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { callAnthropic, type AnthropicMessage, type AnthropicResponseBlock } from '../_lib/anthropic.js'
 import { buildSystemPrompt } from '../_lib/chatSystemPrompt.js'
 import { TOOLS, getTrainingData } from '../_lib/chatTools.js'
+import { saveChatTurn } from '../_lib/chatHistory.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
@@ -211,6 +212,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (callError) {
       send({ type: 'error', error: callError })
     } else {
+      await saveChatTurn(user.id, lastText, reply, suggestions)
       send({
         type: 'done',
         reply,

@@ -48,20 +48,28 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Strava's JSON upload is async: the POST just enqueues it, and the actual
 // activity id only shows up once background processing finishes. Strava's
-// own docs say mean processing time is under 2s, so polling for up to 8s
-// comfortably covers the normal case without holding the function open
-// indefinitely on a stuck upload.
+// own docs say mean processing time is under 2s; polling for up to 15s
+// gives real workouts (many exercises/sets) plenty of margin over that
+// average without risking the Edge Function's own execution time limit.
+// Every attempt is logged — a prior run silently reported "success" to the
+// client on timeout with nothing to show for it in Vercel's logs, which
+// made it impossible to tell whether Strava ever actually finished the job.
 async function pollUploadUntilDone(uploadId: number, accessToken: string): Promise<{ activityId?: number; error?: string }> {
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 1; attempt <= 15; attempt++) {
     await sleep(1000)
     const res = await fetch(`https://www.strava.com/api/v3/uploads/${uploadId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
-    if (!res.ok) continue
+    if (!res.ok) {
+      console.error(`poll attempt ${attempt}/15 for upload ${uploadId}: HTTP ${res.status}`)
+      continue
+    }
     const data = await res.json()
+    console.log(`poll attempt ${attempt}/15 for upload ${uploadId}:`, JSON.stringify(data))
     if (data.activity_id) return { activityId: data.activity_id }
     if (data.error) return { error: data.error }
   }
+  console.error(`upload ${uploadId} still not resolved after 15 poll attempts (15s) — giving up`)
   return { error: undefined } // timed out, but not necessarily failed — Strava may still finish it
 }
 
@@ -159,6 +167,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const upload = await uploadRes.json()
+    console.log('upload accepted:', JSON.stringify(upload))
     if (upload.error) {
       return new Response(JSON.stringify({ error: 'Strava rejected the upload', detail: upload.error }), { status: 502 })
     }
@@ -174,10 +183,12 @@ export default async function handler(req: Request): Promise<Response> {
       return new Response(JSON.stringify({ error: 'Strava rejected the upload', detail: error }), { status: 502 })
     }
     if (!activityId) {
-      // Still processing after 8s — genuinely rare given Strava's own <2s
-      // average, but the upload was accepted, so report success rather than
-      // erroring; it'll finish appearing on Strava shortly on its own.
-      return new Response(JSON.stringify({ success: true, activityId: null, pending: true }), {
+      // Still processing after 15s of polling — the upload WAS accepted by
+      // Strava (confirmed above), so this isn't a failure, just unresolved
+      // within this request's lifetime. Surfaced as pending, not silent
+      // success, so the client can say something honest instead of implying
+      // it's confirmed done.
+      return new Response(JSON.stringify({ success: true, activityId: null, pending: true, uploadId: upload.id }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })

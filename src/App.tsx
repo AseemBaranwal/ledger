@@ -124,7 +124,14 @@ export default function App() {
 
   return (
     <div className={styles.root}>
-      <Header date={todayStr} streak={streak(sessions)} onLogoClick={() => { clearDraft(); setTab('today') }} />
+      <Header
+        date={todayStr}
+        streak={streak(sessions)}
+        onLogoClick={() => { clearDraft(); setTab('today') }}
+        userName={user.name}
+        userAvatarUrl={user.avatarUrl}
+        onAvatarClick={() => setTab('sync')}
+      />
 
       <main className={styles.wrap}>
         {activeTab === 'today' && <TodayTab />}

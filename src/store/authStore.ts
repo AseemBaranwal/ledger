@@ -9,6 +9,23 @@ import { useConfigStore } from './configStore'
 interface AuthUser {
   id: string
   email: string | null
+  name: string | null
+  avatarUrl: string | null
+}
+
+// Google's OIDC claims land in user_metadata via Supabase — no extra scopes
+// or API calls needed for these. Age/birthday is NOT here: that needs the
+// separate People API user.birthday.read scope, which Google gates behind
+// an app-verification review before it'll work for anyone but test users —
+// not worth it for a personal app.
+function toAuthUser(sessionUser: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }): AuthUser {
+  const meta = sessionUser.user_metadata || {}
+  return {
+    id: sessionUser.id,
+    email: sessionUser.email ?? null,
+    name: (meta.full_name as string) || (meta.name as string) || null,
+    avatarUrl: (meta.avatar_url as string) || (meta.picture as string) || null,
+  }
 }
 
 interface AuthStore {
@@ -99,7 +116,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     supabase.auth.getSession().then(async ({ data }) => {
       const sessionUser = data.session?.user
       if (sessionUser) {
-        const user = { id: sessionUser.id, email: sessionUser.email ?? null }
+        const user = toAuthUser(sessionUser)
         await applyUser(set, get, user, true)
       } else {
         set({ loading: false })
@@ -117,7 +134,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const sessionUser = session?.user
       if (!sessionUser) return
 
-      const user = { id: sessionUser.id, email: sessionUser.email ?? null }
+      const user = toAuthUser(sessionUser)
       const isNewUser = get().user?.id !== user.id
       await applyUser(set, get, user, isNewUser)
     })

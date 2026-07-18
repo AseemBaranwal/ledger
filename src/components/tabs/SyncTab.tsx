@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useConfigStore, useSessionStore, useUIStore, useAuthStore } from '@/store'
 import { restoreFromSheet, pushSession } from '@/services/appScript'
+import { Avatar } from '@/components/layout'
 import type { Session } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -181,7 +182,8 @@ export function SyncTab() {
         <h1>Sync</h1>
         {user && (
           <div className={appStyles.heroSub} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
-            <span>Signed in as {user.email}</span>
+            <Avatar name={user.name} avatarUrl={user.avatarUrl} />
+            <span>{user.name ? `${user.name} · ${user.email}` : user.email}</span>
             <button
               onClick={signOut}
               style={{ fontSize: '11px', color: 'var(--dim)', textDecoration: 'underline', cursor: 'pointer' }}

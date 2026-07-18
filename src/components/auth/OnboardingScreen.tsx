@@ -10,14 +10,16 @@ export function OnboardingScreen() {
   const signOut = useAuthStore((s) => s.signOut)
   const showNotification = useUIStore((s) => s.showNotification)
   const [url, setUrl] = useState('')
+  const [connectError, setConnectError] = useState<string | null>(null)
 
   const handleConnect = async () => {
     if (!url.trim()) return
+    setConnectError(null)
     try {
       await saveSheetUrl(url.trim())
       showNotification('Sheet connected', 'success')
     } catch (e) {
-      showNotification('Could not save that URL — try again', 'error')
+      setConnectError(e instanceof Error ? e.message : 'Could not save that URL — try again')
     }
   }
 
@@ -42,6 +44,10 @@ export function OnboardingScreen() {
           style={{ fontSize: '12px' }}
         />
       </div>
+
+      {connectError && (
+        <div className={styles.warn}>{connectError}</div>
+      )}
 
       <button
         className={`${styles.btn} ${styles.primary}`}

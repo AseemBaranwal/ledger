@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { supabase, type Profile } from '@/services/supabaseClient'
 import { setCurrentUserId } from '@/services/userScope'
+import { restoreFromSheet } from '@/services/appScript'
 import { useSessionStore } from './sessionStore'
 import { useBodyStore } from './bodyStore'
 import { useConfigStore } from './configStore'
@@ -150,6 +151,19 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     if (!user) return
     set({ savingUrl: true })
     try {
+      // Validate before persisting — a typo'd or unreachable Apps Script URL
+      // saved silently would leave the user stuck on a broken app with no
+      // clear reason why, since every subsequent load reads this same URL.
+      try {
+        const data = await restoreFromSheet(url)
+        if (!data || !Array.isArray(data.sessions)) {
+          throw new Error('That URL responded, but not in the format Ledger expects. Double-check it\'s the /exec URL from your Apps Script deployment.')
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith('That URL')) throw e
+        throw new Error('Could not reach that URL. Check it\'s correct and the Apps Script deployment access is set to "Anyone".')
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .upsert({ id: user.id, email: user.email, sheet_url: url }, { onConflict: 'id' })

@@ -38,16 +38,18 @@ export function SyncTab() {
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [urlError, setUrlError] = useState<string | null>(null)
 
   const connected = Boolean(sheetUrl)
   const urlDirty = url !== sheetUrl
 
   const handleSaveUrl = async () => {
+    setUrlError(null)
     try {
       await saveSheetUrl(url)
       showNotification('Sheet URL saved', 'success')
     } catch (e) {
-      showNotification('Could not save that URL — try again', 'error')
+      setUrlError(e instanceof Error ? e.message : 'Could not save that URL — try again')
     }
   }
 
@@ -267,11 +269,12 @@ export function SyncTab() {
             <input
               type="text"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => { setUrl(e.target.value); setUrlError(null) }}
               placeholder="https://script.google.com/macros/s/..."
               style={{ fontSize: '12px' }}
             />
           </div>
+          {urlError && <div className={styles.warn}>{urlError}</div>}
           <button
             className={`${styles.btn} ${styles.ghost}`}
             onClick={handleSaveUrl}

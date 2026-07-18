@@ -1,7 +1,11 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
-import { TodayTab, HistoryTab, TrendsTab, SyncTab, CoachTab } from '@/components/tabs'
+import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
+
+// Lazy-loaded: react-markdown (used only here) adds ~35KB gzipped, not worth
+// putting in the main bundle every visitor downloads for the other 4 tabs.
+const CoachTab = lazy(() => import('@/components/tabs/CoachTab').then((m) => ({ default: m.CoachTab })))
 import { RestTimer } from '@/components/session'
 import { SignInScreen, OnboardingScreen, ErrorScreen } from '@/components/auth'
 import { streak } from '@/services/trendCalculations'
@@ -169,7 +173,11 @@ export default function App() {
         {activeTab === 'history' && <HistoryTab />}
         {activeTab === 'trends' && <TrendsTab />}
         {activeTab === 'sync' && <SyncTab />}
-        {activeTab === 'coach' && showCoach && <CoachTab />}
+        {activeTab === 'coach' && showCoach && (
+          <Suspense fallback={null}>
+            <CoachTab />
+          </Suspense>
+        )}
       </main>
 
       <RestTimer />

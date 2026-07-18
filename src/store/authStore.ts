@@ -5,6 +5,7 @@ import { restoreFromSheet } from '@/services/appScript'
 import { useSessionStore } from './sessionStore'
 import { useBodyStore } from './bodyStore'
 import { useConfigStore } from './configStore'
+import { useChatStore } from './chatStore'
 
 interface AuthUser {
   id: string
@@ -65,7 +66,14 @@ async function rehydrateUserScopedStores(userId: string | null) {
   setCurrentUserId(userId)
   useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftItems: null, pendingSync: [], lastSyncedAt: null })
   useBodyStore.setState({ scans: [] })
-  await Promise.all([useSessionStore.persist.rehydrate(), useBodyStore.persist.rehydrate()])
+  // No pre-blank for chat: unlike sessions/body scans, chat is gated to the
+  // single app owner (see App.tsx's showCoach check) — there's never a
+  // "different user's" stale data to guard against, so it can skip straight
+  // to rehydrate(). Blanking first would be actively wrong here: set() on a
+  // persisted store writes through to storage synchronously, so blanking
+  // then rehydrating races and clobbers the real cached history with an
+  // empty array before rehydrate() ever gets to read it back.
+  await Promise.all([useSessionStore.persist.rehydrate(), useBodyStore.persist.rehydrate(), useChatStore.persist.rehydrate()])
 }
 
 async function loadProfile(userId: string): Promise<{ profile: Profile | null; error: string | null }> {

@@ -1,8 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import { useChatStore } from '@/store/chatStore'
 import { useUIStore } from '@/store'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
+
+// Compact block spacing for a narrow chat bubble — the default browser
+// margins on p/ul/ol read as way too loose at this width. No headers/tables
+// since the system prompt tells the model not to use them here.
+const markdownComponents: Components = {
+  p: ({ children }) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
+  ul: ({ children }) => <ul style={{ margin: '0 0 8px', paddingLeft: '18px' }}>{children}</ul>,
+  ol: ({ children }) => <ol style={{ margin: '0 0 8px', paddingLeft: '18px' }}>{children}</ol>,
+  li: ({ children }) => <li style={{ marginBottom: '2px' }}>{children}</li>,
+  strong: ({ children }) => <strong style={{ fontWeight: 700 }}>{children}</strong>,
+  code: ({ children }) => (
+    <code style={{ background: 'var(--raised)', borderRadius: '4px', padding: '1px 5px', fontSize: '0.92em' }}>{children}</code>
+  ),
+  a: ({ children, href }) => (
+    <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--amber)' }}>
+      {children}
+    </a>
+  ),
+}
 
 const QUICK_PROMPTS = [
   "How's my training looking this week?",
@@ -80,17 +101,22 @@ export function CoachTab() {
             <div
               style={{
                 maxWidth: '85%',
+                minWidth: 0,
                 borderRadius: 'var(--r)',
                 padding: '10px 13px',
                 fontSize: '13.5px',
                 lineHeight: 1.5,
-                whiteSpace: 'pre-wrap',
+                whiteSpace: message.role === 'user' ? 'pre-wrap' : 'normal',
                 background: message.role === 'user' ? 'var(--amber)' : 'var(--surface)',
                 color: message.role === 'user' ? '#14181D' : 'var(--text)',
                 border: message.role === 'user' ? 'none' : '1px solid var(--line)',
               }}
             >
-              {message.content}
+              {message.role === 'assistant' ? (
+                <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
+              ) : (
+                message.content
+              )}
 
               {message.suggestions?.map((suggestion, i) => (
                 <SuggestionCard

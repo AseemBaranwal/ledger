@@ -92,7 +92,9 @@ a reminder, or pull data from Strava or a Drive file, say plainly that this assi
 do that here and suggest asking through Claude directly instead, where those tools exist.
 `
 
-const TOOL_GUIDANCE = `Always call get_training_data before answering any question about current numbers, trends, or PRs — never answer from memory alone. When proposing a weight change, call suggest_weight_change with your reasoning; it only records the proposal for the person to review, it doesn't change anything itself. Keep responses focused — a few sentences plus concrete numbers beats a long essay.`
+const TOOL_GUIDANCE = `Always call get_training_data before answering any question about current numbers, trends, or PRs — never answer from memory alone. When proposing a weight change, call suggest_weight_change with your reasoning; it only records the proposal for the person to review, it doesn't change anything itself. Keep responses focused — a few sentences plus concrete numbers beats a long essay.
+
+Format replies in plain Markdown — **bold** for key numbers/exercise names, "-" bullet lists for multi-item breakdowns, short paragraphs. It renders in a narrow mobile chat bubble, so skip headers, tables, and anything wide; keep line breaks minimal.`
 
 export function buildSystemPrompt(): string {
   return [HARDENING_PREAMBLE, CUSTOM_INSTRUCTIONS.trim(), TOOL_GUIDANCE].join('\n\n')

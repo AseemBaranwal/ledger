@@ -19,7 +19,7 @@ export function BottomNav({ activeTab, onTabChange, showCoach }: BottomNavProps)
 
   return (
     <nav className={styles.tabs}>
-      <div className={styles.tabsIn}>
+      <div className={styles.tabsIn} style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
         {tabs.map((tab) => (
           <button
             key={tab.id}

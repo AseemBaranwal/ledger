@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useConfigStore, useUIStore, useSessionStore, useAuthStore } from '@/store'
+import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
 import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 import { RestTimer } from '@/components/session'
@@ -7,6 +7,7 @@ import { SignInScreen, OnboardingScreen, ErrorScreen } from '@/components/auth'
 import { streak } from '@/services/trendCalculations'
 import { restoreFromSheet } from '@/services/appScript'
 import { unlockAudioContext } from '@/services/audio'
+import { STRAVA_CALLBACK_PATH, exchangeStravaCode } from '@/services/strava'
 import { registerSW } from 'virtual:pwa-register'
 import type { Session } from '@/types'
 import styles from '@/styles/App.module.css'
@@ -98,6 +99,31 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetUrl])
+
+  // Strava: check connection status once signed in, and handle the OAuth
+  // redirect landing back on its own dedicated path (see strava.ts for why
+  // it's a separate path rather than the app root).
+  useEffect(() => {
+    if (!user) return
+    useStravaStore.getState().checkConnection(user.id)
+
+    if (window.location.pathname === STRAVA_CALLBACK_PATH) {
+      const code = new URLSearchParams(window.location.search).get('code')
+      window.history.replaceState({}, '', '/')
+      if (code) {
+        exchangeStravaCode(code)
+          .then(({ athleteName }) => {
+            useStravaStore.getState().applyCallback(athleteName)
+            useUIStore.getState().showNotification('Strava connected', 'success')
+          })
+          .catch((e) => {
+            useUIStore.getState().showNotification(e instanceof Error ? e.message : 'Could not connect Strava', 'error')
+          })
+      }
+      setTab('sync')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   const today = new Date()
   const todayStr = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

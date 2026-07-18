@@ -2,9 +2,11 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Session, Exercise, RestItem } from '@/types'
 import { pushSession } from '@/services/appScript'
+import { postSessionToStrava } from '@/services/strava'
 import { scopedStorage } from '@/services/userScope'
 import { useConfigStore } from './configStore'
 import { useUIStore } from './uiStore'
+import { useStravaStore } from './stravaStore'
 
 interface DraftExercise extends Exercise {
   w: number // live working weight for this session
@@ -193,6 +195,19 @@ export const useSessionStore = create<SessionStore>()(
             set((s) => ({ pendingSync: s.pendingSync.filter((x) => x !== id) }))
           }
           syncSession(savedSession, markPending, clearPending)
+
+          // Best-effort, non-blocking Strava post — never affects the local
+          // save or the sheet sync above, and silently no-ops if the user
+          // hasn't connected Strava.
+          if (savedSession.ex?.length && useStravaStore.getState().connected) {
+            const programDef = savedSession.s ? useConfigStore.getState().program[savedSession.s] : undefined
+            const programName = programDef?.full || programDef?.name || savedSession.s || 'Workout'
+            postSessionToStrava(savedSession, programName).then((result) => {
+              if (!result.ok && result.error) {
+                useUIStore.getState().showNotification(`Strava: ${result.error}`, 'error')
+              }
+            })
+          }
         }
 
         return prCount

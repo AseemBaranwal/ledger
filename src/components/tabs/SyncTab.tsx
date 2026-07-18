@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useConfigStore, useSessionStore, useUIStore, useAuthStore } from '@/store'
+import { useConfigStore, useSessionStore, useUIStore, useAuthStore, useStravaStore } from '@/store'
 import { restoreFromSheet, pushSession } from '@/services/appScript'
+import { stravaConfigured } from '@/services/strava'
 import { Avatar } from '@/components/layout'
 import type { Session } from '@/types'
 import appStyles from '../../styles/App.module.css'
@@ -34,6 +35,12 @@ export function SyncTab() {
   const saveSheetUrl = useAuthStore((s) => s.saveSheetUrl)
   const savingUrl = useAuthStore((s) => s.savingUrl)
   const signOut = useAuthStore((s) => s.signOut)
+
+  const stravaConnected = useStravaStore((s) => s.connected)
+  const stravaAthleteName = useStravaStore((s) => s.athleteName)
+  const stravaDisconnecting = useStravaStore((s) => s.disconnecting)
+  const connectStrava = useStravaStore((s) => s.connect)
+  const disconnectStravaAction = useStravaStore((s) => s.disconnect)
 
   const [url, setUrl] = useState(sheetUrl)
   const [loading, setLoading] = useState(false)
@@ -127,6 +134,15 @@ export function SyncTab() {
       showNotification('Failed to restore from sheet', 'error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDisconnectStrava = async () => {
+    try {
+      await disconnectStravaAction()
+      showNotification('Strava disconnected', 'success')
+    } catch (error) {
+      showNotification('Failed to disconnect Strava', 'error')
     }
   }
 
@@ -256,6 +272,37 @@ export function SyncTab() {
           </button>
         )}
       </div>
+
+      {/* Strava */}
+      <div className={styles.sec}>
+        <h2>Strava</h2>
+        <div className={styles.rule} />
+      </div>
+      {stravaConnected ? (
+        <>
+          <div className={styles.note}>
+            Connected as {stravaAthleteName || 'your Strava account'}. New weight-training sessions post there
+            automatically.
+          </div>
+          <button
+            className={`${styles.btn} ${styles.ghost}`}
+            onClick={handleDisconnectStrava}
+            disabled={stravaDisconnecting}
+          >
+            {stravaDisconnecting ? 'Disconnecting…' : 'Disconnect Strava'}
+          </button>
+        </>
+      ) : (
+        <>
+          <div className={styles.note}>
+            Automatically post your lifting sessions to Strava as activities, in addition to the Sheet.
+          </div>
+          <button className={`${styles.btn} ${styles.ghost}`} onClick={connectStrava} disabled={!stravaConfigured}>
+            Connect Strava
+          </button>
+          {!stravaConfigured && <div className={styles.warn}>Strava isn't configured yet.</div>}
+        </>
+      )}
 
       {/* Advanced */}
       <div className={styles.sec} style={{ cursor: 'pointer' }} onClick={() => setAdvancedOpen(!advancedOpen)}>

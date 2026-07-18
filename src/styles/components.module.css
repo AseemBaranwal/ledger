@@ -996,6 +996,38 @@ svg.chart {
   white-space: nowrap;
 }
 
+/* ── chat message rows ──────────────────────────────────────
+   Delete button is reserved-but-invisible by default so nothing
+   shifts on reveal: mouse users get it via :hover, touch users
+   via a long-press that adds .revealed (see CoachTab.tsx). */
+.msgRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.deleteBtn {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.msgRow:hover .deleteBtn,
+.deleteBtn.revealed {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .restCue {
   font-size: 12px;
   color: var(--dim);

@@ -47,7 +47,19 @@ export function CoachTab() {
   const showNotification = useUIStore((s) => s.showNotification)
 
   const [input, setInput] = useState('')
+  const [revealedId, setRevealedId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const longPressTimer = useRef<number | null>(null)
+
+  const startLongPress = (id: string) => {
+    longPressTimer.current = window.setTimeout(() => setRevealedId(id), 450)
+  }
+  const cancelLongPress = () => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
 
   // Refresh from the server's durable copy every time the tab opens, so a
   // reload or a different device shows the real conversation, not just
@@ -123,29 +135,28 @@ export function CoachTab() {
         {messages.map((message) => (
           <div
             key={message.id}
-            style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start' }}
+            className={styles.msgRow}
+            style={{ justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start' }}
           >
             {message.role === 'user' && (
               <button
-                onClick={() => deleteExchange(message.id)}
-                title="Delete this exchange — it won't be sent as context again"
-                style={{
-                  flex: 'none',
-                  width: '22px',
-                  height: '22px',
-                  borderRadius: '50%',
-                  border: 'none',
-                  background: 'none',
-                  color: 'var(--dim)',
-                  fontSize: '13px',
-                  lineHeight: 1,
-                  cursor: 'pointer',
+                onClick={() => {
+                  deleteExchange(message.id)
+                  setRevealedId(null)
                 }}
+                title="Delete this exchange — it won't be sent as context again"
+                className={`${styles.deleteBtn} ${revealedId === message.id ? styles.revealed : ''}`}
               >
                 ×
               </button>
             )}
             <div
+              onTouchStart={() => message.role === 'user' && startLongPress(message.id)}
+              onTouchEnd={cancelLongPress}
+              onTouchMove={cancelLongPress}
+              onClick={() => {
+                if (message.role === 'user' && revealedId === message.id) setRevealedId(null)
+              }}
               style={{
                 maxWidth: '85%',
                 minWidth: 0,

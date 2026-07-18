@@ -2,6 +2,9 @@ import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { sportTypeForCode, estimateElapsedSeconds, buildActivityDescription } from '../_lib/stravaMapping.js'
 
+// See exchange.ts for why this is pinned to the Edge Runtime.
+export const config = { runtime: 'edge' }
+
 interface StravaConnection {
   user_id: string
   access_token: string

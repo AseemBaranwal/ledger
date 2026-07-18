@@ -1,6 +1,9 @@
 import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 
+// See exchange.ts for why this is pinned to the Edge Runtime.
+export const config = { runtime: 'edge' }
+
 // Deleting the row needs the service_role key — there's deliberately no
 // user-facing delete policy on strava_connections in Supabase, so this is
 // the only path to disconnect.

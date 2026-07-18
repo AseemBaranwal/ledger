@@ -1,6 +1,12 @@
 import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 
+// Edge Runtime guarantees the handler gets a real Web Fetch API Request (with
+// a proper Headers instance) — Vercel's default Node runtime was invoking
+// this with a legacy Node-style req whose .headers is a plain object, which
+// broke req.headers.get(...) everywhere in this file and in requireUser().
+export const config = { runtime: 'edge' }
+
 // Called once, right after the user approves Strava's OAuth consent screen
 // and gets redirected back to the app with a `code` in the URL. This is the
 // only place STRAVA_CLIENT_SECRET is used — it can never be sent to the

@@ -11,6 +11,9 @@ export async function requireUser(req: Request): Promise<{ id: string } | null> 
   if (!token) return null
 
   const { data, error } = await supabaseAdmin().auth.getUser(token)
-  if (error || !data.user) return null
+  if (error || !data.user) {
+    console.error('requireUser: token rejected', error?.message || 'no user in response')
+    return null
+  }
   return { id: data.user.id }
 }

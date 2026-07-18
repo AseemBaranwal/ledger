@@ -20,6 +20,7 @@ const MAX_MESSAGES_SENT = 24
 interface ChatStore {
   messages: DisplayMessage[]
   sending: boolean
+  statusMessage: string | null
   lastUsage: ChatUsage | null
   error: string | null
 
@@ -36,6 +37,7 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       messages: [],
       sending: false,
+      statusMessage: null,
       lastUsage: null,
       error: null,
 
@@ -44,14 +46,14 @@ export const useChatStore = create<ChatStore>()(
         if (!trimmed || get().sending) return
 
         const userMessage: DisplayMessage = { id: makeId(), role: 'user', content: trimmed }
-        set((state) => ({ messages: [...state.messages, userMessage], sending: true, error: null }))
+        set((state) => ({ messages: [...state.messages, userMessage], sending: true, error: null, statusMessage: 'Thinking…' }))
 
         try {
           const history = get()
             .messages.slice(-MAX_MESSAGES_SENT)
             .map((m) => ({ role: m.role, content: m.content }))
 
-          const { reply, suggestions, usage } = await sendChatMessage(history)
+          const { reply, suggestions, usage } = await sendChatMessage(history, (status) => set({ statusMessage: status }))
 
           const assistantMessage: DisplayMessage = {
             id: makeId(),
@@ -59,9 +61,9 @@ export const useChatStore = create<ChatStore>()(
             content: reply,
             suggestions: suggestions.length ? suggestions.map((s) => ({ ...s, status: 'pending' as const })) : undefined,
           }
-          set((state) => ({ messages: [...state.messages, assistantMessage], sending: false, lastUsage: usage }))
+          set((state) => ({ messages: [...state.messages, assistantMessage], sending: false, statusMessage: null, lastUsage: usage }))
         } catch (e) {
-          set({ sending: false, error: e instanceof Error ? e.message : 'Could not reach the coach' })
+          set({ sending: false, statusMessage: null, error: e instanceof Error ? e.message : 'Could not reach the coach' })
         }
       },
 

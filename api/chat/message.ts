@@ -107,94 +107,126 @@ export default async function handler(req: Request): Promise<Response> {
   const toolCallNames: string[] = []
   const startedAt = Date.now()
 
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
-  let totalCacheReadTokens = 0
-  let totalCacheCreationTokens = 0
-  let reply = ''
-  let callError: string | null = null
+  // Edge Functions must start sending a response within 25s, but a
+  // multi-step tool loop at high reasoning effort can genuinely take longer
+  // than that in total — Vercel's own limit is on time-to-first-byte, not
+  // total duration, so the fix is to stream: return the Response (and start
+  // sending status bytes) immediately, then keep writing to it as the tool
+  // loop actually runs. Newline-delimited JSON rather than real SSE since
+  // there's no need for event-stream semantics, just progressive delivery.
+  const encoder = new TextEncoder()
+  // ReadableStream's start() callback runs synchronously inside the
+  // constructor, so this is always assigned before any other code below
+  // runs — TS's control-flow analysis just can't see through the callback.
+  let streamController!: ReadableStreamDefaultController<Uint8Array>
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller
+    },
+  })
+  const send = (obj: unknown) => {
+    streamController.enqueue(encoder.encode(JSON.stringify(obj) + '\n'))
+  }
 
-  try {
-    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-      const response = await callAnthropic({ systemPrompt, messages, tools: TOOLS })
+  const statusForTool = (name: string) =>
+    name === 'get_training_data' ? 'Checking your training data…' : name === 'suggest_weight_change' ? 'Working out a suggestion…' : 'Working on it…'
 
-      totalInputTokens += response.usage.input_tokens || 0
-      totalOutputTokens += response.usage.output_tokens || 0
-      totalCacheReadTokens += response.usage.cache_read_input_tokens || 0
-      totalCacheCreationTokens += response.usage.cache_creation_input_tokens || 0
+  ;(async () => {
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
+    let totalCacheReadTokens = 0
+    let totalCacheCreationTokens = 0
+    let reply = ''
+    let callError: string | null = null
 
-      // The full content array (including any thinking blocks) must be
-      // re-appended as-is between loop iterations — stripping thinking
-      // blocks before sending tool_results back breaks the turn.
-      messages.push({ role: 'assistant', content: response.content })
+    try {
+      send({ type: 'status', message: 'Thinking…' })
 
-      if (response.stop_reason !== 'tool_use') {
-        reply = response.content
-          .filter((b): b is Extract<AnthropicResponseBlock, { type: 'text' }> => b.type === 'text')
-          .map((b) => b.text)
-          .join('\n')
-          .trim()
-        break
-      }
+      for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+        const response = await callAnthropic({ systemPrompt, messages, tools: TOOLS })
 
-      const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = []
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue
-        toolCallNames.push(block.name)
+        totalInputTokens += response.usage.input_tokens || 0
+        totalOutputTokens += response.usage.output_tokens || 0
+        totalCacheReadTokens += response.usage.cache_read_input_tokens || 0
+        totalCacheCreationTokens += response.usage.cache_creation_input_tokens || 0
 
-        if (block.name === 'get_training_data') {
-          const args = block.input as { exerciseCode?: string; sinceDate?: string; limit?: number }
-          const result = await getTrainingData(user.id, args)
-          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
-        } else if (block.name === 'suggest_weight_change') {
-          const args = block.input as unknown as Suggestion
-          suggestions.push(args)
-          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Suggestion noted.' })
+        // The full content array (including any thinking blocks) must be
+        // re-appended as-is between loop iterations — stripping thinking
+        // blocks before sending tool_results back breaks the turn.
+        messages.push({ role: 'assistant', content: response.content })
+
+        if (response.stop_reason !== 'tool_use') {
+          reply = response.content
+            .filter((b): b is Extract<AnthropicResponseBlock, { type: 'text' }> => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n')
+            .trim()
+          break
+        }
+
+        const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = []
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue
+          toolCallNames.push(block.name)
+          send({ type: 'status', message: statusForTool(block.name) })
+
+          if (block.name === 'get_training_data') {
+            const args = block.input as { exerciseCode?: string; sinceDate?: string; limit?: number }
+            const result = await getTrainingData(user.id, args)
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
+          } else if (block.name === 'suggest_weight_change') {
+            const args = block.input as unknown as Suggestion
+            suggestions.push(args)
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Suggestion noted.' })
+          } else {
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Unknown tool.' })
+          }
+        }
+
+        messages.push({ role: 'user', content: toolResults })
+
+        if (iteration === MAX_TOOL_ITERATIONS - 1) {
+          reply = "I pulled up your data but need another step to finish — try asking again, maybe a bit more specifically."
         } else {
-          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Unknown tool.' })
+          send({ type: 'status', message: 'Thinking…' })
         }
       }
-
-      messages.push({ role: 'user', content: toolResults })
-
-      if (iteration === MAX_TOOL_ITERATIONS - 1) {
-        reply = "I pulled up your data but need another step to finish — try asking again, maybe a bit more specifically."
-      }
+    } catch (e) {
+      callError = e instanceof Error ? e.message : 'Unknown error calling Anthropic'
     }
-  } catch (e) {
-    callError = e instanceof Error ? e.message : 'Unknown error calling Anthropic'
-  }
 
-  const latencyMs = Date.now() - startedAt
+    const latencyMs = Date.now() - startedAt
 
-  await logChatCall({
-    user_id: user.id,
-    input_tokens: totalInputTokens,
-    output_tokens: totalOutputTokens,
-    cache_read_tokens: totalCacheReadTokens,
-    cache_creation_tokens: totalCacheCreationTokens,
-    tool_calls: toolCallNames,
-    latency_ms: latencyMs,
-    error: callError,
-  })
+    await logChatCall({
+      user_id: user.id,
+      input_tokens: totalInputTokens,
+      output_tokens: totalOutputTokens,
+      cache_read_tokens: totalCacheReadTokens,
+      cache_creation_tokens: totalCacheCreationTokens,
+      tool_calls: toolCallNames,
+      latency_ms: latencyMs,
+      error: callError,
+    })
 
-  if (callError) {
-    return new Response(JSON.stringify({ error: callError }), { status: 502 })
-  }
+    if (callError) {
+      send({ type: 'error', error: callError })
+    } else {
+      send({
+        type: 'done',
+        reply,
+        suggestions,
+        usage: {
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          cacheReadTokens: totalCacheReadTokens,
+          cacheCreationTokens: totalCacheCreationTokens,
+          dailyUsed: (dailyCount ?? 0) + 1,
+          dailyLimit,
+        },
+      })
+    }
+    streamController.close()
+  })()
 
-  return new Response(
-    JSON.stringify({
-      reply,
-      suggestions,
-      usage: {
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-        cacheReadTokens: totalCacheReadTokens,
-        cacheCreationTokens: totalCacheCreationTokens,
-        dailyUsed: (dailyCount ?? 0) + 1,
-        dailyLimit,
-      },
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
-  )
+  return new Response(stream, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } })
 }

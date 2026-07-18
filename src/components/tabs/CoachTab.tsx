@@ -34,6 +34,7 @@ const QUICK_PROMPTS = [
 export function CoachTab() {
   const messages = useChatStore((s) => s.messages)
   const sending = useChatStore((s) => s.sending)
+  const statusMessage = useChatStore((s) => s.statusMessage)
   const lastUsage = useChatStore((s) => s.lastUsage)
   const error = useChatStore((s) => s.error)
   const sendMessage = useChatStore((s) => s.sendMessage)
@@ -47,7 +48,7 @@ export function CoachTab() {
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, sending])
+  }, [messages, sending, statusMessage])
 
   useEffect(() => {
     if (error) {
@@ -141,7 +142,7 @@ export function CoachTab() {
                 color: 'var(--dim)',
               }}
             >
-              Thinking…
+              {statusMessage || 'Thinking…'}
             </div>
           </div>
         )}

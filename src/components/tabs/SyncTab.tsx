@@ -3,6 +3,7 @@ import { useConfigStore, useSessionStore, useUIStore, useAuthStore, useStravaSto
 import { restoreFromSheet, pushSession } from '@/services/appScript'
 import { stravaConfigured } from '@/services/strava'
 import { Avatar } from '@/components/layout'
+import { ChevronIcon } from '@/components/icons/Icons'
 import type { Session } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -308,7 +309,9 @@ export function SyncTab() {
       <div className={styles.sec} style={{ cursor: 'pointer' }} onClick={() => setAdvancedOpen(!advancedOpen)}>
         <h2>Advanced</h2>
         <div className={styles.rule} />
-        <span style={{ fontSize: '11px', color: 'var(--dim)' }}>{advancedOpen ? '▾' : '▸'}</span>
+        <span style={{ fontSize: '11px', color: 'var(--dim)' }}>
+          <ChevronIcon open={advancedOpen} />
+        </span>
       </div>
 
       {advancedOpen && (

@@ -1,4 +1,5 @@
 import styles from '../../styles/App.module.css'
+import { TodayIcon, HistoryIcon, TrendsIcon, SyncIcon, CoachIcon } from '../icons/TabIcons'
 
 interface BottomNavProps {
   activeTab: string
@@ -7,11 +8,11 @@ interface BottomNavProps {
 }
 
 const TABS = [
-  { id: 'today', label: 'Today', icon: '◉' },
-  { id: 'history', label: 'History', icon: '≡' },
-  { id: 'trends', label: 'Trends', icon: '📈' },
-  { id: 'sync', label: 'Sync', icon: '↔' },
-  { id: 'coach', label: 'Coach', icon: '💬' },
+  { id: 'today', label: 'Today', Icon: TodayIcon },
+  { id: 'history', label: 'History', Icon: HistoryIcon },
+  { id: 'trends', label: 'Trends', Icon: TrendsIcon },
+  { id: 'sync', label: 'Sync', Icon: SyncIcon },
+  { id: 'coach', label: 'Coach', Icon: CoachIcon },
 ]
 
 export function BottomNav({ activeTab, onTabChange, showCoach }: BottomNavProps) {
@@ -26,7 +27,7 @@ export function BottomNav({ activeTab, onTabChange, showCoach }: BottomNavProps)
             className={`${styles.tab} ${activeTab === tab.id ? styles.on : ''}`}
             onClick={() => onTabChange(tab.id as any)}
           >
-            <span style={{ fontSize: '20px' }}>{tab.icon}</span>
+            <tab.Icon />
             {tab.label}
           </button>
         ))}

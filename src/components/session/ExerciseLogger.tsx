@@ -3,6 +3,7 @@ import type { ProgramExercise } from '@/types'
 import { lastOf } from '@/services/trendCalculations'
 import { ago } from '@/services/dateUtils'
 import { unlockAudioContext } from '@/services/audio'
+import { StarIcon, CloseIcon } from '@/components/icons/Icons'
 import styles from '../../styles/components.module.css'
 
 interface ExerciseLoggerProps {
@@ -51,7 +52,10 @@ export function ExerciseLogger({ def, index }: ExerciseLoggerProps) {
           {def.n.includes('★') ? (
             <>
               {def.n.replace('★', '')}
-              <span className={styles.star}> ★</span>
+              <span className={styles.star}>
+                {' '}
+                <StarIcon />
+              </span>
             </>
           ) : def.n}
         </div>
@@ -135,7 +139,7 @@ export function ExerciseLogger({ def, index }: ExerciseLoggerProps) {
             </button>
           ))}
           <button className={`${styles.rep} ${styles.x}`} onClick={() => setOpenExerciseIndex(null)}>
-            ✕
+            <CloseIcon size="15px" />
           </button>
         </div>
       )}

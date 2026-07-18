@@ -5,6 +5,7 @@ import { iso, mondayOf } from '@/services/dateUtils'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
+import { StarIcon, CheckIcon, ChevronIcon } from '@/components/icons/Icons'
 
 const DOW_LABEL: Record<number, string> = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' }
 
@@ -130,7 +131,12 @@ export function TodayTab() {
                       <span key={c} className={`${styles.wkItem} ${ok ? styles.ok : ''}`}>
                         <span className={styles.wkDot} style={{ background: col }} />
                         {p.name}
-                        {ok ? <span className={styles.wkCheck}> ✓</span> : null}
+                        {ok ? (
+                          <span className={styles.wkCheck}>
+                            {' '}
+                            <CheckIcon />
+                          </span>
+                        ) : null}
                       </span>
                     )
                   })
@@ -142,7 +148,9 @@ export function TodayTab() {
                 )}
                 {detail && <span className={styles.wkDetail}>{detail}</span>}
               </span>
-              <span className={styles.wkChev}>{isOpen ? '▾' : '▸'}</span>
+              <span className={styles.wkChev}>
+                <ChevronIcon open={isOpen} />
+              </span>
             </div>
             {isOpen && (
               <div className={styles.wkExpand}>
@@ -168,7 +176,10 @@ export function TodayTab() {
                                   {e.n.includes('★') ? (
                                     <>
                                       {e.n.replace('★', '')}
-                                      <span className={styles.star}> ★</span>
+                                      <span className={styles.star}>
+                                        {' '}
+                                        <StarIcon />
+                                      </span>
                                     </>
                                   ) : e.n}
                                 </span>

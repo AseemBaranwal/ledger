@@ -1,79 +1,74 @@
 # Ledger
 
-**Live app: [aseem-ledger.netlify.app](https://aseem-ledger.netlify.app/)**
+**Live app: [aseem-ledger.vercel.app](https://aseem-ledger.vercel.app/)**
 
 A training log built for one job: **record a set in under three seconds, one-handed, in a gym.**
 
-Everything else — trends, body composition, the Claude export — is secondary to that.
+Everything else — history, trends, Sheet sync — is secondary to that.
 
 ---
 
-## Deploy to Netlify (2 minutes)
+## Stack
 
-There is no build step. It's one HTML file.
+- **React 18 + TypeScript + Vite**, Zustand for state, CSS Modules for styling, `vite-plugin-pwa` for offline/installable support
+- **Supabase Auth** (Google OAuth) for sign-in, plus one small `profiles` table mapping each signed-in user to their own Google Sheet
+- **Each user's actual workout data lives in their own Google Sheet**, written/read through an Apps Script Web App bridge (`apps-script.gs`) — not in Supabase. Supabase only handles "who are you" and "which Sheet is yours."
+- Deployed on **Vercel** (free tier)
 
-**Drag-and-drop (easiest):**
+Nothing here costs money at personal-use scale: Vercel Hobby, Supabase free tier, and a Google Sheet are all free.
 
-1. Go to [app.netlify.com/drop](https://app.netlify.com/drop)
-2. Drag this whole folder onto the page
-3. Done. You get a URL immediately.
+---
 
-**Via Git (if you want version control):**
+## How data is isolated between users
+
+This matters enough to spell out, since more than one person can sign in:
+
+- **Identity & routing** (Supabase): the `profiles` table has row-level security — a user can only ever `select`/`insert`/`update` the row matching their own `auth.uid()`. Verified live against the database (not just reviewed in code): an authenticated request with `select=*` and no filter still only returns the caller's own row; an unauthenticated request returns none.
+- **Workout data** (Google Sheets): lives entirely outside Supabase, in each user's own Sheet, reachable only via the Apps Script URL they configured. There's no shared backend table of session data to leak across users.
+- **Local cache** (browser): the Zustand `persist` cache is namespaced by user id (`ledger.sessions.<uid>`, `ledger.body.<uid>`), and gets explicitly blanked before every rehydrate on sign-in/out — so switching accounts on a shared device can't leave one person's cached workouts visible to the next.
+
+Known residual limitation: an Apps Script Web App URL itself isn't cryptographically secret, just obscure (anyone who has the exact URL could hit it directly, bypassing the app). This is a pre-existing tradeoff of the "your own free Google Sheet as a database" design, not something introduced by the auth layer — worth knowing about, not yet hardened further.
+
+---
+
+## Setup (for a new deploy / new contributor)
+
+### 1. Google Sheet + Apps Script (per user, ~5 min)
+
+1. `sheets.new` → rename the file (e.g. "Ledger Log")
+2. Extensions → Apps Script → delete the placeholder → paste in all of `apps-script.gs` → Save
+3. Deploy → New deployment → type: **Web app**, Execute as: **Me**, Who has access: **Anyone**
+4. Copy the `/exec` URL — you'll paste this into the app's onboarding screen (or Sync tab) after signing in
+
+If you're migrating a Sheet that predates the current column format, run `migrateSessionsSheetFormat_` once from the Apps Script editor's function dropdown (details in the comment block at the top of `apps-script.gs`).
+
+### 2. Supabase project (once, for the whole app)
+
+1. Create a free project at [supabase.com](https://supabase.com)
+2. Authentication → Providers → enable **Google** — needs a Google Cloud OAuth Client ID + Secret (Google Cloud Console → APIs & Services → Credentials → OAuth client ID → Web application → Authorized redirect URI = the Callback URL Supabase shows you on that same page)
+3. Authentication → URL Configuration → Redirect URLs → add your deployed URL and `http://localhost:5173`
+4. SQL Editor → run all of `supabase/profiles.sql` (creates the `profiles` table, RLS policies, and an auto-create-on-signup trigger)
+5. Settings → API → copy the **Project URL** and **anon/publishable key**
+
+### 3. Environment variables
 
 ```bash
-git init && git add . && git commit -m "ledger"
-# push to GitHub, then in Netlify: Add new site → Import from Git
-# Build command:    (leave blank)
-# Publish directory: .
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-**Then, on your phone:** open the URL → Share → **Add to Home Screen**. It runs full-screen like a native app and works offline.
+Locally: put these in `.env.local` (gitignored). On Vercel: Project Settings → Environment Variables → add both → redeploy (Vite bakes them in at build time, so a redeploy is required after adding/changing them — just saving the vars isn't enough).
 
----
+### 4. Run it
 
-## How the data works
-
-| | |
-|---|---|
-| **Where it lives** | `localStorage` on your phone. No account, no server, no cost. |
-| **Offline** | Fully. The gym basement doesn't matter. |
-| **Backup** | Sync tab → *Download backup*. Do this occasionally — clearing your browser wipes the data. |
-
-⚠️ **The data is on one device.** It does not sync between your phone and laptop. Download a backup before you clear browser data, get a new phone, or do anything drastic.
-
----
-
-## Getting data to Claude
-
-Two ways. Pick either — or use both.
-
-### 1. Copy for Claude (works immediately, zero setup)
-
-Sync tab → **Copy for Claude** → paste into the chat.
-
-The format is deliberately terse. A full training week costs roughly **400 tokens** instead of the ~4,000 raw JSON would burn:
-
-```
-S 2026-07-13 LA RSL2
-SQ 75 6,6,6,5
-BSS 20 8,8,8,8
-RDL 65 8,8,8
-SCR 25 12,12,12,10
-# calves burned, never trained these before
-
-B 2026-07-13 159.2 23.1 68.9 - 14
+```bash
+npm install
+npm run dev      # local dev server
+npm run build    # production build
+npm test         # vitest
 ```
 
-`S` = session (date, code, gym), then one line per lift: `code weight reps`.
-`B` = body scan. `#` = a note. `-` = not measured.
-
-**Mark as sent** after each export so the next one only includes what's new.
-
-### 2. Google Sheet auto-sync (5-minute setup, then never touch it)
-
-Every saved session also appends to a Google Sheet. Since Claude can read your Drive, check-ins then need **no pasting at all** — just say "check in."
-
-Setup is in **`apps-script.gs`** — the steps are at the top of that file. Once you have the `/exec` URL, paste it into Sync → *Apps Script Web App URL*.
+First sign-in on a fresh account lands on an onboarding screen asking for the Apps Script URL from step 1 — paste it once, and it's remembered on that account from then on, on any device.
 
 ---
 
@@ -87,17 +82,16 @@ Setup is in **`apps-script.gs`** — the steps are at the top of that file. Once
 | `PL` | Pull — Back Width | Thu |
 | `LB` | Lower B — Glutes & Posterior | Sat |
 
-The app picks today's session automatically, but you can log any session on any day — the schedule bends, the training doesn't.
+The app picks today's session automatically, but any session can be logged on any day — the schedule bends, the training doesn't.
 
 ---
 
 ## Changing the program
 
-All of it lives in the `PROGRAM` object at the top of the `<script>` in `index.html`. Exercises, targets, starting weights, and coaching cues are plain data:
+The training program (exercises, targets, starting weights, coaching cues, rest-day prescriptions) lives in `public/config.json`, fetched at runtime — no rebuild needed to tweak it:
 
-```js
-{k:'SQ', n:'Back Squat', s:4, r:6, w:75, u:'lb', cue:'...'}
-//  ^code  ^name          ^sets ^reps ^start weight
+```json
+{"k": "SQ", "n": "Back Squat", "s": 4, "r": 6, "w": 75, "u": "lb", "group": "Legs", "cue": "..."}
 ```
 
-Edit, save, redeploy. Keep the `k` codes stable — they're what links your history together and what the digest uses.
+`k` = code, `n` = name, `s`/`r` = sets/reps, `w` = starting weight, `u` = unit, `group` = muscle group (drives the Trends tab filter). Keep `k` codes stable once you've logged against them — they're what links history together across sessions and what the Sheet's `sets` column keys off of.

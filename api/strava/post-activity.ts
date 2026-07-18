@@ -1,6 +1,6 @@
-import { requireUser } from '../_lib/auth'
-import { supabaseAdmin } from '../_lib/supabaseAdmin'
-import { sportTypeForCode, estimateElapsedSeconds, buildActivityDescription } from '../_lib/stravaMapping'
+import { requireUser } from '../_lib/auth.js'
+import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
+import { sportTypeForCode, estimateElapsedSeconds, buildActivityDescription } from '../_lib/stravaMapping.js'
 
 interface StravaConnection {
   user_id: string

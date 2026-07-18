@@ -1,5 +1,5 @@
-import { requireUser } from '../_lib/auth'
-import { supabaseAdmin } from '../_lib/supabaseAdmin'
+import { requireUser } from '../_lib/auth.js'
+import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 
 // Deleting the row needs the service_role key — there's deliberately no
 // user-facing delete policy on strava_connections in Supabase, so this is

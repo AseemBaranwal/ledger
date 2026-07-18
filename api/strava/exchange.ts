@@ -1,5 +1,5 @@
-import { requireUser } from '../_lib/auth'
-import { supabaseAdmin } from '../_lib/supabaseAdmin'
+import { requireUser } from '../_lib/auth.js'
+import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 
 // Called once, right after the user approves Strava's OAuth consent screen
 // and gets redirected back to the app with a `code` in the URL. This is the

@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './supabaseAdmin'
+import { supabaseAdmin } from './supabaseAdmin.js'
 
 // Verifies the caller's Supabase session token (sent by the client exactly
 // like it authenticates with Supabase directly) and returns their user id.

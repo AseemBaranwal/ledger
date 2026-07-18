@@ -78,7 +78,7 @@ export const useSessionStore = create<SessionStore>()(
         const m = String(today.getMonth() + 1).padStart(2, '0')
         const d = String(today.getDate()).padStart(2, '0')
         set({
-          draft: { d: `${y}-${m}-${d}`, s: code, g: gym, n: '', type: 'PROGRAM' },
+          draft: { d: `${y}-${m}-${d}`, s: code, g: gym, n: '', type: 'PROGRAM', st: new Date().toISOString() },
           draftEx: exList.map((e) => ({ k: e.k, w: e.w, r: [], ws: [] })),
           draftItems: null,
         })
@@ -162,7 +162,7 @@ export const useSessionStore = create<SessionStore>()(
           sessionToSave = { ...state.draft, items: state.draftItems || [] }
         } else {
           const loggedEx = (state.draftEx || []).filter((e) => e.r.length > 0)
-          sessionToSave = { ...state.draft, ex: loggedEx }
+          sessionToSave = { ...state.draft, ex: loggedEx, et: new Date().toISOString() }
         }
 
         const savedSession = { ...sessionToSave, id: Date.now().toString() }

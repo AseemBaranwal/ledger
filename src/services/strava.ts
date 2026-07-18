@@ -71,6 +71,8 @@ export async function postSessionToStrava(
       date: session.d,
       exercises,
       notes: session.n,
+      startTime: session.st,
+      endTime: session.et,
     })
     const data = await res.json()
     if (!res.ok) return { ok: false, error: data.error || 'Strava rejected the activity' }

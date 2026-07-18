@@ -3,9 +3,9 @@ import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import {
   sportTypeForCode,
   supportsStructuredSets,
-  estimateElapsedSeconds,
   buildActivityDescription,
   buildStravaSets,
+  resolveTiming,
 } from '../_lib/stravaMapping.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
@@ -78,14 +78,22 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
   }
 
-  let payload: { code?: string; name?: string; date?: string; exercises?: Array<{ k: string; n?: string; r: number[]; ws?: number[]; w?: number | null }>; notes?: string }
+  let payload: {
+    code?: string
+    name?: string
+    date?: string
+    exercises?: Array<{ k: string; n?: string; r: number[]; ws?: number[]; w?: number | null }>
+    notes?: string
+    startTime?: string
+    endTime?: string
+  }
   try {
     payload = await req.json()
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400 })
   }
 
-  const { code, name, date, exercises, notes } = payload
+  const { code, name, date, exercises, notes, startTime, endTime } = payload
   if (!code || !date || !Array.isArray(exercises) || exercises.length === 0) {
     return new Response(JSON.stringify({ error: 'Missing code, date, or exercises' }), { status: 400 })
   }
@@ -116,6 +124,7 @@ export default async function handler(req: Request): Promise<Response> {
   const sportType = sportTypeForCode(code)
   const activityName = name || `Ledger: ${code}`
   const description = buildActivityDescription(exercises, notes)
+  const { startTimeIso, elapsedSeconds } = resolveTiming(date, exercises, startTime, endTime)
 
   // Weight-training sessions go through Strava's structured JSON upload so
   // sets/reps/weight render as native Exercise cards (the feature this whole
@@ -125,9 +134,9 @@ export default async function handler(req: Request): Promise<Response> {
   if (supportsStructuredSets(sportType)) {
     const file = {
       version: '1.0',
-      start_time: `${date}T12:00:00Z`, // Ledger doesn't track real start time — noon is a placeholder
+      start_time: startTimeIso,
       utc_offset: 0,
-      elapsed_time: estimateElapsedSeconds(exercises),
+      elapsed_time: elapsedSeconds,
       sets: buildStravaSets(exercises),
     }
 
@@ -188,8 +197,8 @@ export default async function handler(req: Request): Promise<Response> {
     body: JSON.stringify({
       name: activityName,
       sport_type: sportType,
-      start_date_local: `${date}T12:00:00Z`,
-      elapsed_time: estimateElapsedSeconds(exercises),
+      start_date_local: startTimeIso,
+      elapsed_time: elapsedSeconds,
       description,
     }),
   })

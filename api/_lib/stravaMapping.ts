@@ -123,6 +123,32 @@ export function estimateElapsedSeconds(exercises: ExerciseLike[]): number {
   return Math.min(Math.max(estimate, 20 * 60), 120 * 60)
 }
 
+// Prefers the app's own recorded start/end timestamps (set when the user
+// actually tapped "Start" and saved the session) over the noon-placeholder +
+// set-count estimate used previously. Falls back to the estimate whenever
+// real timing is missing (older sessions logged before this existed) or
+// looks implausible (clock skew, a draft left open for days) — clamped to
+// the same kind of sane range as the estimate, just wider since a real
+// session can legitimately run longer than the heuristic assumed.
+export function resolveTiming(
+  date: string,
+  exercises: ExerciseLike[],
+  startTime?: string,
+  endTime?: string
+): { startTimeIso: string; elapsedSeconds: number } {
+  const start = startTime ? new Date(startTime) : null
+  const end = endTime ? new Date(endTime) : null
+  const validRange = start && end && !isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start
+
+  if (validRange) {
+    const elapsed = Math.round((end!.getTime() - start!.getTime()) / 1000)
+    if (elapsed >= 60 && elapsed <= 4 * 60 * 60) {
+      return { startTimeIso: start!.toISOString(), elapsedSeconds: elapsed }
+    }
+  }
+  return { startTimeIso: `${date}T12:00:00Z`, elapsedSeconds: estimateElapsedSeconds(exercises) }
+}
+
 export function buildActivityDescription(exercises: ExerciseLike[], notes: string | undefined): string {
   const lines = exercises.map((e) => {
     const sets = e.r.map((r, i) => {

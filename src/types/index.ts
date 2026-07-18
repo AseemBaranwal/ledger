@@ -16,6 +16,8 @@ export interface Session {
   type?: 'PROGRAM' | 'REST'; // session type
   t?: string; // title (for REST sessions)
   items?: RestItem[]; // items for REST sessions
+  st?: string; // start time (ISO 8601, set when the session was started)
+  et?: string; // end time (ISO 8601, set when the session was saved)
 }
 
 export interface RestItem {

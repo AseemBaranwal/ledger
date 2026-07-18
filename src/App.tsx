@@ -3,7 +3,7 @@ import { useConfigStore, useUIStore, useSessionStore, useAuthStore } from '@/sto
 import { Header, BottomNav, Toast } from '@/components/layout'
 import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 import { RestTimer } from '@/components/session'
-import { SignInScreen, OnboardingScreen } from '@/components/auth'
+import { SignInScreen, OnboardingScreen, ErrorScreen } from '@/components/auth'
 import { streak } from '@/services/trendCalculations'
 import { restoreFromSheet } from '@/services/appScript'
 import { unlockAudioContext } from '@/services/audio'
@@ -22,6 +22,7 @@ export default function App() {
   const authLoading = useAuthStore((s) => s.loading)
   const user = useAuthStore((s) => s.user)
   const profile = useAuthStore((s) => s.profile)
+  const profileError = useAuthStore((s) => s.profileError)
   const authInit = useAuthStore((s) => s.init)
 
   // App-wide, auth-independent bootstrap: static program config, PWA
@@ -107,6 +108,14 @@ export default function App() {
 
   if (!user) {
     return <SignInScreen />
+  }
+
+  // Only block on a hard error screen when there's no usable profile at all
+  // (brand-new session, first load failed). A transient error on an
+  // already-established session keeps showing the last known-good profile —
+  // see authStore's applyUser — so this won't fire for those.
+  if (profileError && !profile) {
+    return <ErrorScreen />
   }
 
   if (!profile?.sheet_url) {

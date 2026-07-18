@@ -33,21 +33,15 @@ interface SessionStore {
   markSynced: () => void
 }
 
-// Migrate old data from vanilla JS app
-const migrateOldData = (): Session[] => {
-  try {
-    const oldData = localStorage.getItem('ledger.v1')
-    if (oldData) {
-      const parsed = JSON.parse(oldData)
-      if (parsed.sessions && Array.isArray(parsed.sessions)) {
-        return parsed.sessions
-      }
-    }
-  } catch (e) {
-    console.warn('Could not migrate old data:', e)
-  }
-  return []
-}
+// NOTE: this used to auto-import from the pre-auth vanilla app's unscoped
+// 'ledger.v1' localStorage key at store creation. Removed: that key isn't
+// tied to any signed-in user, so on a device that had it set, a *different*
+// Google account signing in for the first time (empty scoped storage) would
+// inherit that stale data — zustand's persist.rehydrate() merges onto
+// whatever's already in memory rather than resetting it when the target
+// storage key is empty, so the leftover initial state would stick. The
+// user's Sheet is the durable source of truth now; auto-restore-on-empty
+// in App.tsx repopulates real per-user data safely instead.
 
 // Fire the sheet push and update the pending-sync queue based on the outcome.
 // mode:'no-cors' means we can't see whether Apps Script actually processed the
@@ -69,7 +63,7 @@ async function syncSession(session: Session, markPending: (id: string) => void, 
 export const useSessionStore = create<SessionStore>()(
   persist(
     (set, get) => ({
-      sessions: migrateOldData(),
+      sessions: [],
       draft: null,
       draftEx: null,
       draftItems: null,

@@ -39,12 +39,15 @@ interface AuthStore {
 // So: explicitly blank the in-memory state FIRST, then rehydrate. If the
 // new user has real cached data, rehydrate fills it back in; if not, the
 // blank state is what's shown, never the previous user's.
-function rehydrateUserScopedStores(userId: string | null) {
+// Awaited by callers so the app doesn't briefly render with blanked-out
+// state before the real (correctly-scoped) data has finished loading back
+// in — rehydrate() is async, and skipping the await here would show a flash
+// of "0 sessions" on every fresh page load before self-correcting.
+async function rehydrateUserScopedStores(userId: string | null) {
   setCurrentUserId(userId)
   useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftItems: null, pendingSync: [], lastSyncedAt: null })
   useBodyStore.setState({ scans: [] })
-  useSessionStore.persist.rehydrate()
-  useBodyStore.persist.rehydrate()
+  await Promise.all([useSessionStore.persist.rehydrate(), useBodyStore.persist.rehydrate()])
 }
 
 async function loadProfile(userId: string): Promise<{ profile: Profile | null; error: string | null }> {
@@ -65,11 +68,12 @@ async function applyUser(
   user: AuthUser,
   isNewUser: boolean
 ) {
+  let rehydratePromise: Promise<void> = Promise.resolve()
   if (isNewUser) {
-    rehydrateUserScopedStores(user.id)
+    rehydratePromise = rehydrateUserScopedStores(user.id)
     useConfigStore.setState({ sheetUrl: '' }) // never show a previous user's sheet while the new one's profile is loading
   }
-  const { profile, error } = await loadProfile(user.id)
+  const [{ profile, error }] = await Promise.all([loadProfile(user.id), rehydratePromise])
   // On a transient error for an already-established session, keep the last
   // known-good profile rather than wiping it — only a brand-new session
   // with no profile yet should show a hard error screen. profileError still
@@ -103,7 +107,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
-        rehydrateUserScopedStores(null)
+        await rehydrateUserScopedStores(null)
         useConfigStore.setState({ sheetUrl: '' })
         set({ user: null, profile: null, profileError: null })
         return
@@ -129,7 +133,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signOut: async () => {
     await supabase.auth.signOut()
-    rehydrateUserScopedStores(null)
+    await rehydrateUserScopedStores(null)
     useConfigStore.setState({ sheetUrl: '' })
     set({ user: null, profile: null, profileError: null })
   },

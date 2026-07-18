@@ -55,14 +55,21 @@ export async function disconnectStrava(): Promise<void> {
 
 // Fire-and-forget from the caller's perspective — a Strava failure should
 // never block or undo a local save, so this never throws; it just reports
-// success/failure for an optional toast.
-export async function postSessionToStrava(session: Session, programName: string): Promise<{ ok: boolean; error?: string }> {
+// success/failure for an optional toast. exerciseNames maps an exercise code
+// (e.g. "SQ") to its full name (e.g. "Squat") so the posted activity reads
+// clearly to anyone who isn't fluent in this app's shorthand.
+export async function postSessionToStrava(
+  session: Session,
+  programName: string,
+  exerciseNames: Record<string, string> = {}
+): Promise<{ ok: boolean; error?: string }> {
   try {
+    const exercises = (session.ex || []).map((e) => ({ ...e, n: exerciseNames[e.k] }))
     const res = await authedFetch('/api/strava/post-activity', {
       code: session.s,
       name: programName,
       date: session.d,
-      exercises: session.ex || [],
+      exercises,
       notes: session.n,
     })
     const data = await res.json()

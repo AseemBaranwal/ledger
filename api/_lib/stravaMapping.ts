@@ -21,6 +21,7 @@ export function sportTypeForCode(code: string): string {
 
 interface ExerciseLike {
   k: string
+  n?: string
   r: number[]
   ws?: number[]
   w?: number | null
@@ -43,7 +44,7 @@ export function buildActivityDescription(exercises: ExerciseLike[], notes: strin
       const w = e.ws ? e.ws[i] : e.w
       return w ? `${w}×${r}` : `${r}`
     })
-    return `${e.k}: ${sets.join(', ')}`
+    return `${e.n || e.k}: ${sets.join(', ')}`
   })
   if (notes) lines.push('', notes)
   return lines.join('\n')

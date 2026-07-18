@@ -202,7 +202,8 @@ export const useSessionStore = create<SessionStore>()(
           if (savedSession.ex?.length && useStravaStore.getState().connected) {
             const programDef = savedSession.s ? useConfigStore.getState().program[savedSession.s] : undefined
             const programName = programDef?.full || programDef?.name || savedSession.s || 'Workout'
-            postSessionToStrava(savedSession, programName).then((result) => {
+            const exerciseNames = Object.fromEntries((programDef?.ex || []).map((e) => [e.k, e.n]))
+            postSessionToStrava(savedSession, programName, exerciseNames).then((result) => {
               if (!result.ok && result.error) {
                 useUIStore.getState().showNotification(`Strava: ${result.error}`, 'error')
               }

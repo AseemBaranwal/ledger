@@ -51,7 +51,7 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
   }
 
-  let payload: { code?: string; name?: string; date?: string; exercises?: Array<{ k: string; r: number[]; ws?: number[]; w?: number | null }>; notes?: string }
+  let payload: { code?: string; name?: string; date?: string; exercises?: Array<{ k: string; n?: string; r: number[]; ws?: number[]; w?: number | null }>; notes?: string }
   try {
     payload = await req.json()
   } catch {

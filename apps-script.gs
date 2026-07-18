@@ -45,6 +45,13 @@
  * timestamped backup tab first, then rewrites the original in place — it
  * never deletes anything, so the old data is always recoverable from the
  * backup tab if something looks wrong.
+ *
+ * WEIGHTS TAB
+ * ───────────
+ * A separate "Weights" tab holds one row per exercise code — the current
+ * target weight the app's Coach chat can propose changes to, and the app
+ * loads on every session start. GET ?action=weights reads it; POST
+ * {type:'weight', code, weight} upserts a row by code.
  */
 
 const HEADERS = [
@@ -73,6 +80,16 @@ function doGet(e) {
 
       const data = { sessions, body, lastSync: null };
       return ContentService.createTextOutput(JSON.stringify(data))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'weights') {
+      const ws = ensureWeightsSheet_();
+      const rows = ws.getDataRange().getValues().slice(1);
+      const weights = rows
+        .filter(function (row) { return row[0]; })
+        .map(function (row) { return { code: String(row[0]), weight: Number(row[1]) }; });
+      return ContentService.createTextOutput(JSON.stringify({ weights: weights }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -116,6 +133,21 @@ function doPost(e) {
       bs.appendRow([
         body.d, body.wt, body.bf, body.smm || '', body.waist || '', body.fer || ''
       ]);
+    }
+
+    if (body.type === 'weight') {
+      const ws = ensureWeightsSheet_();
+      const rows = ws.getDataRange().getValues();
+      let rowIndex = -1; // 0-indexed into `rows`; -1 means "not found, append"
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(body.code)) { rowIndex = i; break; }
+      }
+      const now = new Date().toISOString();
+      if (rowIndex >= 0) {
+        ws.getRange(rowIndex + 1, 1, 1, 3).setValues([[body.code, body.weight, now]]);
+      } else {
+        ws.appendRow([body.code, body.weight, now]);
+      }
     }
 
     return ContentService.createTextOutput('ok');
@@ -299,6 +331,26 @@ function ensureBodySheet_() {
       .setFontWeight('bold')
       .setBackground('#14181D')
       .setFontColor('#8B7CF6');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+// One row per exercise code — writes upsert by code (see doPost's
+// type==='weight' handler), so this holds current targets, not a full
+// history. Reads back via doGet's action==='weights', which is the shape
+// configStore.ts's loadWeights() has expected on the client since before
+// this sheet existed (it was silently failing until now).
+function ensureWeightsSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName('Weights');
+  if (!sh) {
+    sh = ss.insertSheet('Weights');
+    sh.appendRow(['code', 'weight', 'updated_at']);
+    sh.getRange(1, 1, 1, 3)
+      .setFontWeight('bold')
+      .setBackground('#14181D')
+      .setFontColor('#00C2A8');
     sh.setFrozenRows(1);
   }
   return sh;

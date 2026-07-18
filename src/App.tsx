@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
-import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
+import { TodayTab, HistoryTab, TrendsTab, SyncTab, CoachTab } from '@/components/tabs'
 import { RestTimer } from '@/components/session'
 import { SignInScreen, OnboardingScreen, ErrorScreen } from '@/components/auth'
 import { streak } from '@/services/trendCalculations'
@@ -128,6 +128,11 @@ export default function App() {
   const today = new Date()
   const todayStr = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
+  // Client-side check is UX only (hides the tab for everyone else) — the
+  // real gate is the server-side CHAT_OWNER_USER_ID allow-list every
+  // /api/chat/* request is checked against.
+  const showCoach = Boolean(user?.email && user.email === import.meta.env.VITE_CHAT_OWNER_EMAIL)
+
   if (authLoading) {
     return <div className={styles.root} />
   }
@@ -164,10 +169,11 @@ export default function App() {
         {activeTab === 'history' && <HistoryTab />}
         {activeTab === 'trends' && <TrendsTab />}
         {activeTab === 'sync' && <SyncTab />}
+        {activeTab === 'coach' && showCoach && <CoachTab />}
       </main>
 
       <RestTimer />
-      <BottomNav activeTab={activeTab} onTabChange={setTab} />
+      <BottomNav activeTab={activeTab} onTabChange={setTab} showCoach={showCoach} />
       <Toast />
     </div>
   )

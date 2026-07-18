@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Notification } from '@/types'
 
 interface UIStore {
-  activeTab: 'today' | 'history' | 'trends' | 'sync'
+  activeTab: 'today' | 'history' | 'trends' | 'sync' | 'coach'
   expandedHistoryRow: string | null
   selectedTrendGroup: string
   notifications: Notification[]
@@ -12,7 +12,7 @@ interface UIStore {
   openExerciseIndex: number | null
   openWeekDay: number | null
 
-  setTab: (tab: 'today' | 'history' | 'trends' | 'sync') => void
+  setTab: (tab: 'today' | 'history' | 'trends' | 'sync' | 'coach') => void
   toggleExpandHistory: (id: string) => void
   setTrendGroup: (group: string) => void
   showNotification: (message: string, type: 'success' | 'error' | 'info') => void

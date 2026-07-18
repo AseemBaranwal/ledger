@@ -59,7 +59,20 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 Locally: put these in `.env.local` (gitignored). On Vercel: Project Settings → Environment Variables → add both → redeploy (Vite bakes them in at build time, so a redeploy is required after adding/changing them — just saving the vars isn't enough).
 
-### 4. Run it
+### 4. AI Coach chat (optional, owner-only)
+
+A chat tab that answers questions about your own logged training data and can propose weight changes you accept yourself — it does not write anything on its own. Billed to your own Anthropic API key, separately from any Claude subscription; skip this section entirely if you don't want the feature.
+
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com) — this is separate, pay-per-token billing, not covered by a Claude Pro/Max/Team subscription
+2. SQL Editor → run all of `supabase/chat_logs.sql`
+3. In Vercel's dashboard (never in `.env.example`, never committed), set:
+   - `ANTHROPIC_API_KEY` — the key from step 1
+   - `CHAT_OWNER_USER_ID` — your Supabase `auth.users.id` (comma-separated if you ever want more than one allow-listed account); this is the real access gate
+   - `CHAT_DAILY_LIMIT` / `CHAT_WINDOW_LIMIT` — optional, default to 60/day and 10 per 10 minutes if unset
+4. Set `VITE_CHAT_OWNER_EMAIL` (see `.env.example`) — client-safe, only hides the tab for everyone else; not a security boundary on its own
+5. Redeploy, then paste your own coaching instructions into the delimited block in `api/_lib/chatSystemPrompt.ts`
+
+### 5. Run it
 
 ```bash
 npm install

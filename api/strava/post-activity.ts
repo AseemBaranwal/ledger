@@ -148,11 +148,21 @@ export default async function handler(req: Request): Promise<Response> {
       sets: buildStravaSets(exercises),
     }
 
+    // Strava tracks uploads by external_id per athlete+app and honors a past
+    // deletion: re-upload the same external_id and it gets silently deleted
+    // again, even though the accept response looks completely normal. Every
+    // upload here used the literal filename "workout.json" as its implicit
+    // external_id, so after the first test activity was deleted, every
+    // subsequent post — real workouts included — was auto-deleted the same
+    // way. A unique id per session fixes it for good.
+    const externalId = `ledger-${code}-${startTimeIso}`
+
     const form = new FormData()
     form.set('data_type', 'json')
     form.set('sport_type', sportType)
     form.set('name', activityName)
     form.set('description', description)
+    form.set('external_id', externalId)
     form.set('file', new Blob([JSON.stringify(file)], { type: 'application/json' }), 'workout.json')
 
     const uploadRes = await fetch('https://www.strava.com/api/v3/uploads', {

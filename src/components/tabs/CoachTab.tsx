@@ -122,7 +122,7 @@ export function CoachTab() {
         <div ref={scrollRef} />
       </div>
 
-      <div style={{ position: 'sticky', bottom: '10px', display: 'flex', gap: '8px' }}>
+      <div style={{ display: 'flex', gap: '8px' }}>
         <textarea
           className={styles.notes}
           style={{ minHeight: '44px', flex: 1 }}

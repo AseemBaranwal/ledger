@@ -1,6 +1,12 @@
 import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
-import { sportTypeForCode, estimateElapsedSeconds, buildActivityDescription } from '../_lib/stravaMapping.js'
+import {
+  sportTypeForCode,
+  supportsStructuredSets,
+  estimateElapsedSeconds,
+  buildActivityDescription,
+  buildStravaSets,
+} from '../_lib/stravaMapping.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
@@ -36,6 +42,27 @@ async function refreshIfNeeded(conn: StravaConnection, clientId: string, clientS
     .eq('user_id', conn.user_id)
 
   return { ...conn, access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Strava's JSON upload is async: the POST just enqueues it, and the actual
+// activity id only shows up once background processing finishes. Strava's
+// own docs say mean processing time is under 2s, so polling for up to 8s
+// comfortably covers the normal case without holding the function open
+// indefinitely on a stuck upload.
+async function pollUploadUntilDone(uploadId: number, accessToken: string): Promise<{ activityId?: number; error?: string }> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await sleep(1000)
+    const res = await fetch(`https://www.strava.com/api/v3/uploads/${uploadId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!res.ok) continue
+    const data = await res.json()
+    if (data.activity_id) return { activityId: data.activity_id }
+    if (data.error) return { error: data.error }
+  }
+  return { error: undefined } // timed out, but not necessarily failed — Strava may still finish it
 }
 
 // Called right after a PROGRAM session saves successfully, alongside (not
@@ -86,6 +113,72 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Could not refresh Strava token' }), { status: 502 })
   }
 
+  const sportType = sportTypeForCode(code)
+  const activityName = name || `Ledger: ${code}`
+  const description = buildActivityDescription(exercises, notes)
+
+  // Weight-training sessions go through Strava's structured JSON upload so
+  // sets/reps/weight render as native Exercise cards (the feature this whole
+  // path exists for). Everything else (e.g. sprint sessions, sport_type
+  // "Run") falls back to a plain activity with just a text description,
+  // since Strava only accepts the sets format for a handful of sport types.
+  if (supportsStructuredSets(sportType)) {
+    const file = {
+      version: '1.0',
+      start_time: `${date}T12:00:00Z`, // Ledger doesn't track real start time — noon is a placeholder
+      utc_offset: 0,
+      elapsed_time: estimateElapsedSeconds(exercises),
+      sets: buildStravaSets(exercises),
+    }
+
+    const form = new FormData()
+    form.set('data_type', 'json')
+    form.set('sport_type', sportType)
+    form.set('name', activityName)
+    form.set('description', description)
+    form.set('file', new Blob([JSON.stringify(file)], { type: 'application/json' }), 'workout.json')
+
+    const uploadRes = await fetch('https://www.strava.com/api/v3/uploads', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${conn.access_token}` },
+      body: form,
+    })
+
+    if (!uploadRes.ok) {
+      const detail = await uploadRes.text()
+      return new Response(JSON.stringify({ error: 'Strava rejected the upload', detail }), { status: 502 })
+    }
+
+    const upload = await uploadRes.json()
+    if (upload.error) {
+      return new Response(JSON.stringify({ error: 'Strava rejected the upload', detail: upload.error }), { status: 502 })
+    }
+    if (upload.activity_id) {
+      return new Response(JSON.stringify({ success: true, activityId: upload.activity_id }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const { activityId, error } = await pollUploadUntilDone(upload.id, conn.access_token)
+    if (error) {
+      return new Response(JSON.stringify({ error: 'Strava rejected the upload', detail: error }), { status: 502 })
+    }
+    if (!activityId) {
+      // Still processing after 8s — genuinely rare given Strava's own <2s
+      // average, but the upload was accepted, so report success rather than
+      // erroring; it'll finish appearing on Strava shortly on its own.
+      return new Response(JSON.stringify({ success: true, activityId: null, pending: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify({ success: true, activityId }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   const activityRes = await fetch('https://www.strava.com/api/v3/activities', {
     method: 'POST',
     headers: {
@@ -93,11 +186,11 @@ export default async function handler(req: Request): Promise<Response> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: name || `Ledger: ${code}`,
-      sport_type: sportTypeForCode(code),
-      start_date_local: `${date}T12:00:00Z`, // Ledger doesn't track real start time — noon is a placeholder
+      name: activityName,
+      sport_type: sportType,
+      start_date_local: `${date}T12:00:00Z`,
       elapsed_time: estimateElapsedSeconds(exercises),
-      description: buildActivityDescription(exercises, notes),
+      description,
     }),
   })
 

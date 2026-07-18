@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { BodyScan } from '@/types'
+import { scopedStorage } from '@/services/userScope'
 
 interface BodyStore {
   scans: BodyScan[]
@@ -23,6 +24,7 @@ export const useBodyStore = create<BodyStore>()(
     }),
     {
       name: 'ledger.body',
+      storage: createJSONStorage(() => scopedStorage),
     }
   )
 )

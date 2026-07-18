@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Session, Exercise, RestItem } from '@/types'
 import { pushSession } from '@/services/appScript'
+import { scopedStorage } from '@/services/userScope'
 import { useConfigStore } from './configStore'
 import { useUIStore } from './uiStore'
 
@@ -226,6 +227,7 @@ export const useSessionStore = create<SessionStore>()(
     }),
     {
       name: 'ledger.sessions',
+      storage: createJSONStorage(() => scopedStorage),
     }
   )
 )

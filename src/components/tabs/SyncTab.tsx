@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useConfigStore, useSessionStore, useUIStore } from '@/store'
+import { useConfigStore, useSessionStore, useUIStore, useAuthStore } from '@/store'
 import { restoreFromSheet, pushSession } from '@/services/appScript'
 import type { Session } from '@/types'
 import appStyles from '../../styles/App.module.css'
@@ -21,7 +21,6 @@ function timeAgo(ms: number | null): string {
 
 export function SyncTab() {
   const sheetUrl = useConfigStore((s) => s.sheetUrl)
-  const updateSheetUrl = useConfigStore((s) => s.updateSheetUrl)
   const loadWeights = useConfigStore((s) => s.loadWeights)
   const showNotification = useUIStore((s) => s.showNotification)
   const sessions = useSessionStore((s) => s.sessions)
@@ -29,6 +28,11 @@ export function SyncTab() {
   const lastSyncedAt = useSessionStore((s) => s.lastSyncedAt)
   const flushPendingSync = useSessionStore((s) => s.flushPendingSync)
   const markSynced = useSessionStore((s) => s.markSynced)
+
+  const user = useAuthStore((s) => s.user)
+  const saveSheetUrl = useAuthStore((s) => s.saveSheetUrl)
+  const savingUrl = useAuthStore((s) => s.savingUrl)
+  const signOut = useAuthStore((s) => s.signOut)
 
   const [url, setUrl] = useState(sheetUrl)
   const [loading, setLoading] = useState(false)
@@ -38,9 +42,13 @@ export function SyncTab() {
   const connected = Boolean(sheetUrl)
   const urlDirty = url !== sheetUrl
 
-  const handleSaveUrl = () => {
-    updateSheetUrl(url)
-    showNotification('Sheet URL saved', 'success')
+  const handleSaveUrl = async () => {
+    try {
+      await saveSheetUrl(url)
+      showNotification('Sheet URL saved', 'success')
+    } catch (e) {
+      showNotification('Could not save that URL — try again', 'error')
+    }
   }
 
   // Full reconciliation: whatever's only in the sheet gets pulled in, whatever's
@@ -169,6 +177,17 @@ export function SyncTab() {
       <div className={appStyles.hero}>
         <div className={appStyles.eyebrow}>Hand the data over</div>
         <h1>Sync</h1>
+        {user && (
+          <div className={appStyles.heroSub} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
+            <span>Signed in as {user.email}</span>
+            <button
+              onClick={signOut}
+              style={{ fontSize: '11px', color: 'var(--dim)', textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Status card */}
@@ -256,10 +275,10 @@ export function SyncTab() {
           <button
             className={`${styles.btn} ${styles.ghost}`}
             onClick={handleSaveUrl}
-            disabled={!urlDirty}
+            disabled={!urlDirty || savingUrl}
             style={{ marginBottom: '20px' }}
           >
-            {urlDirty ? 'Save URL' : 'URL saved'}
+            {savingUrl ? 'Saving…' : urlDirty ? 'Save URL' : 'URL saved'}
           </button>
 
           <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>

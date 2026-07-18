@@ -12,6 +12,9 @@ interface ConfigStore {
 
   loadConfig: () => Promise<void>
   loadWeights: () => Promise<void>
+  // Applies a sheet URL to in-memory state only. Callers that need it to
+  // survive a reload should go through authStore.saveSheetUrl, which
+  // persists it to the signed-in user's profile and calls this after.
   updateSheetUrl: (url: string) => void
 }
 
@@ -22,20 +25,12 @@ const DEFAULT_CONFIG: Config = {
   schedule: { weekDays: [1, 2, 3, 4, 5, 6, 0], priority: [], restColour: {} },
 }
 
-// Built-in fallback so a fresh browser/device always has somewhere to sync to.
-const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycby0yJN702X9-AMJhxC3ONN0CfEMrIqNP6t4a3cHRgj6BqhgstUIunCYcJ0HN9bSOMEW/exec'
-
-const initialSheetUrl = localStorage.getItem('ledger.sheetUrl') || DEFAULT_SHEET_URL
-if (!localStorage.getItem('ledger.sheetUrl')) {
-  localStorage.setItem('ledger.sheetUrl', initialSheetUrl)
-}
-
 export const useConfigStore = create<ConfigStore>((set) => ({
   program: DEFAULT_CONFIG.program,
   restDays: DEFAULT_CONFIG.restDays,
   colours: DEFAULT_CONFIG.colours,
   schedule: DEFAULT_CONFIG.schedule,
-  sheetUrl: initialSheetUrl,
+  sheetUrl: '',
   loading: true,
   error: null,
 
@@ -61,7 +56,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   },
 
   loadWeights: async () => {
-    const url = localStorage.getItem('ledger.sheetUrl')
+    const url = useConfigStore.getState().sheetUrl
     if (!url) return
 
     try {
@@ -86,8 +81,5 @@ export const useConfigStore = create<ConfigStore>((set) => ({
     }
   },
 
-  updateSheetUrl: (url) => {
-    localStorage.setItem('ledger.sheetUrl', url)
-    set({ sheetUrl: url })
-  },
+  updateSheetUrl: (url) => set({ sheetUrl: url }),
 }))

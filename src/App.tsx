@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
-import { useConfigStore, useUIStore, useSessionStore } from '@/store'
+import { useConfigStore, useUIStore, useSessionStore, useAuthStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
 import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 import { RestTimer } from '@/components/session'
+import { SignInScreen, OnboardingScreen } from '@/components/auth'
 import { streak } from '@/services/trendCalculations'
 import { restoreFromSheet } from '@/services/appScript'
 import { unlockAudioContext } from '@/services/audio'
@@ -15,43 +16,21 @@ export default function App() {
   const setTab = useUIStore((s) => s.setTab)
   const loadConfig = useConfigStore((s) => s.loadConfig)
   const loadWeights = useConfigStore((s) => s.loadWeights)
+  const sheetUrl = useConfigStore((s) => s.sheetUrl)
   const clearDraft = useSessionStore((s) => s.clearDraft)
   const sessions = useSessionStore((s) => s.sessions)
+  const authLoading = useAuthStore((s) => s.loading)
+  const user = useAuthStore((s) => s.user)
+  const profile = useAuthStore((s) => s.profile)
+  const authInit = useAuthStore((s) => s.init)
 
+  // App-wide, auth-independent bootstrap: static program config, PWA
+  // service worker, and the audio-unlock fallback. Runs once.
   useEffect(() => {
-    // Initialize config and weights
     loadConfig()
-    loadWeights()
 
-    // On a fresh browser/device with no local sessions yet, pull whatever's
-    // already in the sheet instead of showing an empty log.
-    const autoRestore = async () => {
-      if (useSessionStore.getState().sessions.length > 0) return
-      const sheetUrl = useConfigStore.getState().sheetUrl
-      if (!sheetUrl) return
-      try {
-        const data = await restoreFromSheet(sheetUrl)
-        if (data.sessions && Array.isArray(data.sessions)) {
-          const deduped: Record<string, Session> = {}
-          data.sessions.forEach((s: Session) => {
-            deduped[`${s.d}|${s.s}`] = s
-          })
-          const restored = Object.values(deduped).sort((a, b) => a.d.localeCompare(b.d))
-          useSessionStore.setState({ sessions: restored })
-        }
-      } catch (e) {
-        // silent — user can still restore manually from the Sync tab
-      }
-    }
-    autoRestore()
+    const unsubscribeAuth = authInit()
 
-    // Retry any sessions that failed to push earlier (e.g. the phone was offline)
-    useSessionStore.getState().flushPendingSync()
-    const onOnline = () => useSessionStore.getState().flushPendingSync()
-    window.addEventListener('online', onOnline)
-
-    // Unlock Web Audio on the first tap anywhere, as a fallback for flows
-    // that don't go through the exercise-logger tap handler.
     const unlock = () => {
       unlockAudioContext()
       document.removeEventListener('pointerdown', unlock)
@@ -77,13 +56,62 @@ export default function App() {
     }
 
     return () => {
-      window.removeEventListener('online', onOnline)
       document.removeEventListener('pointerdown', unlock)
+      unsubscribeAuth()
     }
-  }, [loadConfig, loadWeights])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Per-user bootstrap: once the signed-in user's sheet URL is known (set by
+  // authStore from their profile), load their weight overrides, pull down
+  // anything missing locally, and retry any sessions that failed to push.
+  useEffect(() => {
+    if (!sheetUrl) return
+
+    loadWeights()
+
+    const autoRestore = async () => {
+      if (useSessionStore.getState().sessions.length > 0) return
+      try {
+        const data = await restoreFromSheet(sheetUrl)
+        if (data.sessions && Array.isArray(data.sessions)) {
+          const deduped: Record<string, Session> = {}
+          data.sessions.forEach((s: Session) => {
+            deduped[`${s.d}|${s.s}`] = s
+          })
+          const restored = Object.values(deduped).sort((a, b) => a.d.localeCompare(b.d))
+          useSessionStore.setState({ sessions: restored })
+        }
+      } catch (e) {
+        // silent — user can still restore manually from the Sync tab
+      }
+    }
+    autoRestore()
+
+    useSessionStore.getState().flushPendingSync()
+    const onOnline = () => useSessionStore.getState().flushPendingSync()
+    window.addEventListener('online', onOnline)
+
+    return () => {
+      window.removeEventListener('online', onOnline)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetUrl])
 
   const today = new Date()
   const todayStr = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+  if (authLoading) {
+    return <div className={styles.root} />
+  }
+
+  if (!user) {
+    return <SignInScreen />
+  }
+
+  if (!profile?.sheet_url) {
+    return <OnboardingScreen />
+  }
 
   return (
     <div className={styles.root}>

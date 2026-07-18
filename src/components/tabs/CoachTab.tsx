@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import { useChatStore } from '@/store/chatStore'
 import { useUIStore } from '@/store'
+import { estimateCostUsd, formatTokenCount, formatCostUsd } from '@/services/chatCost'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
@@ -39,6 +40,7 @@ export function CoachTab() {
   const error = useChatStore((s) => s.error)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const loadHistory = useChatStore((s) => s.loadHistory)
+  const deleteExchange = useChatStore((s) => s.deleteExchange)
   const acceptSuggestion = useChatStore((s) => s.acceptSuggestion)
   const dismissSuggestion = useChatStore((s) => s.dismissSuggestion)
   const clearError = useChatStore((s) => s.clearError)
@@ -73,14 +75,26 @@ export function CoachTab() {
     setInput('')
   }
 
+  const dailyTokens = lastUsage
+    ? lastUsage.dailyInputTokens + lastUsage.dailyOutputTokens + lastUsage.dailyCacheReadTokens + lastUsage.dailyCacheCreationTokens
+    : 0
+  const dailyCostUsd = lastUsage
+    ? estimateCostUsd({
+        inputTokens: lastUsage.dailyInputTokens,
+        outputTokens: lastUsage.dailyOutputTokens,
+        cacheReadTokens: lastUsage.dailyCacheReadTokens,
+        cacheCreationTokens: lastUsage.dailyCacheCreationTokens,
+      })
+    : 0
+
   return (
     <div>
       <div className={appStyles.hero}>
         <div className={appStyles.eyebrow}>Ask about your training</div>
         <h1>Coach</h1>
         {lastUsage && (
-          <div className={appStyles.heroSub}>
-            {lastUsage.dailyUsed} of {lastUsage.dailyLimit} messages today
+          <div className={appStyles.heroSub} title="Rough estimate from published claude-sonnet-5 rates, not a billing reconciliation">
+            {lastUsage.dailyUsed} of {lastUsage.dailyLimit} messages today · {formatTokenCount(dailyTokens)} tokens · {formatCostUsd(dailyCostUsd)}
           </div>
         )}
       </div>
@@ -107,7 +121,30 @@ export function CoachTab() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
         {messages.map((message) => (
-          <div key={message.id} style={{ display: 'flex', justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start' }}>
+          <div
+            key={message.id}
+            style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start' }}
+          >
+            {message.role === 'user' && (
+              <button
+                onClick={() => deleteExchange(message.id)}
+                title="Delete this exchange — it won't be sent as context again"
+                style={{
+                  flex: 'none',
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: 'none',
+                  color: 'var(--dim)',
+                  fontSize: '13px',
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+            )}
             <div
               style={{
                 maxWidth: '85%',

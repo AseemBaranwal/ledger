@@ -20,21 +20,39 @@ export interface StoredMessage {
 // already received. Runs after the model has already replied, so there's
 // nothing useful to roll back if this fails; it just means that one turn
 // won't show up on reload/another device, which self-heals next message.
+// Returns the two new row ids (null on failure) so the client can target
+// this exact turn for deletion later without needing a separate lookup.
 export async function saveChatTurn(
   userId: string,
   userText: string,
   assistantReply: string,
   suggestions: unknown[]
-): Promise<void> {
+): Promise<{ userMessageId: number; assistantMessageId: number } | null> {
   try {
     // See exchange.ts for why this cast is needed — no generated Database
     // type, so supabase-js can't infer chat_messages' row shape.
-    await (supabaseAdmin().from('chat_messages') as any).insert([
-      { user_id: userId, role: 'user', content: userText, suggestions: null },
-      { user_id: userId, role: 'assistant', content: assistantReply, suggestions: suggestions.length ? suggestions : null },
-    ])
+    const { data, error } = await (supabaseAdmin().from('chat_messages') as any)
+      .insert([
+        { user_id: userId, role: 'user', content: userText, suggestions: null },
+        { user_id: userId, role: 'assistant', content: assistantReply, suggestions: suggestions.length ? suggestions : null },
+      ])
+      .select('id')
+    if (error || !data || data.length !== 2) return null
+    return { userMessageId: data[0].id, assistantMessageId: data[1].id }
   } catch {
-    // ignore
+    return null
+  }
+}
+
+// Scoped to the caller's own user_id even though supabaseAdmin() bypasses
+// RLS — this is a service-role client, so the ownership check has to be
+// explicit in the query rather than relying on the database to enforce it.
+export async function deleteChatMessages(userId: string, ids: number[]): Promise<void> {
+  if (!ids.length) return
+  try {
+    await supabaseAdmin().from('chat_messages').delete().eq('user_id', userId).in('id', ids)
+  } catch {
+    // ignore — best-effort, same reasoning as saveChatTurn
   }
 }
 

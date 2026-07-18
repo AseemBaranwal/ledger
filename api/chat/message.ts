@@ -49,6 +49,45 @@ async function logChatCall(row: {
   }
 }
 
+export interface DailyTokenTotals {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+}
+
+// Sums every token field across today's calls for the compact usage line in
+// the UI — a handful of rows per day at most, so summing in JS after a
+// plain select is simpler than a Postgres aggregate function for this
+// volume. Kept broken out by token type (not one combined number) because
+// input/output/cache-read/cache-write are priced very differently — the
+// client needs the breakdown to estimate cost accurately, not just a total
+// token count. Best-effort: a failure here shouldn't block the chat
+// response, it just means the usage numbers are temporarily zeroed out.
+async function fetchDailyTokenTotals(userId: string): Promise<DailyTokenTotals> {
+  const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+  try {
+    const { data } = await supabaseAdmin()
+      .from('chat_logs')
+      .select('input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens')
+      .eq('user_id', userId)
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+
+    type TokenRow = { input_tokens: number | null; output_tokens: number | null; cache_read_tokens: number | null; cache_creation_tokens: number | null }
+    return ((data as TokenRow[]) || []).reduce(
+      (totals, row) => ({
+        inputTokens: totals.inputTokens + (row.input_tokens || 0),
+        outputTokens: totals.outputTokens + (row.output_tokens || 0),
+        cacheReadTokens: totals.cacheReadTokens + (row.cache_read_tokens || 0),
+        cacheCreationTokens: totals.cacheCreationTokens + (row.cache_creation_tokens || 0),
+      }),
+      zero
+    )
+  } catch {
+    return zero
+  }
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
@@ -212,11 +251,17 @@ export default async function handler(req: Request): Promise<Response> {
     if (callError) {
       send({ type: 'error', error: callError })
     } else {
-      await saveChatTurn(user.id, lastText, reply, suggestions)
+      const savedIds = await saveChatTurn(user.id, lastText, reply, suggestions)
+      // logChatCall() above already wrote this call's own token counts into
+      // chat_logs, so this total is already inclusive of the current call —
+      // don't add totalInputTokens/totalOutputTokens again on top of it.
+      const dailyTotals = await fetchDailyTokenTotals(user.id)
       send({
         type: 'done',
         reply,
         suggestions,
+        userMessageId: savedIds?.userMessageId ?? null,
+        assistantMessageId: savedIds?.assistantMessageId ?? null,
         usage: {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
@@ -224,6 +269,10 @@ export default async function handler(req: Request): Promise<Response> {
           cacheCreationTokens: totalCacheCreationTokens,
           dailyUsed: (dailyCount ?? 0) + 1,
           dailyLimit,
+          dailyInputTokens: dailyTotals.inputTokens,
+          dailyOutputTokens: dailyTotals.outputTokens,
+          dailyCacheReadTokens: dailyTotals.cacheReadTokens,
+          dailyCacheCreationTokens: dailyTotals.cacheCreationTokens,
         },
       })
     }

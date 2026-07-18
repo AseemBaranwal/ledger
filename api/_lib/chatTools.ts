@@ -64,7 +64,7 @@ interface TrainingDataRow {
   topWeight: number | null
 }
 
-function topWeightOf(ex: SheetExercise): number | null {
+export function topWeightOf(ex: SheetExercise): number | null {
   if (ex.ws && ex.ws.length) {
     const weights = ex.ws.filter((w): w is number => typeof w === 'number')
     return weights.length ? Math.max(...weights) : null
@@ -72,7 +72,7 @@ function topWeightOf(ex: SheetExercise): number | null {
   return typeof ex.w === 'number' ? ex.w : null
 }
 
-function formatSets(ex: SheetExercise): string {
+export function formatSets(ex: SheetExercise): string {
   return ex.r
     .map((reps, i) => {
       const w = ex.ws ? ex.ws[i] : ex.w

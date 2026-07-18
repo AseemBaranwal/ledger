@@ -20,6 +20,10 @@ export interface ChatUsage {
   cacheCreationTokens: number
   dailyUsed: number
   dailyLimit: number
+  dailyInputTokens: number
+  dailyOutputTokens: number
+  dailyCacheReadTokens: number
+  dailyCacheCreationTokens: number
 }
 
 async function authedFetch(path: string, body: unknown): Promise<Response> {
@@ -74,7 +78,7 @@ export async function fetchChatHistory(): Promise<HistoryMessage[]> {
 export async function sendChatMessage(
   messages: ChatMessage[],
   onStatus?: (message: string) => void
-): Promise<{ reply: string; suggestions: ChatSuggestion[]; usage: ChatUsage }> {
+): Promise<{ reply: string; suggestions: ChatSuggestion[]; usage: ChatUsage; userMessageId: number | null; assistantMessageId: number | null }> {
   const res = await authedFetch('/api/chat/message', { messages })
 
   if (!res.ok) {
@@ -98,7 +102,16 @@ export async function sendChatMessage(
       buffer = buffer.slice(newlineIndex + 1)
       if (!line) continue
 
-      let event: { type: string; message?: string; error?: string; reply?: string; suggestions?: ChatSuggestion[]; usage?: ChatUsage }
+      let event: {
+        type: string
+        message?: string
+        error?: string
+        reply?: string
+        suggestions?: ChatSuggestion[]
+        usage?: ChatUsage
+        userMessageId?: number | null
+        assistantMessageId?: number | null
+      }
       try {
         event = JSON.parse(line)
       } catch {
@@ -108,7 +121,13 @@ export async function sendChatMessage(
       if (event.type === 'status') {
         if (event.message) onStatus?.(event.message)
       } else if (event.type === 'done') {
-        return { reply: event.reply || '', suggestions: event.suggestions || [], usage: event.usage as ChatUsage }
+        return {
+          reply: event.reply || '',
+          suggestions: event.suggestions || [],
+          usage: event.usage as ChatUsage,
+          userMessageId: event.userMessageId ?? null,
+          assistantMessageId: event.assistantMessageId ?? null,
+        }
       } else if (event.type === 'error') {
         throw new Error(event.error || 'Could not reach the coach')
       }
@@ -123,5 +142,19 @@ export async function applyWeightSuggestion(exerciseCode: string, weight: number
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error(data.error || 'Could not send the weight update')
+  }
+}
+
+// Removes a turn from the durable conversation so it stops being sent as
+// context on future turns — not just hidden client-side. Best-effort from
+// the caller's perspective in the sense that the local UI removal always
+// happens regardless (see chatStore.deleteExchange); this just keeps the
+// server copy in sync so it doesn't reappear on the next reload/device.
+export async function deleteChatMessages(ids: number[]): Promise<void> {
+  if (!ids.length) return
+  const res = await authedFetch('/api/chat/delete-message', { ids })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Could not delete the message')
   }
 }

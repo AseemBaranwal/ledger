@@ -333,6 +333,37 @@ describe('chatStore', () => {
       expect(useChatStore.getState().error).toBeNull()
     })
 
+    it('collapses a second swap in a chain onto the original program code, not the intermediate one', async () => {
+      // SQ was already substituted with LEG_PRESS by an earlier accept.
+      // Now the Coach proposes swapping LEG_PRESS itself for something
+      // else — the write must land on SQ (what TodayTab actually checks
+      // at session-start), not a new "LEG_PRESS" entry nothing reads.
+      useConfigStore.setState({
+        program: {},
+        substitutions: { SQ: { code: 'LEG_PRESS', name: 'Leg Press', group: 'Legs', unit: 'lb' } },
+      })
+      useChatStore.setState({
+        messages: [
+          {
+            id: 'a2',
+            serverId: 43,
+            role: 'assistant',
+            content: 'Swap back',
+            suggestions: [
+              { kind: 'swap', exerciseCode: 'LEG_PRESS', exerciseName: 'Leg Press', newExerciseCode: 'BARBELL_BACK_SQUAT', newExerciseName: 'Barbell Back Squat', reasoning: 'x', status: 'pending' },
+            ],
+          },
+        ],
+      })
+
+      await useChatStore.getState().acceptSwap('a2', 0)
+
+      expect(chatService.applyExerciseSwap).toHaveBeenCalledWith('SQ', expect.objectContaining({ code: 'BARBELL_BACK_SQUAT' }))
+      const substitutions = useConfigStore.getState().substitutions
+      expect(substitutions.SQ).toMatchObject({ code: 'BARBELL_BACK_SQUAT' })
+      expect(substitutions.LEG_PRESS).toBeUndefined()
+    })
+
     it('persists the accepted status server-side too', async () => {
       await useChatStore.getState().acceptSwap('a1', 0)
 

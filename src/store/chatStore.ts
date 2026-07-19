@@ -247,9 +247,22 @@ export const useChatStore = create<ChatStore>()(
         const newDef = toProgramExercise(suggestion.newExerciseCode, { n: suggestion.newExerciseName })
         const replacement = { code: newDef.k, name: newDef.n, group: newDef.group, unit: newDef.u }
 
+        // If exerciseCode is itself a currently-substituted-TO code (e.g.
+        // this is the second swap in a chain — SQ was already substituted
+        // with LEG_PRESS, and this suggestion swaps LEG_PRESS for something
+        // else), anchor the write to the ORIGINAL program code instead.
+        // Substitutions are looked up at session-start against the static
+        // program's real codes (see TodayTab's withSubstitutions) — storing
+        // this under the intermediate code would create an entry nothing
+        // ever checks, silently no-op'ing every swap after the first one.
+        const existingSubstitutions = useConfigStore.getState().substitutions
+        const anchorCode =
+          Object.keys(existingSubstitutions).find((original) => existingSubstitutions[original].code === suggestion.exerciseCode) ??
+          suggestion.exerciseCode
+
         try {
-          await applyExerciseSwap(suggestion.exerciseCode, replacement)
-          useConfigStore.getState().setSubstitution(suggestion.exerciseCode, replacement)
+          await applyExerciseSwap(anchorCode, replacement)
+          useConfigStore.getState().setSubstitution(anchorCode, replacement)
 
           const { draftDefs, sessions, swapExercise } = useSessionStore.getState()
           const activeIndex = draftDefs?.findIndex((d) => d.k === suggestion.exerciseCode) ?? -1

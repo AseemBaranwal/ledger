@@ -19,6 +19,15 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('suggest_exercise_swap')
   })
 
+  it('forbids describing a suggestion as queued/ready without an actual tool call', () => {
+    // Caught live: the model replied "Queued: swap Leg Press -> Back Squat,
+    // ready to accept in the app" with an EMPTY tool_calls array — no
+    // suggest_exercise_swap invocation happened, so no suggestion existed
+    // for the person to accept. The card literally could not have rendered.
+    const prompt = buildSystemPrompt()
+    expect(prompt).toContain("NEVER DESCRIBE A SUGGESTION YOU DIDN'T ACTUALLY PROPOSE")
+  })
+
   it('instructs Markdown output for the chat bubble', () => {
     expect(buildSystemPrompt().toLowerCase()).toContain('markdown')
   })

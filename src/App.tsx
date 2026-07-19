@@ -21,6 +21,7 @@ export default function App() {
   const setTab = useUIStore((s) => s.setTab)
   const loadConfig = useConfigStore((s) => s.loadConfig)
   const loadWeights = useConfigStore((s) => s.loadWeights)
+  const loadSubstitutions = useConfigStore((s) => s.loadSubstitutions)
   const sheetUrl = useConfigStore((s) => s.sheetUrl)
   const clearDraft = useSessionStore((s) => s.clearDraft)
   const sessions = useSessionStore((s) => s.sessions)
@@ -75,6 +76,7 @@ export default function App() {
     if (!sheetUrl) return
 
     loadWeights()
+    loadSubstitutions()
 
     const autoRestore = async () => {
       if (useSessionStore.getState().sessions.length > 0) return

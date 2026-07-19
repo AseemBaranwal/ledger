@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { iso, mondayOf } from '@/services/dateUtils'
+import { toProgramExercise, type MuscleGroup } from '@/services/exerciseCatalog'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -37,6 +38,7 @@ export function TodayTab() {
   const restDays = useConfigStore((s) => s.restDays)
   const colours = useConfigStore((s) => s.colours)
   const schedule = useConfigStore((s) => s.schedule)
+  const substitutions = useConfigStore((s) => s.substitutions)
 
   const openWeekDay = useUIStore((s) => s.openWeekDay)
   const toggleWeekDay = useUIStore((s) => s.toggleWeekDay)
@@ -49,6 +51,18 @@ export function TodayTab() {
   const priority = schedule.priority
 
   const codesForDay = (dow: number) => Object.keys(program).filter((k) => program[k].day === dow)
+
+  // A Coach-accepted swap (see chatStore.acceptSwap) is a standing
+  // substitution keyed by the ORIGINAL code — applied here so the week
+  // preview and the actually-started session always show the same
+  // exercise, not the preview showing the original while the started
+  // session shows the swap.
+  const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] =>
+    exList.map((e) => {
+      const sub = substitutions[e.k]
+      if (!sub) return e
+      return toProgramExercise(sub.code, { n: sub.name, group: sub.group as MuscleGroup, u: sub.unit, s: e.s, r: e.r })
+    })
 
   const doneThisWeek = (): Set<string> => {
     const mon = mondayOf(new Date())
@@ -70,9 +84,10 @@ export function TodayTab() {
 
   const handleStart = (code: string) => {
     const p = program[code]
+    const defs = withSubstitutions(p.ex)
     startSession(
       code,
-      p.ex.map((e) => {
+      defs.map((e) => {
         // start at the last logged weight, or the config default
         const last = sessions.length
           ? [...sessions].reverse().flatMap((s) => s.ex || []).find((x) => x.k === e.k)
@@ -80,7 +95,7 @@ export function TodayTab() {
         return { k: e.k, w: last?.w != null ? last.w : e.w }
       }),
       p.gym,
-      p.ex
+      defs
     )
     setOpenExerciseIndex(null)
     useUIStore.setState({ openWeekDay: null })
@@ -183,7 +198,7 @@ export function TodayTab() {
                           {p.full}
                           <span className={`${styles.wdGym} mono`}>{p.gym}</span>
                         </div>
-                        {p.ex.map((e) => {
+                        {withSubstitutions(p.ex).map((e) => {
                           const last = [...sessions].reverse().flatMap((s) => (s.ex || []).map((x) => ({ ...x, d: s.d }))).find((x) => x.k === e.k && x.r.length)
                           const lastStr = last
                             ? `Last ${last.ws ? last.ws.join(',') : last.w}${e.u === '+lb' ? '+' : ''}×${last.r.join(',')}`

@@ -24,6 +24,11 @@ export interface ChatSuggestion {
   // catalog by the time the suggestion reaches the client
   newExerciseCode?: string
   newExerciseName?: string
+  // Persisted server-side once the user taps Accept/Dismiss (see
+  // update-suggestion-status.ts) — absent on suggestions saved before this
+  // field existed, or on a fresh suggestion that hasn't been acted on yet;
+  // callers should default a missing value to 'pending'.
+  status?: 'pending' | 'accepted' | 'dismissed'
 }
 
 export interface ChatUsage {
@@ -161,6 +166,58 @@ export async function applyExerciseChange(exerciseCode: string, changes: Exercis
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error(data.error || 'Could not send the update')
+  }
+}
+
+// Best-effort from the caller's perspective (see chatStore.ts) — the local
+// suggestion-card status already updated before this is called, so a
+// failure here just means the choice won't survive a reload, not that the
+// accept/dismiss itself failed.
+export async function updateSuggestionStatus(
+  messageId: number,
+  suggestionIndex: number,
+  status: 'accepted' | 'dismissed'
+): Promise<void> {
+  const res = await authedFetch('/api/chat/update-suggestion-status', { messageId, suggestionIndex, status })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Could not save suggestion status')
+  }
+}
+
+export interface ExerciseSubstitution {
+  code: string
+  name: string
+  group: string
+  unit: string
+}
+
+// Fetches the current standing substitutions (original code -> replacement)
+// so the client can apply them at session-start time. Fails soft (empty
+// map) — this is the same "best-effort config load" tolerance loadWeights()
+// already has, not something that should block the app from loading.
+export async function fetchExerciseSubstitutions(): Promise<Record<string, ExerciseSubstitution>> {
+  try {
+    const res = await authedGet('/api/chat/apply-exercise-swap')
+    if (!res.ok) return {}
+    const data = await res.json().catch(() => ({}))
+    return data.substitutions || {}
+  } catch {
+    return {}
+  }
+}
+
+export async function applyExerciseSwap(originalCode: string, replacement: ExerciseSubstitution): Promise<void> {
+  const res = await authedFetch('/api/chat/apply-exercise-swap', {
+    originalCode,
+    newCode: replacement.code,
+    newName: replacement.name,
+    newGroup: replacement.group,
+    newUnit: replacement.unit,
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Could not save the swap')
   }
 }
 

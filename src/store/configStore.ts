@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Program, RestDays, Config } from '@/types'
+import { fetchExerciseSubstitutions, type ExerciseSubstitution } from '@/services/chat'
 
 interface ConfigStore {
   program: Program
@@ -9,9 +10,18 @@ interface ConfigStore {
   sheetUrl: string
   loading: boolean
   error: string | null
+  // Standing exercise substitutions accepted from the Coach (original code
+  // -> replacement), applied at session-start time — see TodayTab.tsx's
+  // handleStart. Owner-only feature, so this is always empty for anyone
+  // else; fetching it is harmless either way (the endpoint 403s cleanly).
+  substitutions: Record<string, ExerciseSubstitution>
 
   loadConfig: () => Promise<void>
   loadWeights: () => Promise<void>
+  loadSubstitutions: () => Promise<void>
+  // Optimistic local update so a swap accepted this session is reflected
+  // immediately, without waiting for a re-fetch.
+  setSubstitution: (originalCode: string, replacement: ExerciseSubstitution) => void
   // Applies a sheet URL to in-memory state only. Callers that need it to
   // survive a reload should go through authStore.saveSheetUrl, which
   // persists it to the signed-in user's profile and calls this after.
@@ -33,6 +43,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   sheetUrl: '',
   loading: true,
   error: null,
+  substitutions: {},
 
   loadConfig: async () => {
     try {
@@ -83,6 +94,14 @@ export const useConfigStore = create<ConfigStore>((set) => ({
       console.warn('Could not load weights from sheet:', error)
     }
   },
+
+  loadSubstitutions: async () => {
+    const substitutions = await fetchExerciseSubstitutions()
+    set({ substitutions })
+  },
+
+  setSubstitution: (originalCode, replacement) =>
+    set((state) => ({ substitutions: { ...state.substitutions, [originalCode]: replacement } })),
 
   updateSheetUrl: (url) => set({ sheetUrl: url }),
 }))

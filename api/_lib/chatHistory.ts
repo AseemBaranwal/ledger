@@ -67,3 +67,38 @@ export async function fetchChatHistory(userId: string, limit: number): Promise<S
   if (error || !data) return []
   return (data as StoredMessage[]).reverse()
 }
+
+// Patches one suggestion's status within a stored message's `suggestions`
+// array — read-modify-write since Supabase's JS client has no partial-jsonb-
+// array-element update. Called right after the user taps Accept/Dismiss on
+// a suggestion card, so the choice survives a reload or a different device
+// instead of every suggestion silently reverting to "pending" the next time
+// loadHistory() runs (which is exactly what happened before this existed —
+// the client only ever tracked status in local zustand state, and the
+// initial save from saveChatTurn() never included one).
+export async function updateSuggestionStatus(
+  userId: string,
+  messageId: number,
+  suggestionIndex: number,
+  status: 'accepted' | 'dismissed'
+): Promise<boolean> {
+  try {
+    const { data, error } = await (supabaseAdmin().from('chat_messages') as any)
+      .select('suggestions')
+      .eq('id', messageId)
+      .eq('user_id', userId)
+      .single()
+    if (error || !data || !Array.isArray(data.suggestions) || !data.suggestions[suggestionIndex]) return false
+
+    const suggestions = [...data.suggestions]
+    suggestions[suggestionIndex] = { ...suggestions[suggestionIndex], status }
+
+    const { error: updateError } = await (supabaseAdmin().from('chat_messages') as any)
+      .update({ suggestions })
+      .eq('id', messageId)
+      .eq('user_id', userId)
+    return !updateError
+  } catch {
+    return false
+  }
+}

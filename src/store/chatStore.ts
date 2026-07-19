@@ -4,6 +4,8 @@ import { scopedStorage } from '@/services/userScope'
 import {
   sendChatMessage,
   applyExerciseChange,
+  applyExerciseSwap,
+  updateSuggestionStatus,
   fetchChatHistory,
   deleteChatMessages,
   type ChatMessage,
@@ -118,7 +120,10 @@ export const useChatStore = create<ChatStore>()(
             serverId: m.id,
             role: m.role,
             content: m.content,
-            suggestions: m.suggestions?.length ? m.suggestions.map((s) => ({ ...s, status: 'pending' as const })) : undefined,
+            // Trust a persisted status if one exists (see
+            // update-suggestion-status.ts) — only default to 'pending' for
+            // suggestions saved before that existed, or genuinely untouched.
+            suggestions: m.suggestions?.length ? m.suggestions.map((s) => ({ ...s, status: s.status ?? 'pending' })) : undefined,
           }))
           set({ messages: mapped })
         } catch {
@@ -213,45 +218,72 @@ export const useChatStore = create<ChatStore>()(
                 : m
             ),
           }))
+          // Best-effort — the accept already fully happened above; this
+          // only affects whether the card still shows "accepted" after a
+          // reload, not whether the change itself took hold.
+          if (message?.serverId != null) {
+            updateSuggestionStatus(message.serverId, suggestionIndex, 'accepted').catch(() => {})
+          }
         } catch (e) {
           set({ error: e instanceof Error ? e.message : 'Could not send the update' })
         }
       },
 
-      // Exercise swaps have no persistent "program override" storage (the
-      // program's exercise list is static config.json — genuinely not
-      // writable by this app) — accepting one applies to the currently
-      // active session draft only, the same local-only mechanism the
-      // manual swap picker uses. If no active session has this exercise,
-      // there's nowhere to apply it; surface that plainly rather than
-      // silently no-op'ing.
+      // Exercise swaps have no config.json-level storage (that file is
+      // genuinely static, not writable by this app) — so a swap is instead
+      // recorded as a standing substitution on the user's profile (see
+      // supabase/exercise_substitutions.sql), applied at session-start time
+      // for every future occurrence of the original exercise, exactly like
+      // weight/reps/sets suggestions are a persistent "next time" target.
+      // On top of that persistent write, if a session is open RIGHT NOW
+      // with the original exercise active, the swap also applies to that
+      // live draft immediately — so accepting works the same way whether
+      // or not you happen to be mid-session when you ask for it.
       acceptSwap: async (messageId, suggestionIndex) => {
         const message = get().messages.find((m) => m.id === messageId)
         const suggestion = message?.suggestions?.[suggestionIndex]
         if (!suggestion || !suggestion.newExerciseCode) return
 
-        const { draftDefs, sessions, swapExercise } = useSessionStore.getState()
-        const activeIndex = draftDefs?.findIndex((d) => d.k === suggestion.exerciseCode) ?? -1
-        if (activeIndex === -1 || !draftDefs) {
-          set({ error: "Start today's session first, then accept this swap." })
-          return
-        }
-
         const newDef = toProgramExercise(suggestion.newExerciseCode, { n: suggestion.newExerciseName })
-        const last = lastOf(sessions, newDef.k)
-        const startWeight = last ? (last.ws?.length ? Math.max(...last.ws) : (last.w ?? 0)) : 0
-        swapExercise(activeIndex, newDef, startWeight)
+        const replacement = { code: newDef.k, name: newDef.n, group: newDef.group, unit: newDef.u }
 
-        set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === messageId
-              ? { ...m, suggestions: m.suggestions?.map((s, i) => (i === suggestionIndex ? { ...s, status: 'accepted' as const } : s)) }
-              : m
-          ),
-        }))
+        try {
+          await applyExerciseSwap(suggestion.exerciseCode, replacement)
+          useConfigStore.getState().setSubstitution(suggestion.exerciseCode, replacement)
+
+          const { draftDefs, sessions, swapExercise } = useSessionStore.getState()
+          const activeIndex = draftDefs?.findIndex((d) => d.k === suggestion.exerciseCode) ?? -1
+          if (activeIndex !== -1 && draftDefs) {
+            // Prefer the live program target (freshest — reflects any
+            // weight change accepted earlier in this same conversation)
+            // over historical session logs, which wouldn't see a Sheet
+            // update that just happened via chat.
+            const { program } = useConfigStore.getState()
+            const programMatch = Object.values(program)
+              .flatMap((p) => p.ex)
+              .find((e) => e.k === newDef.k)
+            const last = lastOf(sessions, newDef.k)
+            const startWeight = programMatch?.w ?? (last ? (last.ws?.length ? Math.max(...last.ws) : (last.w ?? 0)) : 0)
+            swapExercise(activeIndex, newDef, startWeight)
+          }
+
+          set((state) => ({
+            messages: state.messages.map((m) =>
+              m.id === messageId
+                ? { ...m, suggestions: m.suggestions?.map((s, i) => (i === suggestionIndex ? { ...s, status: 'accepted' as const } : s)) }
+                : m
+            ),
+          }))
+          if (message?.serverId != null) {
+            updateSuggestionStatus(message.serverId, suggestionIndex, 'accepted').catch(() => {})
+          }
+        } catch (e) {
+          set({ error: e instanceof Error ? e.message : 'Could not save the swap' })
+        }
       },
 
       dismissSuggestion: (messageId, suggestionIndex) => {
+        const message = get().messages.find((m) => m.id === messageId)
         set((state) => ({
           messages: state.messages.map((m) =>
             m.id === messageId
@@ -259,6 +291,9 @@ export const useChatStore = create<ChatStore>()(
               : m
           ),
         }))
+        if (message?.serverId != null) {
+          updateSuggestionStatus(message.serverId, suggestionIndex, 'dismissed').catch(() => {})
+        }
       },
 
       clearError: () => set({ error: null }),

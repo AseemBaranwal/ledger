@@ -177,11 +177,35 @@ Practical pattern established in `tests/unit/`:
     `resolveExerciseQuery()` in the shared `api/_lib/exerciseCatalog.ts` —
     same module the frontend's manual swap picker uses, so a swap the Coach
     proposes and one picked by hand resolve identically. Unlike weight/reps/
-    sets, a swap has **no persistent storage path** — config.json's program
-    definitions aren't writable by this app at all — so accepting one only
-    ever applies to the *currently active* session draft. If none is open
-    with that exercise, the UI says so plainly rather than silently
-    no-op'ing (`CoachTab.tsx`'s `SwapSuggestionCard`).
+    sets (written to the Sheet's `Weights` tab), a swap can't touch
+    config.json (genuinely static, not writable by this app) — so it's
+    stored as a standing substitution on `profiles.exercise_substitutions`
+    instead (see `supabase/exercise_substitutions.sql` — a jsonb column,
+    not a new table, since this is a per-user setting like `sheet_url`, not
+    an append-only log). Accepting one **always** writes that persistent
+    substitution (regardless of whether a session is open) via
+    `api/chat/apply-exercise-swap.ts`, *and* additionally patches the live
+    draft immediately if one's open with that exercise right now — same
+    dual-write pattern weight/reps/sets already used, just with a different
+    storage target. `TodayTab.tsx`'s `withSubstitutions()` applies the
+    standing map at both session-start and in the week-preview, so what you
+    see before starting matches what you get after. The starting weight for
+    a swapped-in exercise prefers the live `program` target over historical
+    session logs — a same-conversation weight-suggestion accept updates
+    `program` in memory immediately, but wouldn't show up in `sessions`
+    (past logged workouts), so checking `sessions` alone would show a stale
+    number.
+- **A suggestion's accept/dismiss status must be persisted server-side, not
+  just in local zustand state** — `chat_messages.suggestions` is a jsonb
+  column with no partial-array-element update in supabase-js, so
+  `updateSuggestionStatus()` in `api/_lib/chatHistory.ts` does a read-
+  modify-write (select the row, mutate the one array index, write the whole
+  array back) via `api/chat/update-suggestion-status.ts`. Miss this and
+  every suggestion silently reverts to "pending" (re-showing clickable
+  Accept/Dismiss buttons on an already-applied change) the next time
+  `loadHistory()` runs — which is every time the Coach tab mounts, since it
+  always re-fetches the durable copy. This bit the first version of both
+  the adjustment and swap suggestion cards.
 - **Extending the Sheet's `Weights` tab to carry `reps`/`sets` (not just
   `weight`) needs a manual Apps Script redeploy** — same
   paste-and-redeploy dance as every prior `apps-script.gs` change in this

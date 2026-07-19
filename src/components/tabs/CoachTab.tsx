@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import { useChatStore } from '@/store/chatStore'
-import { useUIStore, useSessionStore } from '@/store'
+import { useUIStore } from '@/store'
 import { estimateCostUsd, formatTokenCount, formatCostUsd } from '@/services/chatCost'
 import type { ChatSuggestion, ExerciseChange } from '@/services/chat'
 import appStyles from '../../styles/App.module.css'
@@ -48,7 +48,6 @@ export function CoachTab() {
   const dismissSuggestion = useChatStore((s) => s.dismissSuggestion)
   const clearError = useChatStore((s) => s.clearError)
   const showNotification = useUIStore((s) => s.showNotification)
-  const draftDefs = useSessionStore((s) => s.draftDefs)
 
   const [input, setInput] = useState('')
   const [revealedId, setRevealedId] = useState<string | null>(null)
@@ -185,7 +184,6 @@ export function CoachTab() {
                   <SwapSuggestionCard
                     key={i}
                     suggestion={suggestion}
-                    canApply={!!draftDefs?.some((d) => d.k === suggestion.exerciseCode)}
                     onAccept={() => acceptSwap(message.id, i)}
                     onDismiss={() => dismissSuggestion(message.id, i)}
                   />
@@ -351,12 +349,11 @@ function AdjustmentSuggestionCard({ suggestion, onAccept, onDismiss }: Adjustmen
 
 interface SwapSuggestionCardProps {
   suggestion: DisplaySuggestion
-  canApply: boolean
   onAccept: () => void
   onDismiss: () => void
 }
 
-function SwapSuggestionCard({ suggestion, canApply, onAccept, onDismiss }: SwapSuggestionCardProps) {
+function SwapSuggestionCard({ suggestion, onAccept, onDismiss }: SwapSuggestionCardProps) {
   return (
     <div style={cardStyle}>
       <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
@@ -366,7 +363,7 @@ function SwapSuggestionCard({ suggestion, canApply, onAccept, onDismiss }: SwapS
       </div>
       <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '10px' }}>{suggestion.reasoning}</div>
 
-      {suggestion.status === 'pending' && canApply && (
+      {suggestion.status === 'pending' && (
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className={`${styles.btn} ${styles.primary}`} style={{ minHeight: '38px', fontSize: '13px' }} onClick={onAccept}>
             Accept
@@ -376,15 +373,11 @@ function SwapSuggestionCard({ suggestion, canApply, onAccept, onDismiss }: SwapS
           </button>
         </div>
       )}
-      {suggestion.status === 'pending' && !canApply && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '12px', color: 'var(--dim)' }}>Start today's session to apply this swap.</span>
-          <button className={`${styles.btn} ${styles.quiet}`} style={{ minHeight: '32px', width: 'auto', padding: '0 12px' }} onClick={onDismiss}>
-            Dismiss
-          </button>
+      {suggestion.status === 'accepted' && (
+        <div style={{ fontSize: '12px', color: 'var(--teal)' }}>
+          Swapped now if you're mid-session — and set as the default for next time either way.
         </div>
       )}
-      {suggestion.status === 'accepted' && <div style={{ fontSize: '12px', color: 'var(--teal)' }}>Swapped in today's session.</div>}
       {suggestion.status === 'dismissed' && <div style={{ fontSize: '12px', color: 'var(--dim)' }}>Dismissed.</div>}
     </div>
   )

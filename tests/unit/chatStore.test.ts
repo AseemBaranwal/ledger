@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from '@/store/chatStore'
 import { useSessionStore } from '@/store/sessionStore'
+import { useConfigStore } from '@/store/configStore'
 import * as chatService from '@/services/chat'
 
 vi.mock('@/services/chat', () => ({
   sendChatMessage: vi.fn(),
   applyExerciseChange: vi.fn(),
+  applyExerciseSwap: vi.fn(),
+  updateSuggestionStatus: vi.fn(),
   fetchChatHistory: vi.fn(),
+  fetchExerciseSubstitutions: vi.fn(),
   deleteChatMessages: vi.fn(),
 }))
 
@@ -26,7 +30,10 @@ const baseUsage = {
 describe('chatStore', () => {
   beforeEach(() => {
     useChatStore.setState({ messages: [], sending: false, statusMessage: null, lastUsage: null, error: null })
+    useConfigStore.setState({ program: {}, substitutions: {} })
     vi.clearAllMocks()
+    vi.mocked(chatService.updateSuggestionStatus).mockResolvedValue(undefined)
+    vi.mocked(chatService.applyExerciseSwap).mockResolvedValue(undefined)
   })
 
   describe('sendMessage', () => {
@@ -113,6 +120,21 @@ describe('chatStore', () => {
       expect(useChatStore.getState().messages).toEqual([localMessage])
     })
 
+    it('trusts a persisted accepted/dismissed status instead of resetting every suggestion to pending', async () => {
+      vi.mocked(chatService.fetchChatHistory).mockResolvedValue([
+        {
+          id: 7,
+          role: 'assistant',
+          content: 'Suggestion',
+          suggestions: [{ kind: 'adjustment', exerciseCode: 'SQ', exerciseName: 'Back Squat', suggestedWeight: 85, reasoning: 'x', status: 'accepted' }],
+        },
+      ])
+
+      await useChatStore.getState().loadHistory()
+
+      expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
+    })
+
     it('does not refresh while a send is already in flight, to avoid wiping the optimistic message', async () => {
       useChatStore.setState({ sending: true })
       await useChatStore.getState().loadHistory()
@@ -189,6 +211,7 @@ describe('chatStore', () => {
         messages: [
           {
             id: 'a1',
+            serverId: 42,
             role: 'assistant',
             content: 'Suggestion inside',
             suggestions: [{ kind: 'adjustment', exerciseCode: 'SQ', exerciseName: 'Back Squat', currentWeight: 80, suggestedWeight: 85, reasoning: 'x', status: 'pending' }],
@@ -207,6 +230,20 @@ describe('chatStore', () => {
       expect(chatService.applyExerciseChange).toHaveBeenCalledWith('SQ', { weight: 85 })
     })
 
+    it('persists the accepted status server-side so it survives a reload', async () => {
+      vi.mocked(chatService.applyExerciseChange).mockResolvedValue(undefined)
+
+      await useChatStore.getState().acceptSuggestion('a1', 0, { weight: 85 })
+
+      expect(chatService.updateSuggestionStatus).toHaveBeenCalledWith(42, 0, 'accepted')
+    })
+
+    it('persists a dismissed status server-side too', () => {
+      useChatStore.getState().dismissSuggestion('a1', 0)
+
+      expect(chatService.updateSuggestionStatus).toHaveBeenCalledWith(42, 0, 'dismissed')
+    })
+
     it('leaves the suggestion pending and sets an error when the update fails', async () => {
       vi.mocked(chatService.applyExerciseChange).mockRejectedValue(new Error('Sheet unreachable'))
 
@@ -216,7 +253,7 @@ describe('chatStore', () => {
       expect(useChatStore.getState().error).toBe('Sheet unreachable')
     })
 
-    it('marks a suggestion dismissed locally, with no network call', () => {
+    it('marks a suggestion dismissed locally without touching the write endpoint', () => {
       useChatStore.getState().dismissSuggestion('a1', 0)
 
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('dismissed')
@@ -256,6 +293,7 @@ describe('chatStore', () => {
         messages: [
           {
             id: 'a1',
+            serverId: 42,
             role: 'assistant',
             content: 'Swap suggestion',
             suggestions: [
@@ -265,6 +303,7 @@ describe('chatStore', () => {
         ],
       })
       useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftDefs: null, draftItems: null })
+      useConfigStore.setState({ program: {}, substitutions: {} })
     })
 
     it('swaps the exercise in the active draft session and marks the suggestion accepted', async () => {
@@ -280,11 +319,52 @@ describe('chatStore', () => {
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
     })
 
-    it('sets an error instead of applying when no active session has the exercise', async () => {
+    it('persists the swap as a standing substitution and marks it accepted even with no active session', async () => {
       await useChatStore.getState().acceptSwap('a1', 0)
 
-      expect(useChatStore.getState().error).toBe("Start today's session first, then accept this swap.")
+      expect(chatService.applyExerciseSwap).toHaveBeenCalledWith('SQ', {
+        code: 'LEG_PRESS',
+        name: 'Leg Press',
+        group: 'Legs',
+        unit: 'lb',
+      })
+      expect(useConfigStore.getState().substitutions.SQ).toMatchObject({ code: 'LEG_PRESS', name: 'Leg Press' })
+      expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
+      expect(useChatStore.getState().error).toBeNull()
+    })
+
+    it('persists the accepted status server-side too', async () => {
+      await useChatStore.getState().acceptSwap('a1', 0)
+
+      expect(chatService.updateSuggestionStatus).toHaveBeenCalledWith(42, 0, 'accepted')
+    })
+
+    it('sets an error and leaves the suggestion pending when the write fails', async () => {
+      vi.mocked(chatService.applyExerciseSwap).mockRejectedValue(new Error('Could not save the swap'))
+
+      await useChatStore.getState().acceptSwap('a1', 0)
+
+      expect(useChatStore.getState().error).toBe('Could not save the swap')
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('pending')
+    })
+
+    it('prefers the live program weight target over stale session history when syncing an active draft', async () => {
+      useConfigStore.setState({
+        program: { LA: { name: 'Lower A', full: '', colour: 'legs', gym: '', day: 1, ex: [{ k: 'LEG_PRESS', n: 'Leg Press', s: 3, r: 10, w: 120, u: 'lb', group: 'Legs', cue: '' }] } },
+        substitutions: {},
+      })
+      useSessionStore.setState({
+        draft: { d: '2026-01-01', s: 'LA', g: 'Gym', n: '', type: 'PROGRAM' },
+        draftDefs: [{ k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }],
+        draftEx: [{ k: 'SQ', w: 75, r: [] }],
+        // Stale historical logging at a lower weight — the freshly-updated
+        // program target (120) should win over this (60).
+        sessions: [{ d: '2026-01-01', s: 'LA', ex: [{ k: 'LEG_PRESS', r: [10], w: 60 }] }],
+      })
+
+      await useChatStore.getState().acceptSwap('a1', 0)
+
+      expect(useSessionStore.getState().draftEx![0].w).toBe(120)
     })
   })
 })

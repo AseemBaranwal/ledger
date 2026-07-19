@@ -137,4 +137,31 @@ describe('uiStore', () => {
     useUIStore.getState().dismissNotification(id)
     expect(useUIStore.getState().notifications).toHaveLength(0)
   })
+
+  describe('tickTimer', () => {
+    // Caught live: the rest-timer chime never played. tickTimer used to set
+    // timerActive: false in the same update that brought timerSeconds to 0,
+    // so RestTimer's expiry effect (which requires timerActive && seconds
+    // <= 0 to fire the chime) could never see both true at once. Fixed by
+    // leaving timerActive alone here — only the effect turns it off, after
+    // playing the sound.
+    it('reaching 0 leaves timerActive true, so the expiry effect can still observe it', () => {
+      useUIStore.getState().setTimer(1, true)
+      useUIStore.getState().tickTimer()
+      expect(useUIStore.getState().timerSeconds).toBe(0)
+      expect(useUIStore.getState().timerActive).toBe(true)
+    })
+
+    it('clamps at 0 instead of drifting negative on a stray extra tick', () => {
+      useUIStore.getState().setTimer(0, true)
+      useUIStore.getState().tickTimer()
+      expect(useUIStore.getState().timerSeconds).toBe(0)
+    })
+
+    it('is a no-op once the timer has been stopped', () => {
+      useUIStore.getState().setTimer(5, false)
+      useUIStore.getState().tickTimer()
+      expect(useUIStore.getState().timerSeconds).toBe(5)
+    })
+  })
 })

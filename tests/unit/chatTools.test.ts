@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { topWeightOf, formatSets, TOOLS, resolveExerciseSwap } from '../../api/_lib/chatTools'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { topWeightOf, formatSets, TOOLS, resolveExerciseSwap, getTrainingData } from '../../api/_lib/chatTools'
+import { supabaseAdmin } from '../../api/_lib/supabaseAdmin'
+
+vi.mock('../../api/_lib/supabaseAdmin', () => ({ supabaseAdmin: vi.fn() }))
 
 describe('topWeightOf', () => {
   it('returns the highest per-set weight when tracked per set', () => {
@@ -59,5 +62,42 @@ describe('resolveExerciseSwap', () => {
 
   it('returns null when nothing matches', () => {
     expect(resolveExerciseSwap('SQ', 'zzz_not_a_real_exercise_zzz')).toBeNull()
+  })
+})
+
+describe('getTrainingData', () => {
+  function mockProfile(data: unknown) {
+    vi.mocked(supabaseAdmin).mockReturnValue({
+      from: () => ({ select: () => ({ eq: () => ({ single: () => Promise.resolve({ data, error: null }) }) }) }),
+    } as any)
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: () => Promise.resolve({ sessions: [] }) }))
+  })
+
+  // Caught live: without visibility into whether an earlier swap actually
+  // took effect, the model would sometimes hedge in prose instead of
+  // calling suggest_exercise_swap again. activeSwaps gives it the real
+  // current state instead of making it guess from conversation history.
+  it('includes activeSwaps when the profile has standing substitutions', async () => {
+    mockProfile({
+      sheet_url: 'https://example.com/exec',
+      exercise_substitutions: { SQ: { code: 'BARBELL_BACK_SQUAT', name: 'Barbell Back Squat' } },
+    })
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).toMatchObject({
+      activeSwaps: [{ originalCode: 'SQ', currentCode: 'BARBELL_BACK_SQUAT', currentName: 'Barbell Back Squat' }],
+    })
+  })
+
+  it('omits activeSwaps entirely when there are none, rather than sending an empty array', async () => {
+    mockProfile({ sheet_url: 'https://example.com/exec', exercise_substitutions: {} })
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).not.toHaveProperty('activeSwaps')
   })
 })

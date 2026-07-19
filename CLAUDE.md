@@ -206,6 +206,25 @@ Practical pattern established in `tests/unit/`:
   `loadHistory()` runs — which is every time the Coach tab mounts, since it
   always re-fetches the durable copy. This bit the first version of both
   the adjustment and swap suggestion cards.
+- **The model can hallucinate a suggestion — reply as if `suggest_exercise_swap`
+  was called when it wasn't — and a prompt instruction alone doesn't
+  reliably stop it.** Caught by checking `chat_logs.tool_calls` directly
+  (`[]`, empty) against a reply reading "Queued: swap X → Y, ready to
+  accept in the app" with no suggestion card able to render (`chat_messages
+  .suggestions` was `NULL` for that turn). Root cause: the model had no way
+  to know whether an *earlier* swap in the same conversation had actually
+  been accepted, and hedged by describing one in prose instead of calling
+  the tool again. Adding an explicit "never describe a suggestion you
+  didn't actually propose" rule to the system prompt reduced but did
+  **not** eliminate it — it recurred in the same session after that fix
+  shipped. The more durable fix: `get_training_data` now also returns
+  `activeSwaps` (from `profiles.exercise_substitutions`) so the model has
+  the actual ground truth instead of needing to infer or hedge — since
+  removing the *uncertainty* the hedging was protecting against works
+  better than just forbidding the hedge. Lesson for future prompt work:
+  don't assume one instruction-based fix is sufficient for a tool-call-
+  skipping failure mode — verify against `chat_logs.tool_calls` after the
+  fix ships, not just that the wording looks right.
 - **Extending the Sheet's `Weights` tab to carry `reps`/`sets` (not just
   `weight`) needs a manual Apps Script redeploy** — same
   paste-and-redeploy dance as every prior `apps-script.gs` change in this

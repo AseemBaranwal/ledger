@@ -6,7 +6,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions from their connected Google Sheet. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, optionally filtered.",
+      "Reads the owner's logged training sessions from their connected Google Sheet. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, optionally filtered, plus activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
     input_schema: {
       type: 'object',
       properties: {
@@ -101,17 +101,34 @@ export function formatSets(ex: SheetExercise): string {
     .join(',')
 }
 
-// Reads the owner's sheet_url from their profile (service-role, server-side
-// only) and pulls sessions directly from the Sheet — the same GET the client
+interface ActiveSwap {
+  originalCode: string
+  currentCode: string
+  currentName: string
+}
+
+// Reads the owner's sheet_url (and any standing exercise substitutions —
+// see supabase/exercise_substitutions.sql) from their profile in one query,
+// then pulls sessions directly from the Sheet — the same GET the client
 // makes via restoreFromSheet, just called from the backend so tool results
 // are grounded in real data rather than trusting anything the client sends.
+//
+// Including activeSwaps here (not a separate tool) matters for a specific
+// failure mode caught in live testing: without knowing whether an earlier
+// swap suggestion actually took effect, the model would sometimes hedge —
+// describing a suggestion in prose ("queued... ready to accept") instead of
+// actually calling suggest_exercise_swap again, because it wasn't sure if
+// a duplicate was needed. Since this tool is already called before any
+// claim about current state (per the system prompt), giving it the ground
+// truth here removes the uncertainty at the source rather than just
+// instructing the model not to hedge.
 export async function getTrainingData(
   ownerUserId: string,
   args: { exerciseCode?: string; sinceDate?: string; limit?: number }
-): Promise<{ rows: TrainingDataRow[] } | { error: string }> {
+): Promise<{ rows: TrainingDataRow[]; activeSwaps?: ActiveSwap[] } | { error: string }> {
   const { data: profile, error } = await supabaseAdmin()
     .from('profiles')
-    .select('sheet_url')
+    .select('sheet_url, exercise_substitutions')
     .eq('id', ownerUserId)
     .single()
 
@@ -120,6 +137,12 @@ export async function getTrainingData(
   }
 
   const sheetUrl = (profile as { sheet_url: string }).sheet_url
+  const substitutions = (profile as { exercise_substitutions?: Record<string, { code: string; name: string }> }).exercise_substitutions || {}
+  const activeSwaps: ActiveSwap[] = Object.entries(substitutions).map(([originalCode, sub]) => ({
+    originalCode,
+    currentCode: sub.code,
+    currentName: sub.name,
+  }))
 
   let data: { sessions?: SheetSession[] }
   try {
@@ -153,7 +176,7 @@ export async function getTrainingData(
     }
   }
 
-  return { rows }
+  return activeSwaps.length ? { rows, activeSwaps } : { rows }
 }
 
 export interface ResolvedSwap {

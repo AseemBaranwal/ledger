@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { iso, mondayOf } from '@/services/dateUtils'
-import { toProgramExercise, type MuscleGroup } from '@/services/exerciseCatalog'
+import { applySubstitutions } from '@/services/exerciseCatalog'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -52,17 +52,7 @@ export function TodayTab() {
 
   const codesForDay = (dow: number) => Object.keys(program).filter((k) => program[k].day === dow)
 
-  // A Coach-accepted swap (see chatStore.acceptSwap) is a standing
-  // substitution keyed by the ORIGINAL code — applied here so the week
-  // preview and the actually-started session always show the same
-  // exercise, not the preview showing the original while the started
-  // session shows the swap.
-  const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] =>
-    exList.map((e) => {
-      const sub = substitutions[e.k]
-      if (!sub) return e
-      return toProgramExercise(sub.code, { n: sub.name, group: sub.group as MuscleGroup, u: sub.unit, s: e.s, r: e.r })
-    })
+  const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] => applySubstitutions(exList, substitutions)
 
   const doneThisWeek = (): Set<string> => {
     const mon = mondayOf(new Date())

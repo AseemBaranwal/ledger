@@ -9,8 +9,9 @@ import {
   toProgramExercise,
   resolveExerciseDisplay,
   resolveExerciseQuery,
+  applySubstitutions,
 } from '@/services/exerciseCatalog'
-import type { Program } from '@/types'
+import type { Program, ProgramExercise } from '@/types'
 
 describe('prettifyExerciseType', () => {
   it('turns a Strava exercise_type constant into a readable label', () => {
@@ -135,6 +136,36 @@ describe('resolveExerciseDisplay', () => {
     const d = resolveExerciseDisplay('MYSTERY', program, colours)
     expect(d.name).toBe('MYSTERY')
     expect(d.group).toBe('Other')
+  })
+})
+
+describe('applySubstitutions', () => {
+  const original: ProgramExercise = { k: 'SQ', n: 'Back Squat', s: 4, r: 5, w: 85, u: 'lb', group: 'Legs', cue: 'x' }
+
+  // Caught live: a session opened with the weight box at 0 despite an
+  // already-accepted 85 lb suggestion for the original exercise. The
+  // substituted def was built via toProgramExercise(), whose defaults
+  // (w: 0) silently won whenever the caller forgot to pass through the
+  // original exercise's current weight target.
+  it("carries the ORIGINAL exercise's current weight into the substituted exercise, not a default of 0", () => {
+    const [result] = applySubstitutions([original], {
+      SQ: { code: 'BARBELL_BACK_SQUAT', name: 'Barbell Back Squat', group: 'Legs', unit: 'lb' },
+    })
+    expect(result.k).toBe('BARBELL_BACK_SQUAT')
+    expect(result.w).toBe(85)
+  })
+
+  it('carries the target sets/reps through unchanged', () => {
+    const [result] = applySubstitutions([original], {
+      SQ: { code: 'LEG_PRESS', name: 'Leg Press', group: 'Legs', unit: 'lb' },
+    })
+    expect(result.s).toBe(4)
+    expect(result.r).toBe(5)
+  })
+
+  it('leaves an exercise with no matching substitution untouched', () => {
+    const [result] = applySubstitutions([original], { BSS: { code: 'LEG_PRESS', name: 'Leg Press', group: 'Legs', unit: 'lb' } })
+    expect(result).toEqual(original)
   })
 })
 

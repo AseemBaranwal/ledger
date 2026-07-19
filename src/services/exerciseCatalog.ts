@@ -10,6 +10,7 @@ export * from '../../api/_lib/exerciseCatalog.js'
 import { STRAVA_EXERCISE_TYPES } from '../../api/_lib/stravaExerciseCatalog.js'
 import { prettifyExerciseType, groupForType, type MuscleGroup } from '../../api/_lib/exerciseCatalog.js'
 import type { Program, ProgramExercise } from '@/types'
+import type { ExerciseSubstitution } from './chat'
 
 const GROUP_TO_COLOUR_KEY: Record<MuscleGroup, string> = {
   Legs: 'legs',
@@ -74,4 +75,21 @@ export function resolveExerciseDisplay(
   if (custom) return { name: custom.n, group: custom.group, colour: colours[GROUP_TO_COLOUR_KEY[custom.group]] || DEFAULT_COLOUR }
 
   return { name: code, group: 'Other', colour: DEFAULT_COLOUR }
+}
+
+// A Coach-accepted swap (see chatStore.acceptSwap) is a standing
+// substitution keyed by the ORIGINAL code — applied here so the week
+// preview (TodayTab.tsx) and an actually-started session always show the
+// same exercise, not the preview showing the original while the started
+// session shows the swap. Carries forward the ORIGINAL exercise's current
+// target weight (e.w) rather than defaulting to 0 — that weight is kept
+// fresh by both loadWeights() and the Coach's in-memory program patch on
+// an accepted weight suggestion, so dropping it here would silently reset
+// a swapped-in exercise's starting weight even when a real target exists.
+export function applySubstitutions(exList: ProgramExercise[], substitutions: Record<string, ExerciseSubstitution>): ProgramExercise[] {
+  return exList.map((e) => {
+    const sub = substitutions[e.k]
+    if (!sub) return e
+    return toProgramExercise(sub.code, { n: sub.name, group: sub.group as MuscleGroup, u: sub.unit, s: e.s, r: e.r, w: e.w })
+  })
 }

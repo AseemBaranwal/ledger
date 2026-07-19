@@ -6,11 +6,24 @@ export interface ChatMessage {
 }
 
 export interface ChatSuggestion {
+  // Absent on suggestions saved before this field existed — treat as
+  // 'adjustment', the only kind that used to exist.
+  kind?: 'adjustment' | 'swap'
   exerciseCode: string
   exerciseName: string
-  currentWeight: number
-  suggestedWeight: number
   reasoning: string
+  // adjustment fields — each independently optional, a proposal can touch
+  // just one of weight/reps/sets
+  currentWeight?: number
+  suggestedWeight?: number
+  currentReps?: number
+  suggestedReps?: number
+  currentSets?: number
+  suggestedSets?: number
+  // swap fields — already resolved server-side against the exercise
+  // catalog by the time the suggestion reaches the client
+  newExerciseCode?: string
+  newExerciseName?: string
 }
 
 export interface ChatUsage {
@@ -137,11 +150,17 @@ export async function sendChatMessage(
   throw new Error('Coach response ended unexpectedly')
 }
 
-export async function applyWeightSuggestion(exerciseCode: string, weight: number): Promise<void> {
-  const res = await authedFetch('/api/chat/apply-weight', { exerciseCode, weight })
+export interface ExerciseChange {
+  weight?: number
+  reps?: number
+  sets?: number
+}
+
+export async function applyExerciseChange(exerciseCode: string, changes: ExerciseChange): Promise<void> {
+  const res = await authedFetch('/api/chat/apply-exercise-change', { exerciseCode, ...changes })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.error || 'Could not send the weight update')
+    throw new Error(data.error || 'Could not send the update')
   }
 }
 

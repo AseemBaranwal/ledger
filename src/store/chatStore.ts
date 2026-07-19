@@ -3,14 +3,18 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { scopedStorage } from '@/services/userScope'
 import {
   sendChatMessage,
-  applyWeightSuggestion,
+  applyExerciseChange,
   fetchChatHistory,
   deleteChatMessages,
   type ChatMessage,
   type ChatSuggestion,
   type ChatUsage,
+  type ExerciseChange,
 } from '@/services/chat'
+import { toProgramExercise } from '@/services/exerciseCatalog'
+import { lastOf } from '@/services/trendCalculations'
 import { useConfigStore } from './configStore'
+import { useSessionStore } from './sessionStore'
 
 // A message the UI has fully rendered — extends the wire ChatMessage with a
 // stable local id and (for assistant turns) the suggestions that came back
@@ -39,7 +43,8 @@ interface ChatStore {
   sendMessage: (text: string) => Promise<void>
   loadHistory: () => Promise<void>
   deleteExchange: (messageId: string) => Promise<void>
-  acceptSuggestion: (messageId: string, suggestionIndex: number, weight: number) => Promise<void>
+  acceptSuggestion: (messageId: string, suggestionIndex: number, changes: ExerciseChange) => Promise<void>
+  acceptSwap: (messageId: string, suggestionIndex: number) => Promise<void>
   dismissSuggestion: (messageId: string, suggestionIndex: number) => void
   clearError: () => void
 }
@@ -159,13 +164,19 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      acceptSuggestion: async (messageId, suggestionIndex, weight) => {
+      // Covers weight, reps, and/or sets changes — `changes` only carries
+      // whichever field(s) the accepted suggestion actually proposed.
+      // Always writes through to the Sheet (the durable "next time" target,
+      // same as weight-only suggestions always have), and additionally
+      // syncs the live draft session if one is active and has this
+      // exercise, so the change is visible immediately without restarting.
+      acceptSuggestion: async (messageId, suggestionIndex, changes) => {
         const message = get().messages.find((m) => m.id === messageId)
         const suggestion = message?.suggestions?.[suggestionIndex]
         if (!suggestion) return
 
         try {
-          await applyWeightSuggestion(suggestion.exerciseCode, weight)
+          await applyExerciseChange(suggestion.exerciseCode, changes)
 
           // Optimistic local update — same in-place mutation pattern
           // configStore.loadWeights() already uses, so the new target shows
@@ -174,11 +185,26 @@ export const useChatStore = create<ChatStore>()(
             const program = { ...state.program }
             Object.values(program).forEach((session) => {
               session.ex?.forEach((ex) => {
-                if (ex.k === suggestion.exerciseCode) ex.w = weight
+                if (ex.k !== suggestion.exerciseCode) return
+                if (changes.weight != null) ex.w = changes.weight
+                if (changes.reps != null) ex.r = changes.reps
+                if (changes.sets != null) ex.s = changes.sets
               })
             })
             return { program }
           })
+
+          const { draftDefs, setWeight, updateExerciseTarget } = useSessionStore.getState()
+          const activeIndex = draftDefs?.findIndex((d) => d.k === suggestion.exerciseCode) ?? -1
+          if (activeIndex !== -1) {
+            if (changes.weight != null) setWeight(activeIndex, changes.weight)
+            if (changes.reps != null || changes.sets != null) {
+              updateExerciseTarget(activeIndex, {
+                ...(changes.reps != null ? { r: changes.reps } : {}),
+                ...(changes.sets != null ? { s: changes.sets } : {}),
+              })
+            }
+          }
 
           set((state) => ({
             messages: state.messages.map((m) =>
@@ -188,8 +214,41 @@ export const useChatStore = create<ChatStore>()(
             ),
           }))
         } catch (e) {
-          set({ error: e instanceof Error ? e.message : 'Could not send the weight update' })
+          set({ error: e instanceof Error ? e.message : 'Could not send the update' })
         }
+      },
+
+      // Exercise swaps have no persistent "program override" storage (the
+      // program's exercise list is static config.json — genuinely not
+      // writable by this app) — accepting one applies to the currently
+      // active session draft only, the same local-only mechanism the
+      // manual swap picker uses. If no active session has this exercise,
+      // there's nowhere to apply it; surface that plainly rather than
+      // silently no-op'ing.
+      acceptSwap: async (messageId, suggestionIndex) => {
+        const message = get().messages.find((m) => m.id === messageId)
+        const suggestion = message?.suggestions?.[suggestionIndex]
+        if (!suggestion || !suggestion.newExerciseCode) return
+
+        const { draftDefs, sessions, swapExercise } = useSessionStore.getState()
+        const activeIndex = draftDefs?.findIndex((d) => d.k === suggestion.exerciseCode) ?? -1
+        if (activeIndex === -1 || !draftDefs) {
+          set({ error: "Start today's session first, then accept this swap." })
+          return
+        }
+
+        const newDef = toProgramExercise(suggestion.newExerciseCode, { n: suggestion.newExerciseName })
+        const last = lastOf(sessions, newDef.k)
+        const startWeight = last ? (last.ws?.length ? Math.max(...last.ws) : (last.w ?? 0)) : 0
+        swapExercise(activeIndex, newDef, startWeight)
+
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === messageId
+              ? { ...m, suggestions: m.suggestions?.map((s, i) => (i === suggestionIndex ? { ...s, status: 'accepted' as const } : s)) }
+              : m
+          ),
+        }))
       },
 
       dismissSuggestion: (messageId, suggestionIndex) => {

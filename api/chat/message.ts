@@ -2,7 +2,7 @@ import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { callAnthropic, type AnthropicMessage, type AnthropicResponseBlock } from '../_lib/anthropic.js'
 import { buildSystemPrompt } from '../_lib/chatSystemPrompt.js'
-import { TOOLS, getTrainingData } from '../_lib/chatTools.js'
+import { TOOLS, getTrainingData, resolveExerciseSwap } from '../_lib/chatTools.js'
 import { saveChatTurn } from '../_lib/chatHistory.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
@@ -22,11 +22,22 @@ function isOwner(userId: string): boolean {
 }
 
 interface Suggestion {
+  kind: 'adjustment' | 'swap'
   exerciseCode: string
   exerciseName: string
-  currentWeight: number
-  suggestedWeight: number
   reasoning: string
+  // adjustment fields — each independently optional, a proposal can touch
+  // just one of weight/reps/sets
+  currentWeight?: number
+  suggestedWeight?: number
+  currentReps?: number
+  suggestedReps?: number
+  currentSets?: number
+  suggestedSets?: number
+  // swap fields — already resolved server-side against the exercise
+  // catalog by the time this is recorded, never raw model output
+  newExerciseCode?: string
+  newExerciseName?: string
 }
 
 // Best-effort — a logging failure must never fail the actual chat response.
@@ -169,7 +180,13 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const statusForTool = (name: string) =>
-    name === 'get_training_data' ? 'Checking your training data…' : name === 'suggest_weight_change' ? 'Working out a suggestion…' : 'Working on it…'
+    name === 'get_training_data'
+      ? 'Checking your training data…'
+      : name === 'suggest_exercise_adjustment'
+        ? 'Working out a suggestion…'
+        : name === 'suggest_exercise_swap'
+          ? 'Finding a good alternate…'
+          : 'Working on it…'
 
   ;(async () => {
     let totalInputTokens = 0
@@ -214,10 +231,58 @@ export default async function handler(req: Request): Promise<Response> {
             const args = block.input as { exerciseCode?: string; sinceDate?: string; limit?: number }
             const result = await getTrainingData(user.id, args)
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
-          } else if (block.name === 'suggest_weight_change') {
-            const args = block.input as unknown as Suggestion
-            suggestions.push(args)
-            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Suggestion noted.' })
+          } else if (block.name === 'suggest_exercise_adjustment') {
+            const args = block.input as unknown as {
+              exerciseCode: string
+              exerciseName: string
+              reasoning: string
+              currentWeight?: number
+              suggestedWeight?: number
+              currentReps?: number
+              suggestedReps?: number
+              currentSets?: number
+              suggestedSets?: number
+            }
+            const hasChange = args.suggestedWeight != null || args.suggestedReps != null || args.suggestedSets != null
+            if (!hasChange) {
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: 'No change specified — include at least one of suggestedWeight, suggestedReps, or suggestedSets.',
+              })
+            } else {
+              suggestions.push({ kind: 'adjustment', ...args })
+              toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Suggestion noted.' })
+            }
+          } else if (block.name === 'suggest_exercise_swap') {
+            const args = block.input as unknown as {
+              currentExerciseCode: string
+              currentExerciseName: string
+              replacementQuery: string
+              reasoning: string
+            }
+            const resolved = resolveExerciseSwap(args.currentExerciseCode, args.replacementQuery)
+            if (!resolved) {
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: JSON.stringify({ resolved: false, error: `No matching exercise found for "${args.replacementQuery}".` }),
+              })
+            } else {
+              suggestions.push({
+                kind: 'swap',
+                exerciseCode: args.currentExerciseCode,
+                exerciseName: args.currentExerciseName,
+                newExerciseCode: resolved.code,
+                newExerciseName: resolved.name,
+                reasoning: args.reasoning,
+              })
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: JSON.stringify({ resolved: true, code: resolved.code, name: resolved.name }),
+              })
+            }
           } else {
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Unknown tool.' })
           }

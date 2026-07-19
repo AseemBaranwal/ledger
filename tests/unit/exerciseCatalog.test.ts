@@ -8,6 +8,7 @@ import {
   searchCatalog,
   toProgramExercise,
   resolveExerciseDisplay,
+  resolveExerciseQuery,
 } from '@/services/exerciseCatalog'
 import type { Program } from '@/types'
 
@@ -134,5 +135,33 @@ describe('resolveExerciseDisplay', () => {
     const d = resolveExerciseDisplay('MYSTERY', program, colours)
     expect(d.name).toBe('MYSTERY')
     expect(d.group).toBe('Other')
+  })
+})
+
+describe('resolveExerciseQuery', () => {
+  // This is what the Coach chat's swap tool calls server-side to turn a
+  // model's plain-language guess ("leg press") into a real exercise_type,
+  // without ever putting the ~500-entry catalog in the model's context.
+  it('prefers a compatible alternate for the current exercise over a generic search hit', () => {
+    const result = resolveExerciseQuery('leg press', 'SQ') // Back Squat -> Leg Press is a known alternate
+    expect(result?.type).toBe('LEG_PRESS')
+  })
+
+  it('falls back to a general catalog search when there is no current exercise', () => {
+    const result = resolveExerciseQuery('barbell back squat')
+    expect(result?.type).toBe('BARBELL_BACK_SQUAT')
+  })
+
+  it('falls back to a general catalog search when nothing matches the alternates', () => {
+    const result = resolveExerciseQuery('bench press', 'SCR') // not a calf-raise variant
+    expect(result?.type).toContain('BENCH_PRESS')
+  })
+
+  it('returns null for a query with no reasonable match', () => {
+    expect(resolveExerciseQuery('zzz_not_a_real_exercise_zzz')).toBeNull()
+  })
+
+  it('returns null for an empty query', () => {
+    expect(resolveExerciseQuery('')).toBeNull()
   })
 })

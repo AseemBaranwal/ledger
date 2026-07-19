@@ -32,6 +32,11 @@ interface SessionStore {
   swapExercise: (index: number, def: ProgramExercise, startWeight: number) => void
   addExercise: (def: ProgramExercise, startWeight: number) => void
   removeExercise: (index: number) => void
+  // Updates an exercise's target (reps and/or sets) for this occurrence,
+  // e.g. when accepting a Coach rep/set suggestion mid-session — distinct
+  // from setWeight, which only touches the live entered weight, not the
+  // target definition itself.
+  updateExerciseTarget: (index: number, changes: { r?: number; s?: number }) => void
   // One-time backfill for a draft that was already in progress when this
   // feature shipped (draftDefs didn't exist yet) — a no-op once draftDefs
   // is already populated.
@@ -172,6 +177,13 @@ export const useSessionStore = create<SessionStore>()(
       }),
 
       hydrateDraftDefs: (defs) => set((state) => (state.draftDefs ? state : { draftDefs: defs })),
+
+      updateExerciseTarget: (index, changes) => set((state) => {
+        if (!state.draftDefs || !state.draftDefs[index]) return state
+        const draftDefs = [...state.draftDefs]
+        draftDefs[index] = { ...draftDefs[index], ...changes }
+        return { draftDefs }
+      }),
 
       toggleRestItem: (index) => set((state) => {
         if (!state.draftItems) return state

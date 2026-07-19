@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from '@/store/chatStore'
+import { useSessionStore } from '@/store/sessionStore'
 import * as chatService from '@/services/chat'
 
 vi.mock('@/services/chat', () => ({
   sendChatMessage: vi.fn(),
-  applyWeightSuggestion: vi.fn(),
+  applyExerciseChange: vi.fn(),
   fetchChatHistory: vi.fn(),
   deleteChatMessages: vi.fn(),
 }))
@@ -182,7 +183,7 @@ describe('chatStore', () => {
     })
   })
 
-  describe('acceptSuggestion / dismissSuggestion', () => {
+  describe('acceptSuggestion / dismissSuggestion (weight/reps/sets adjustments)', () => {
     beforeEach(() => {
       useChatStore.setState({
         messages: [
@@ -190,25 +191,26 @@ describe('chatStore', () => {
             id: 'a1',
             role: 'assistant',
             content: 'Suggestion inside',
-            suggestions: [{ exerciseCode: 'SQ', exerciseName: 'Back Squat', currentWeight: 80, suggestedWeight: 85, reasoning: 'x', status: 'pending' }],
+            suggestions: [{ kind: 'adjustment', exerciseCode: 'SQ', exerciseName: 'Back Squat', currentWeight: 80, suggestedWeight: 85, reasoning: 'x', status: 'pending' }],
           },
         ],
       })
+      useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftDefs: null, draftItems: null })
     })
 
-    it('marks a suggestion accepted after the weight update succeeds', async () => {
-      vi.mocked(chatService.applyWeightSuggestion).mockResolvedValue(undefined)
+    it('marks a suggestion accepted after the update succeeds, sending only the proposed field', async () => {
+      vi.mocked(chatService.applyExerciseChange).mockResolvedValue(undefined)
 
-      await useChatStore.getState().acceptSuggestion('a1', 0, 85)
+      await useChatStore.getState().acceptSuggestion('a1', 0, { weight: 85 })
 
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
-      expect(chatService.applyWeightSuggestion).toHaveBeenCalledWith('SQ', 85)
+      expect(chatService.applyExerciseChange).toHaveBeenCalledWith('SQ', { weight: 85 })
     })
 
-    it('leaves the suggestion pending and sets an error when the weight update fails', async () => {
-      vi.mocked(chatService.applyWeightSuggestion).mockRejectedValue(new Error('Sheet unreachable'))
+    it('leaves the suggestion pending and sets an error when the update fails', async () => {
+      vi.mocked(chatService.applyExerciseChange).mockRejectedValue(new Error('Sheet unreachable'))
 
-      await useChatStore.getState().acceptSuggestion('a1', 0, 85)
+      await useChatStore.getState().acceptSuggestion('a1', 0, { weight: 85 })
 
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('pending')
       expect(useChatStore.getState().error).toBe('Sheet unreachable')
@@ -218,7 +220,71 @@ describe('chatStore', () => {
       useChatStore.getState().dismissSuggestion('a1', 0)
 
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('dismissed')
-      expect(chatService.applyWeightSuggestion).not.toHaveBeenCalled()
+      expect(chatService.applyExerciseChange).not.toHaveBeenCalled()
+    })
+
+    it('also syncs the live draft session when it currently has the accepted exercise', async () => {
+      vi.mocked(chatService.applyExerciseChange).mockResolvedValue(undefined)
+      useSessionStore.setState({
+        draftDefs: [{ k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }],
+        draftEx: [{ k: 'SQ', w: 75, r: [] }],
+      })
+
+      await useChatStore.getState().acceptSuggestion('a1', 0, { weight: 85, reps: 8 })
+
+      const state = useSessionStore.getState()
+      expect(state.draftEx![0].w).toBe(85)
+      expect(state.draftDefs![0].r).toBe(8)
+    })
+
+    it('does not touch the draft session when no active session exercise matches', async () => {
+      vi.mocked(chatService.applyExerciseChange).mockResolvedValue(undefined)
+      useSessionStore.setState({
+        draftDefs: [{ k: 'BSS', n: 'Bulgarian Split Squat', s: 4, r: 8, w: 20, u: 'lb', group: 'Legs', cue: '' }],
+        draftEx: [{ k: 'BSS', w: 20, r: [] }],
+      })
+
+      await useChatStore.getState().acceptSuggestion('a1', 0, { weight: 85 })
+
+      expect(useSessionStore.getState().draftEx![0].w).toBe(20) // unchanged — BSS isn't SQ
+    })
+  })
+
+  describe('acceptSwap', () => {
+    beforeEach(() => {
+      useChatStore.setState({
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'Swap suggestion',
+            suggestions: [
+              { kind: 'swap', exerciseCode: 'SQ', exerciseName: 'Back Squat', newExerciseCode: 'LEG_PRESS', newExerciseName: 'Leg Press', reasoning: 'x', status: 'pending' },
+            ],
+          },
+        ],
+      })
+      useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftDefs: null, draftItems: null })
+    })
+
+    it('swaps the exercise in the active draft session and marks the suggestion accepted', async () => {
+      useSessionStore.setState({
+        draft: { d: '2026-01-01', s: 'LA', g: 'Gym', n: '', type: 'PROGRAM' },
+        draftDefs: [{ k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }],
+        draftEx: [{ k: 'SQ', w: 75, r: [] }],
+      })
+
+      await useChatStore.getState().acceptSwap('a1', 0)
+
+      expect(useSessionStore.getState().draftDefs![0].k).toBe('LEG_PRESS')
+      expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
+    })
+
+    it('sets an error instead of applying when no active session has the exercise', async () => {
+      await useChatStore.getState().acceptSwap('a1', 0)
+
+      expect(useChatStore.getState().error).toBe("Start today's session first, then accept this swap.")
+      expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('pending')
     })
   })
 })

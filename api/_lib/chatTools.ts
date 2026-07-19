@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabaseAdmin.js'
+import { resolveExerciseQuery } from './exerciseCatalog.js'
 import type { ToolDefinition } from './anthropic.js'
 
 export const TOOLS: ToolDefinition[] = [
@@ -25,19 +26,38 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
   {
-    name: 'suggest_weight_change',
+    name: 'suggest_exercise_adjustment',
     description:
-      'Proposes a new target weight for one exercise. This does NOT change anything by itself — it only records a suggestion that the owner will review and accept themselves in the app. Never claim the weight has actually been changed.',
+      "Proposes a new target weight, reps, and/or sets for one exercise — include only the field(s) that should change. This does NOT change anything by itself — it only records a suggestion the owner will review and accept themselves in the app. Never claim the change has actually been applied.",
     input_schema: {
       type: 'object',
       properties: {
         exerciseCode: { type: 'string', description: 'The exercise code, e.g. "SQ".' },
         exerciseName: { type: 'string', description: 'The human-readable exercise name, e.g. "Back Squat".' },
-        currentWeight: { type: 'number', description: 'The current weight in lb, from the training data.' },
-        suggestedWeight: { type: 'number', description: 'The proposed new weight in lb.' },
+        currentWeight: { type: 'number', description: 'Current target weight in lb, from the training data. Omit if not proposing a weight change.' },
+        suggestedWeight: { type: 'number', description: 'Proposed new weight in lb. Omit if not proposing a weight change.' },
+        currentReps: { type: 'number', description: 'Current target reps per set. Omit if not proposing a reps change.' },
+        suggestedReps: { type: 'number', description: 'Proposed new target reps per set. Omit if not proposing a reps change.' },
+        currentSets: { type: 'number', description: 'Current target number of sets. Omit if not proposing a sets change.' },
+        suggestedSets: { type: 'number', description: 'Proposed new target number of sets. Omit if not proposing a sets change.' },
         reasoning: { type: 'string', description: 'One or two sentences on why this change makes sense right now.' },
       },
-      required: ['exerciseCode', 'exerciseName', 'currentWeight', 'suggestedWeight', 'reasoning'],
+      required: ['exerciseCode', 'exerciseName', 'reasoning'],
+    },
+  },
+  {
+    name: 'suggest_exercise_swap',
+    description:
+      'Proposes replacing one exercise with a compatible alternate — e.g. leg press instead of a barbell squat if equipment isn\'t available or the owner wants a change. Describe the replacement in plain words (e.g. "leg press", "seated calf raise") — the exact catalog code is resolved server-side, you do not need to know it. This does NOT change anything by itself; it records a suggestion the owner reviews and accepts themselves.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        currentExerciseCode: { type: 'string', description: 'The code of the exercise being replaced, e.g. "SQ".' },
+        currentExerciseName: { type: 'string', description: 'Human-readable name of the exercise being replaced.' },
+        replacementQuery: { type: 'string', description: 'Plain-language description of the desired replacement, e.g. "leg press".' },
+        reasoning: { type: 'string', description: 'One or two sentences on why this swap makes sense.' },
+      },
+      required: ['currentExerciseCode', 'currentExerciseName', 'replacementQuery', 'reasoning'],
     },
   },
 ]
@@ -134,4 +154,20 @@ export async function getTrainingData(
   }
 
   return { rows }
+}
+
+export interface ResolvedSwap {
+  code: string
+  name: string
+}
+
+// Resolves the Coach's plain-language replacement guess into a real
+// exercise_type — the ~500-entry Strava catalog never enters the model's
+// context; it just names what it wants and this runs server-side. Shared
+// with the frontend's own swap picker via exerciseCatalog.ts, so a swap
+// suggested by the Coach and one picked by hand resolve identically.
+export function resolveExerciseSwap(currentCode: string, replacementQuery: string): ResolvedSwap | null {
+  const match = resolveExerciseQuery(replacementQuery, currentCode)
+  if (!match) return null
+  return { code: match.type, name: match.label }
 }

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import { useChatStore } from '@/store/chatStore'
-import { useUIStore } from '@/store'
+import { useUIStore, useSessionStore } from '@/store'
 import { estimateCostUsd, formatTokenCount, formatCostUsd } from '@/services/chatCost'
+import type { ChatSuggestion, ExerciseChange } from '@/services/chat'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
@@ -42,9 +44,11 @@ export function CoachTab() {
   const loadHistory = useChatStore((s) => s.loadHistory)
   const deleteExchange = useChatStore((s) => s.deleteExchange)
   const acceptSuggestion = useChatStore((s) => s.acceptSuggestion)
+  const acceptSwap = useChatStore((s) => s.acceptSwap)
   const dismissSuggestion = useChatStore((s) => s.dismissSuggestion)
   const clearError = useChatStore((s) => s.clearError)
   const showNotification = useUIStore((s) => s.showNotification)
+  const draftDefs = useSessionStore((s) => s.draftDefs)
 
   const [input, setInput] = useState('')
   const [revealedId, setRevealedId] = useState<string | null>(null)
@@ -176,14 +180,24 @@ export function CoachTab() {
                 message.content
               )}
 
-              {message.suggestions?.map((suggestion, i) => (
-                <SuggestionCard
-                  key={i}
-                  suggestion={suggestion}
-                  onAccept={(weight) => acceptSuggestion(message.id, i, weight)}
-                  onDismiss={() => dismissSuggestion(message.id, i)}
-                />
-              ))}
+              {message.suggestions?.map((suggestion, i) =>
+                (suggestion.kind ?? 'adjustment') === 'swap' ? (
+                  <SwapSuggestionCard
+                    key={i}
+                    suggestion={suggestion}
+                    canApply={!!draftDefs?.some((d) => d.k === suggestion.exerciseCode)}
+                    onAccept={() => acceptSwap(message.id, i)}
+                    onDismiss={() => dismissSuggestion(message.id, i)}
+                  />
+                ) : (
+                  <AdjustmentSuggestionCard
+                    key={i}
+                    suggestion={suggestion}
+                    onAccept={(changes) => acceptSuggestion(message.id, i, changes)}
+                    onDismiss={() => dismissSuggestion(message.id, i)}
+                  />
+                )
+              )}
             </div>
           </div>
         ))}
@@ -233,54 +247,95 @@ export function CoachTab() {
   )
 }
 
-interface SuggestionCardProps {
-  suggestion: { exerciseCode: string; exerciseName: string; currentWeight: number; suggestedWeight: number; reasoning: string; status: 'pending' | 'accepted' | 'dismissed' }
-  onAccept: (weight: number) => void
+type DisplaySuggestion = ChatSuggestion & { status: 'pending' | 'accepted' | 'dismissed' }
+
+const cardStyle: CSSProperties = {
+  marginTop: '10px',
+  background: 'var(--raised)',
+  border: '1px solid var(--line-2)',
+  borderRadius: '10px',
+  padding: '11px 12px',
+  color: 'var(--text)',
+}
+
+function FieldRow({
+  label,
+  current,
+  value,
+  onChange,
+  unit,
+  disabled,
+}: {
+  label: string
+  current: number | undefined
+  value: number
+  onChange: (v: number) => void
+  unit: string
+  disabled: boolean
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono', fontSize: '13px', marginBottom: '8px' }}>
+      <span style={{ color: 'var(--dim)', width: '44px', flex: 'none' }}>{label}</span>
+      <span style={{ color: 'var(--dim)' }}>{current ?? '—'}</span>
+      <span style={{ color: 'var(--dim)' }}>→</span>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        disabled={disabled}
+        style={{
+          width: '64px',
+          background: 'var(--surface)',
+          border: '1px solid var(--line-2)',
+          borderRadius: '8px',
+          padding: '6px 8px',
+          color: 'var(--amber)',
+          fontFamily: 'JetBrains Mono',
+          fontWeight: 700,
+          fontSize: '13px',
+        }}
+      />
+      <span style={{ color: 'var(--dim)' }}>{unit}</span>
+    </div>
+  )
+}
+
+interface AdjustmentSuggestionCardProps {
+  suggestion: DisplaySuggestion
+  onAccept: (changes: ExerciseChange) => void
   onDismiss: () => void
 }
 
-function SuggestionCard({ suggestion, onAccept, onDismiss }: SuggestionCardProps) {
-  const [weight, setWeight] = useState(suggestion.suggestedWeight)
+function AdjustmentSuggestionCard({ suggestion, onAccept, onDismiss }: AdjustmentSuggestionCardProps) {
+  const [weight, setWeight] = useState(suggestion.suggestedWeight ?? 0)
+  const [reps, setReps] = useState(suggestion.suggestedReps ?? 0)
+  const [sets, setSets] = useState(suggestion.suggestedSets ?? 0)
+
+  const hasWeight = suggestion.suggestedWeight != null
+  const hasReps = suggestion.suggestedReps != null
+  const hasSets = suggestion.suggestedSets != null
+  const disabled = suggestion.status !== 'pending'
+
+  const handleAccept = () => {
+    onAccept({
+      ...(hasWeight ? { weight } : {}),
+      ...(hasReps ? { reps } : {}),
+      ...(hasSets ? { sets } : {}),
+    })
+  }
 
   return (
-    <div
-      style={{
-        marginTop: '10px',
-        background: 'var(--raised)',
-        border: '1px solid var(--line-2)',
-        borderRadius: '10px',
-        padding: '11px 12px',
-        color: 'var(--text)',
-      }}
-    >
+    <div style={cardStyle}>
       <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}>{suggestion.exerciseName}</div>
       <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '8px' }}>{suggestion.reasoning}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono', fontSize: '13px', marginBottom: '10px' }}>
-        <span style={{ color: 'var(--dim)' }}>{suggestion.currentWeight} lb</span>
-        <span style={{ color: 'var(--dim)' }}>→</span>
-        <input
-          type="number"
-          value={weight}
-          onChange={(e) => setWeight(Number(e.target.value) || 0)}
-          disabled={suggestion.status !== 'pending'}
-          style={{
-            width: '70px',
-            background: 'var(--surface)',
-            border: '1px solid var(--line-2)',
-            borderRadius: '8px',
-            padding: '6px 8px',
-            color: 'var(--amber)',
-            fontFamily: 'JetBrains Mono',
-            fontWeight: 700,
-            fontSize: '13px',
-          }}
-        />
-        <span style={{ color: 'var(--dim)' }}>lb</span>
-      </div>
+
+      {hasWeight && <FieldRow label="weight" current={suggestion.currentWeight} value={weight} onChange={setWeight} unit="lb" disabled={disabled} />}
+      {hasReps && <FieldRow label="reps" current={suggestion.currentReps} value={reps} onChange={setReps} unit="reps" disabled={disabled} />}
+      {hasSets && <FieldRow label="sets" current={suggestion.currentSets} value={sets} onChange={setSets} unit="sets" disabled={disabled} />}
 
       {suggestion.status === 'pending' && (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className={`${styles.btn} ${styles.primary}`} style={{ minHeight: '38px', fontSize: '13px' }} onClick={() => onAccept(weight)}>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+          <button className={`${styles.btn} ${styles.primary}`} style={{ minHeight: '38px', fontSize: '13px' }} onClick={handleAccept}>
             Accept
           </button>
           <button className={`${styles.btn} ${styles.quiet}`} style={{ minHeight: '38px' }} onClick={onDismiss}>
@@ -289,6 +344,47 @@ function SuggestionCard({ suggestion, onAccept, onDismiss }: SuggestionCardProps
         </div>
       )}
       {suggestion.status === 'accepted' && <div style={{ fontSize: '12px', color: 'var(--teal)' }}>Sent to your sheet.</div>}
+      {suggestion.status === 'dismissed' && <div style={{ fontSize: '12px', color: 'var(--dim)' }}>Dismissed.</div>}
+    </div>
+  )
+}
+
+interface SwapSuggestionCardProps {
+  suggestion: DisplaySuggestion
+  canApply: boolean
+  onAccept: () => void
+  onDismiss: () => void
+}
+
+function SwapSuggestionCard({ suggestion, canApply, onAccept, onDismiss }: SwapSuggestionCardProps) {
+  return (
+    <div style={cardStyle}>
+      <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+        <span>{suggestion.exerciseName}</span>
+        <span style={{ color: 'var(--dim)' }}>→</span>
+        <span style={{ color: 'var(--amber)' }}>{suggestion.newExerciseName}</span>
+      </div>
+      <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '10px' }}>{suggestion.reasoning}</div>
+
+      {suggestion.status === 'pending' && canApply && (
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className={`${styles.btn} ${styles.primary}`} style={{ minHeight: '38px', fontSize: '13px' }} onClick={onAccept}>
+            Accept
+          </button>
+          <button className={`${styles.btn} ${styles.quiet}`} style={{ minHeight: '38px' }} onClick={onDismiss}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {suggestion.status === 'pending' && !canApply && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '12px', color: 'var(--dim)' }}>Start today's session to apply this swap.</span>
+          <button className={`${styles.btn} ${styles.quiet}`} style={{ minHeight: '32px', width: 'auto', padding: '0 12px' }} onClick={onDismiss}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {suggestion.status === 'accepted' && <div style={{ fontSize: '12px', color: 'var(--teal)' }}>Swapped in today's session.</div>}
       {suggestion.status === 'dismissed' && <div style={{ fontSize: '12px', color: 'var(--dim)' }}>Dismissed.</div>}
     </div>
   )

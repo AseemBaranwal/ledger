@@ -12,12 +12,15 @@ function isOwner(userId: string): boolean {
   return allowList.includes(userId)
 }
 
-// The ONLY code path that can write a weight into the Sheet. Deliberately
-// separate from api/chat/message.ts: the chat endpoint's suggest_weight_change
-// tool only ever produces a proposal, never a write. This endpoint takes a
-// plain {exerciseCode, weight} body from an explicit user tap on a rendered
-// suggestion card — never raw LLM output — so the model itself never has
-// write access to training data, only proposal access.
+// The ONLY code path that can write an exercise's weight/reps/sets target
+// into the Sheet. Deliberately separate from api/chat/message.ts: the chat
+// endpoint's suggest_exercise_adjustment tool only ever produces a proposal,
+// never a write. This endpoint takes a plain {exerciseCode, weight?, reps?,
+// sets?} body from an explicit user tap on a rendered suggestion card —
+// never raw LLM output — so the model itself never has write access to
+// training data, only proposal access. (Formerly apply-weight.ts, before
+// this also covered reps/sets — renamed for clarity, same endpoint shape
+// otherwise.)
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
@@ -31,16 +34,25 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Not available for this account' }), { status: 403 })
   }
 
-  let payload: { exerciseCode?: string; weight?: number }
+  let payload: { exerciseCode?: string; weight?: number; reps?: number; sets?: number }
   try {
     payload = await req.json()
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400 })
   }
 
-  const { exerciseCode, weight } = payload
-  if (!exerciseCode || typeof weight !== 'number' || !(weight > 0)) {
-    return new Response(JSON.stringify({ error: 'Missing exerciseCode or a positive weight' }), { status: 400 })
+  const { exerciseCode, weight, reps, sets } = payload
+  if (!exerciseCode || (weight == null && reps == null && sets == null)) {
+    return new Response(JSON.stringify({ error: 'Missing exerciseCode and at least one of weight/reps/sets' }), { status: 400 })
+  }
+  if (weight != null && !(weight > 0)) {
+    return new Response(JSON.stringify({ error: 'weight must be positive' }), { status: 400 })
+  }
+  if (reps != null && !(reps > 0)) {
+    return new Response(JSON.stringify({ error: 'reps must be positive' }), { status: 400 })
+  }
+  if (sets != null && !(sets > 0)) {
+    return new Response(JSON.stringify({ error: 'sets must be positive' }), { status: 400 })
   }
 
   const { data: profile, error } = await supabaseAdmin()
@@ -64,7 +76,7 @@ export default async function handler(req: Request): Promise<Response> {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ type: 'weight', code: exerciseCode, weight }),
+      body: JSON.stringify({ type: 'weight', code: exerciseCode, weight, reps, sets }),
     })
   } catch {
     return new Response(JSON.stringify({ error: 'Could not reach the Google Sheet' }), { status: 502 })

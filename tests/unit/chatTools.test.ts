@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { topWeightOf, formatSets, TOOLS } from '../../api/_lib/chatTools'
+import { topWeightOf, formatSets, TOOLS, resolveExerciseSwap } from '../../api/_lib/chatTools'
 
 describe('topWeightOf', () => {
   it('returns the highest per-set weight when tracked per set', () => {
@@ -30,13 +30,34 @@ describe('formatSets', () => {
 })
 
 describe('TOOLS', () => {
-  it('defines exactly the two tools the coach can call', () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(['get_training_data', 'suggest_weight_change'])
+  it('defines exactly the three tools the coach can call', () => {
+    expect(TOOLS.map((t) => t.name)).toEqual(['get_training_data', 'suggest_exercise_adjustment', 'suggest_exercise_swap'])
   })
 
-  it('marks all suggest_weight_change fields as required so the model cannot half-fill a suggestion', () => {
-    const suggestTool = TOOLS.find((t) => t.name === 'suggest_weight_change')!
-    const schema = suggestTool.input_schema as { required: string[]; properties: Record<string, unknown> }
+  it('requires exerciseCode/exerciseName/reasoning on suggest_exercise_adjustment, but not the optional change fields', () => {
+    const tool = TOOLS.find((t) => t.name === 'suggest_exercise_adjustment')!
+    const schema = tool.input_schema as { required: string[]; properties: Record<string, unknown> }
+    expect(schema.required.sort()).toEqual(['exerciseCode', 'exerciseName', 'reasoning'])
+    // the weight/reps/sets pairs are all optional — a proposal can change just one
+    expect(Object.keys(schema.properties)).toEqual(
+      expect.arrayContaining(['currentWeight', 'suggestedWeight', 'currentReps', 'suggestedReps', 'currentSets', 'suggestedSets'])
+    )
+  })
+
+  it('marks all suggest_exercise_swap fields as required so the model cannot half-fill a proposal', () => {
+    const tool = TOOLS.find((t) => t.name === 'suggest_exercise_swap')!
+    const schema = tool.input_schema as { required: string[]; properties: Record<string, unknown> }
     expect(schema.required.sort()).toEqual(Object.keys(schema.properties).sort())
+  })
+})
+
+describe('resolveExerciseSwap', () => {
+  it('resolves a plain-language replacement into a real exercise_type + label', () => {
+    const result = resolveExerciseSwap('SQ', 'leg press')
+    expect(result).toEqual({ code: 'LEG_PRESS', name: 'Leg Press' })
+  })
+
+  it('returns null when nothing matches', () => {
+    expect(resolveExerciseSwap('SQ', 'zzz_not_a_real_exercise_zzz')).toBeNull()
   })
 })

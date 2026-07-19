@@ -49,9 +49,14 @@
  * WEIGHTS TAB
  * ───────────
  * A separate "Weights" tab holds one row per exercise code — the current
- * target weight the app's Coach chat can propose changes to, and the app
- * loads on every session start. GET ?action=weights reads it; POST
- * {type:'weight', code, weight} upserts a row by code.
+ * target weight, reps, and sets the app's Coach chat can propose changes
+ * to, and the app loads on every session start. GET ?action=weights reads
+ * it; POST {type:'weight', code, weight?, reps?, sets?} upserts a row by
+ * code. Each of weight/reps/sets is independently optional on the POST —
+ * whichever fields are omitted keep their existing value in the sheet
+ * rather than being blanked out (the "weight" type name predates reps/sets
+ * support and was kept as-is rather than renamed, to avoid churning every
+ * caller for a wire-protocol rename with no behavior change).
  */
 
 const HEADERS = [
@@ -88,7 +93,14 @@ function doGet(e) {
       const rows = ws.getDataRange().getValues().slice(1);
       const weights = rows
         .filter(function (row) { return row[0]; })
-        .map(function (row) { return { code: String(row[0]), weight: Number(row[1]) }; });
+        .map(function (row) {
+          return {
+            code: String(row[0]),
+            weight: row[1] === '' || row[1] === null ? null : Number(row[1]),
+            reps: row[2] === '' || row[2] === null ? null : Number(row[2]),
+            sets: row[3] === '' || row[3] === null ? null : Number(row[3]),
+          };
+        });
       return ContentService.createTextOutput(JSON.stringify({ weights: weights }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -142,11 +154,19 @@ function doPost(e) {
       for (let i = 1; i < rows.length; i++) {
         if (String(rows[i][0]) === String(body.code)) { rowIndex = i; break; }
       }
+      const existing = rowIndex >= 0 ? rows[rowIndex] : null;
+      // Each of weight/reps/sets is independently optional — a field the
+      // caller omitted keeps whatever was already in that column rather
+      // than getting blanked out, since e.g. accepting a reps-only
+      // suggestion shouldn't erase a previously-set weight target.
+      const weight = (body.weight !== undefined && body.weight !== null) ? body.weight : (existing ? existing[1] : '');
+      const reps = (body.reps !== undefined && body.reps !== null) ? body.reps : (existing ? existing[2] : '');
+      const sets = (body.sets !== undefined && body.sets !== null) ? body.sets : (existing ? existing[3] : '');
       const now = new Date().toISOString();
       if (rowIndex >= 0) {
-        ws.getRange(rowIndex + 1, 1, 1, 3).setValues([[body.code, body.weight, now]]);
+        ws.getRange(rowIndex + 1, 1, 1, 5).setValues([[body.code, weight, reps, sets, now]]);
       } else {
-        ws.appendRow([body.code, body.weight, now]);
+        ws.appendRow([body.code, weight, reps, sets, now]);
       }
     }
 
@@ -346,12 +366,23 @@ function ensureWeightsSheet_() {
   let sh = ss.getSheetByName('Weights');
   if (!sh) {
     sh = ss.insertSheet('Weights');
-    sh.appendRow(['code', 'weight', 'updated_at']);
-    sh.getRange(1, 1, 1, 3)
+    sh.appendRow(['code', 'weight', 'reps', 'sets', 'updated_at']);
+    sh.getRange(1, 1, 1, 5)
       .setFontWeight('bold')
       .setBackground('#14181D')
       .setFontColor('#00C2A8');
     sh.setFrozenRows(1);
+  } else if (sh.getLastColumn() < 5) {
+    // Pre-existing sheet from before reps/sets targets were added — insert
+    // the new columns before 'updated_at' rather than appending after it,
+    // so column order stays (code, weight, reps, sets, updated_at) and
+    // existing rows' weight values aren't touched.
+    sh.insertColumnsAfter(2, 2);
+    sh.getRange(1, 3, 1, 2).setValues([['reps', 'sets']]);
+    sh.getRange(1, 1, 1, 5)
+      .setFontWeight('bold')
+      .setBackground('#14181D')
+      .setFontColor('#00C2A8');
   }
   return sh;
 }

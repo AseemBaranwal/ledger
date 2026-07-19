@@ -15,7 +15,8 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('DATA HONESTY')
     expect(prompt).toContain('NO SILENT WRITES')
     expect(prompt).toContain('get_training_data')
-    expect(prompt).toContain('suggest_weight_change')
+    expect(prompt).toContain('suggest_exercise_adjustment')
+    expect(prompt).toContain('suggest_exercise_swap')
   })
 
   it('instructs Markdown output for the chat bubble', () => {

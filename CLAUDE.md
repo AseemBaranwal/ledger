@@ -148,6 +148,48 @@ Practical pattern established in `tests/unit/`:
   `api/_lib/chatSystemPrompt.ts` is deliberately built as static, byte-stable
   string concatenation (no per-request interpolation) specifically so the
   cache doesn't invalidate every call.
+- **`tools` doesn't need its own `cache_control` to be cached.** Anthropic's
+  request render order is `tools → system → messages`; a single
+  `cache_control` breakpoint on the *last* system block caches everything
+  before it, tools included. So as long as `TOOLS` in `chatTools.ts` stays a
+  static array (no per-request content), tool schemas are already covered
+  by the existing system-prompt cache marker — confirmed against Anthropic's
+  own prompt-caching docs before adding new tools, rather than assumed.
+  Adding/removing/reordering a tool still busts the cache once (expected,
+  same as any system-prompt edit) — it just isn't a *per-request* cost.
+
+## Coach chat tools (`api/_lib/chatTools.ts`, `api/chat/message.ts`)
+
+- The Coach can **propose** (never silently apply) three kinds of changes,
+  each going through a dedicated write endpoint gated the same way as
+  everything else in this file — owner-only, human-tap-to-accept, never
+  direct LLM write access:
+  - `get_training_data` — read-only, pulls from the Sheet.
+  - `suggest_exercise_adjustment` — weight/reps/sets, each field
+    independently optional so a proposal can touch just one. Accept writes
+    through `api/chat/apply-exercise-change.ts` to the Sheet's `Weights` tab
+    (persistent — same "next time" target semantics weight-only suggestions
+    always had) and additionally syncs the live session draft if one is
+    active with that exercise.
+  - `suggest_exercise_swap` — the model only ever sends a **plain-language
+    guess** (`replacementQuery`, e.g. `"leg press"`); the ~500-entry Strava
+    catalog never enters its context. Resolution happens server-side via
+    `resolveExerciseQuery()` in the shared `api/_lib/exerciseCatalog.ts` —
+    same module the frontend's manual swap picker uses, so a swap the Coach
+    proposes and one picked by hand resolve identically. Unlike weight/reps/
+    sets, a swap has **no persistent storage path** — config.json's program
+    definitions aren't writable by this app at all — so accepting one only
+    ever applies to the *currently active* session draft. If none is open
+    with that exercise, the UI says so plainly rather than silently
+    no-op'ing (`CoachTab.tsx`'s `SwapSuggestionCard`).
+- **Extending the Sheet's `Weights` tab to carry `reps`/`sets` (not just
+  `weight`) needs a manual Apps Script redeploy** — same
+  paste-and-redeploy dance as every prior `apps-script.gs` change in this
+  project (see the Google Apps Script section below). Until redeployed, the
+  *old* deployed script silently ignores the new `reps`/`sets` fields in the
+  POST body (it only ever read `body.weight`) — weight-only suggestions
+  keep working exactly as before with zero degradation, only the new
+  reps/sets persistence is unavailable until the redeploy happens.
 
 ## Strava gotchas
 

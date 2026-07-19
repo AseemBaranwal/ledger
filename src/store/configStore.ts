@@ -66,10 +66,13 @@ export const useConfigStore = create<ConfigStore>((set) => ({
       if (data.weights && Array.isArray(data.weights)) {
         set((state) => {
           const program = { ...state.program }
-          data.weights.forEach((w: { code: string; weight: number }) => {
+          data.weights.forEach((w: { code: string; weight?: number | null; reps?: number | null; sets?: number | null }) => {
             Object.values(program).forEach((session) => {
               session.ex?.forEach((ex) => {
-                if (ex.k === w.code) ex.w = w.weight
+                if (ex.k !== w.code) return
+                if (w.weight != null) ex.w = w.weight
+                if (w.reps != null) ex.r = w.reps
+                if (w.sets != null) ex.s = w.sets
               })
             })
           })

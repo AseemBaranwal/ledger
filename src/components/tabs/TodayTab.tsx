@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
-import { ExerciseLogger } from '@/components/session'
+import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { iso, mondayOf } from '@/services/dateUtils'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
-import { StarIcon, CheckIcon, ChevronIcon } from '@/components/icons/Icons'
+import { StarIcon, CheckIcon, ChevronIcon, PlusIcon } from '@/components/icons/Icons'
 
 const DOW_LABEL: Record<number, string> = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' }
 
@@ -18,6 +18,7 @@ function tgtStr(e: ProgramExercise): string {
 export function TodayTab() {
   const draft = useSessionStore((s) => s.draft)
   const draftEx = useSessionStore((s) => s.draftEx)
+  const draftDefs = useSessionStore((s) => s.draftDefs)
   const draftItems = useSessionStore((s) => s.draftItems)
   const sessions = useSessionStore((s) => s.sessions)
   const startSession = useSessionStore((s) => s.startSession)
@@ -27,6 +28,10 @@ export function TodayTab() {
   const updateNotes = useSessionStore((s) => s.updateNotes)
   const saveDraft = useSessionStore((s) => s.saveDraft)
   const clearDraft = useSessionStore((s) => s.clearDraft)
+  const swapExercise = useSessionStore((s) => s.swapExercise)
+  const addExercise = useSessionStore((s) => s.addExercise)
+  const removeExercise = useSessionStore((s) => s.removeExercise)
+  const hydrateDraftDefs = useSessionStore((s) => s.hydrateDraftDefs)
 
   const program = useConfigStore((s) => s.program)
   const restDays = useConfigStore((s) => s.restDays)
@@ -38,6 +43,7 @@ export function TodayTab() {
   const setOpenExerciseIndex = useUIStore((s) => s.setOpenExerciseIndex)
 
   const [today] = useState(new Date())
+  const [picker, setPicker] = useState<{ mode: 'swap' | 'add'; index?: number } | null>(null)
   const dayOfWeek = today.getDay()
   const weekDays = schedule.weekDays.length ? schedule.weekDays : [1, 2, 3, 4, 5, 6, 0]
   const priority = schedule.priority
@@ -73,7 +79,8 @@ export function TodayTab() {
           : null
         return { k: e.k, w: last?.w != null ? last.w : e.w }
       }),
-      p.gym
+      p.gym,
+      p.ex
     )
     setOpenExerciseIndex(null)
     useUIStore.setState({ openWeekDay: null })
@@ -90,6 +97,18 @@ export function TodayTab() {
   useEffect(() => {
     if (draft) window.scrollTo(0, 0)
   }, [draft?.s, draft?.type])
+
+  // Backfills draftDefs for a session that was already in progress when the
+  // swap/add-exercise feature shipped (draftDefs didn't exist yet) — the
+  // static program list is still accurate for an old draft since nothing
+  // could have been swapped before this code existed. No-ops once
+  // draftDefs is already populated.
+  useEffect(() => {
+    if (draft && draft.type === 'PROGRAM' && draftEx && !draftDefs) {
+      const p = program[draft.s!]
+      if (p) hydrateDraftDefs(p.ex)
+    }
+  }, [draft, draftEx, draftDefs, program, hydrateDraftDefs])
 
   // ─── WEEK CARD ───
   const done = doneThisWeek()
@@ -316,6 +335,7 @@ export function TodayTab() {
       if (!p) return null
       const col = colours[p.colour] || 'var(--amber)'
       const doneCount = draftEx.filter((e) => e.r.length).length
+      const defs = draftDefs ?? p.ex
 
       return (
         <div>
@@ -332,9 +352,42 @@ export function TodayTab() {
           </div>
 
           {draftEx.map((_, index) => {
-            const def = p.ex[index]
-            return <ExerciseLogger key={def.k} def={def} index={index} />
+            const def = defs[index]
+            if (!def) return null
+            return (
+              <ExerciseLogger
+                key={index}
+                def={def}
+                index={index}
+                onRequestSwap={(i) => setPicker({ mode: 'swap', index: i })}
+                onRequestRemove={(i) => removeExercise(i)}
+              />
+            )
           })}
+
+          <button
+            className={`${styles.btn} ${styles.ghost}`}
+            style={{ marginBottom: '14px' }}
+            onClick={() => setPicker({ mode: 'add' })}
+          >
+            <PlusIcon size="15px" /> Add Exercise
+          </button>
+
+          {picker && (
+            <ExercisePicker
+              mode={picker.mode}
+              currentCode={picker.mode === 'swap' && picker.index != null ? defs[picker.index]?.k : undefined}
+              onSelect={(def, startWeight) => {
+                if (picker.mode === 'swap' && picker.index != null) {
+                  swapExercise(picker.index, def, startWeight)
+                } else {
+                  addExercise(def, startWeight)
+                }
+                setPicker(null)
+              }}
+              onClose={() => setPicker(null)}
+            />
+          )}
 
           <div className={styles.sec}>
             <h2>Notes</h2>

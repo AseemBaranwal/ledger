@@ -69,9 +69,14 @@ const LEDGER_EXERCISE_TO_STRAVA_TYPE: Record<string, string> = {
 }
 
 // Falls back to a category-neutral generic rather than throwing — an
-// unmapped code (e.g. a new exercise added to config.json) shouldn't break
-// the whole upload, just post with a less specific exercise icon.
+// unmapped code (e.g. a new exercise added to config.json, or a fully
+// custom one-off logged from the exercise picker) shouldn't break the whole
+// upload, just post with a less specific exercise icon.
 export function stravaExerciseTypeForCode(code: string): string {
+  // Codes picked from the exercise-swap picker's Strava catalog search ARE
+  // already a valid Strava exercise_type (e.g. "LEG_PRESS") — no hand
+  // mapping needed, it maps to itself.
+  if (STRAVA_EXERCISE_TYPES.has(code)) return code
   const mapped = LEDGER_EXERCISE_TO_STRAVA_TYPE[code]
   if (mapped && STRAVA_EXERCISE_TYPES.has(mapped)) return mapped
   console.error('stravaExerciseTypeForCode: no mapping for code', code)

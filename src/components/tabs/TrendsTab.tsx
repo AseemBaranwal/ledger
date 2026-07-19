@@ -1,6 +1,8 @@
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
+import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD, ago } from '@/services/dateUtils'
 import { streak } from '@/services/trendCalculations'
+import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
@@ -79,6 +81,7 @@ export function TrendsTab() {
   const sessions = useSessionStore((s) => s.sessions)
   const program = useConfigStore((s) => s.program)
   const colours = useConfigStore((s) => s.colours)
+  const customExercises = useCustomExerciseStore((s) => s.customExercises)
   const selectedGroup = useUIStore((s) => s.selectedTrendGroup)
   const setTrendGroup = useUIStore((s) => s.setTrendGroup)
 
@@ -99,26 +102,12 @@ export function TrendsTab() {
 
   const allK = [...new Set(sessions.flatMap((s) => (s.ex || []).map((e) => e.k)))]
 
-  const nameOf = (k: string) => {
-    for (const p of Object.values(program)) {
-      const e = p.ex.find((x) => x.k === k)
-      if (e) return e.n.replace(' ★', '')
-    }
-    return k
-  }
-  const groupOf = (k: string): string => {
-    for (const p of Object.values(program)) {
-      const e = p.ex.find((x) => x.k === k)
-      if (e) return e.group || 'Other'
-    }
-    return 'Other'
-  }
-  const colOf = (k: string) => {
-    for (const p of Object.values(program)) {
-      if (p.ex.some((x) => x.k === k)) return colours[p.colour]
-    }
-    return '#FFB020'
-  }
+  // Resolves display info for ANY exercise code — a programmed one, one
+  // picked from Strava's catalog via the swap/add picker, or a fully
+  // custom one-off — so trends look equally polished regardless of source.
+  const nameOf = (k: string): string => resolveExerciseDisplay(k, program, colours, customExercises).name
+  const groupOf = (k: string): string => resolveExerciseDisplay(k, program, colours, customExercises).group
+  const colOf = (k: string): string => resolveExerciseDisplay(k, program, colours, customExercises).colour
 
   const allGroups = [...new Set(allK.map(groupOf))]
   const trendGroup = allGroups.includes(selectedGroup) ? selectedGroup : allGroups[0]

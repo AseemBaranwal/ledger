@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { Session, Exercise, RestItem } from '@/types'
+import type { Session, Exercise, RestItem, ProgramExercise } from '@/types'
 import { pushSession } from '@/services/appScript'
 import { postSessionToStrava } from '@/services/strava'
 import { scopedStorage } from '@/services/userScope'
+import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import { useConfigStore } from './configStore'
 import { useUIStore } from './uiStore'
 import { useStravaStore } from './stravaStore'
+import { useCustomExerciseStore } from './customExerciseStore'
 
 interface DraftExercise extends Exercise {
   w: number // live working weight for this session
@@ -16,16 +18,24 @@ interface SessionStore {
   sessions: Session[]
   draft: Session | null
   draftEx: DraftExercise[] | null // live weights while logging a PROGRAM session
+  draftDefs: ProgramExercise[] | null // this occurrence's exercise list (may diverge from config.json via swap/add/remove)
   draftItems: RestItem[] | null // live done-state while logging a REST session
   pendingSync: string[] // session ids not yet confirmed pushed to the sheet
   lastSyncedAt: number | null // ms epoch of the last successful push or manual sync
 
-  startSession: (code: string, exList: { k: string; w: number }[], gym: string) => void
+  startSession: (code: string, exList: { k: string; w: number }[], gym: string, defs?: ProgramExercise[]) => void
   startRestSession: (dow: number, title: string, items: RestItem[]) => void
   bumpWeight: (index: number, dir: number, inc: number) => void
   setWeight: (index: number, value: number) => void
   logRep: (index: number, reps: number) => void
   clearSet: (index: number, setIndex: number) => void
+  swapExercise: (index: number, def: ProgramExercise, startWeight: number) => void
+  addExercise: (def: ProgramExercise, startWeight: number) => void
+  removeExercise: (index: number) => void
+  // One-time backfill for a draft that was already in progress when this
+  // feature shipped (draftDefs didn't exist yet) — a no-op once draftDefs
+  // is already populated.
+  hydrateDraftDefs: (defs: ProgramExercise[]) => void
   toggleRestItem: (index: number) => void
   setRestItemDuration: (index: number, value: string) => void
   updateNotes: (notes: string) => void
@@ -68,11 +78,12 @@ export const useSessionStore = create<SessionStore>()(
       sessions: [],
       draft: null,
       draftEx: null,
+      draftDefs: null,
       draftItems: null,
       pendingSync: [],
       lastSyncedAt: null,
 
-      startSession: (code, exList, gym) => {
+      startSession: (code, exList, gym, defs) => {
         const today = new Date()
         const y = today.getFullYear()
         const m = String(today.getMonth() + 1).padStart(2, '0')
@@ -80,6 +91,7 @@ export const useSessionStore = create<SessionStore>()(
         set({
           draft: { d: `${y}-${m}-${d}`, s: code, g: gym, n: '', type: 'PROGRAM', st: new Date().toISOString() },
           draftEx: exList.map((e) => ({ k: e.k, w: e.w, r: [], ws: [] })),
+          draftDefs: defs ?? null,
           draftItems: null,
         })
       },
@@ -92,6 +104,7 @@ export const useSessionStore = create<SessionStore>()(
         set({
           draft: { d: `${y}-${m}-${d}`, s: `REST_${dow}`, g: title, n: '', type: 'REST' },
           draftEx: null,
+          draftDefs: null,
           draftItems: items.map((it) => ({ ...it, done: false })),
         })
       },
@@ -131,6 +144,34 @@ export const useSessionStore = create<SessionStore>()(
         draftEx[index] = ex
         return { draftEx }
       }),
+
+      swapExercise: (index, def, startWeight) => set((state) => {
+        if (!state.draftEx || !state.draftDefs) return state
+        const draftEx = [...state.draftEx]
+        draftEx[index] = { k: def.k, w: startWeight, r: [], ws: [] }
+        const draftDefs = [...state.draftDefs]
+        draftDefs[index] = def
+        return { draftEx, draftDefs }
+      }),
+
+      addExercise: (def, startWeight) => set((state) => {
+        if (!state.draftEx || !state.draftDefs) return state
+        return {
+          draftEx: [...state.draftEx, { k: def.k, w: startWeight, r: [], ws: [] }],
+          draftDefs: [...state.draftDefs, def],
+        }
+      }),
+
+      removeExercise: (index) => set((state) => {
+        if (!state.draftEx || !state.draftDefs) return state
+        if ((state.draftEx[index]?.r.length ?? 0) > 0) return state // never silently drop logged sets
+        return {
+          draftEx: state.draftEx.filter((_, i) => i !== index),
+          draftDefs: state.draftDefs.filter((_, i) => i !== index),
+        }
+      }),
+
+      hydrateDraftDefs: (defs) => set((state) => (state.draftDefs ? state : { draftDefs: defs })),
 
       toggleRestItem: (index) => set((state) => {
         if (!state.draftItems) return state
@@ -182,7 +223,7 @@ export const useSessionStore = create<SessionStore>()(
           })
         }
 
-        set({ sessions: newSessions, draft: null, draftEx: null, draftItems: null })
+        set({ sessions: newSessions, draft: null, draftEx: null, draftDefs: null, draftItems: null })
 
         // Push PROGRAM sessions to the sheet (fire-and-forget, non-blocking).
         // REST sessions are local-only, matching the original app's behavior.
@@ -200,9 +241,17 @@ export const useSessionStore = create<SessionStore>()(
           // save or the sheet sync above, and silently no-ops if the user
           // hasn't connected Strava.
           if (savedSession.ex?.length && useStravaStore.getState().connected) {
-            const programDef = savedSession.s ? useConfigStore.getState().program[savedSession.s] : undefined
+            const { program, colours } = useConfigStore.getState()
+            const programDef = savedSession.s ? program[savedSession.s] : undefined
             const programName = programDef?.full || programDef?.name || savedSession.s || 'Workout'
-            const exerciseNames = Object.fromEntries((programDef?.ex || []).map((e) => [e.k, e.n]))
+            // Covers swapped-in/added exercises too, not just the ones still
+            // in config.json — otherwise the Strava description would show
+            // a raw code (or worse, an unprettified STRAVA_TYPE constant)
+            // for anything logged via the exercise picker.
+            const customExercises = useCustomExerciseStore.getState().customExercises
+            const exerciseNames = Object.fromEntries(
+              (savedSession.ex || []).map((e) => [e.k, resolveExerciseDisplay(e.k, program, colours, customExercises).name])
+            )
             postSessionToStrava(savedSession, programName, exerciseNames).then((result) => {
               if (!result.ok && result.error) {
                 useUIStore.getState().showNotification(`Strava: ${result.error}`, 'error')
@@ -214,7 +263,7 @@ export const useSessionStore = create<SessionStore>()(
         return prCount
       },
 
-      clearDraft: () => set({ draft: null, draftEx: null, draftItems: null }),
+      clearDraft: () => set({ draft: null, draftEx: null, draftDefs: null, draftItems: null }),
 
       flushPendingSync: () => {
         const state = get()

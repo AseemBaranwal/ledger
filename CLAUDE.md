@@ -172,6 +172,43 @@ Practical pattern established in `tests/unit/`:
   mean processing time, but real-world variance is higher, especially for
   Edge Function timeout math (see the 25s-first-byte note above).
 
+## Exercise swap / add / custom (`src/services/exerciseCatalog.ts`)
+
+- **A logged exercise's `k` is "a code", not "a short code"** — nothing in
+  the type system or the Sheet schema enforces the 2-4 letter convention
+  used by `config.json`'s programmed exercises. The swap/add picker exploits
+  this: picking something from Strava's catalog sets `k` to the Strava
+  `exercise_type` constant itself (e.g. `"LEG_PRESS"`), and a free-text
+  custom entry sets `k` to a normalized `CUSTOM_...` slug. Both skip needing
+  a separate name-lookup table because `stravaExerciseTypeForCode` in
+  `api/_lib/stravaMapping.ts` passes through any `k` that's already a valid
+  Strava type unchanged — zero-maintenance Strava mapping for anything
+  picked from the catalog.
+- **`resolveExerciseDisplay()` is the single source of truth for "what do I
+  show for this code"** — checked in order: the live `program` config, then
+  the Strava catalog (name/group fully derived, no storage needed), then the
+  local custom-exercise registry (`customExerciseStore.ts`, for free-text
+  entries with no Strava match), then a raw-code fallback. `TrendsTab` and
+  `HistoryTab` both call through this instead of their own program-only
+  lookups — if a new display surface is added later, route it through here
+  too rather than re-deriving name/group/colour inline.
+- **`src/services/exerciseCatalog.ts` cross-imports `api/_lib/stravaExerciseCatalog.ts`
+  and `api/_lib/stravaMapping.ts` directly** (not just from test files, as
+  the testing-convention note above describes — this is the first *runtime*
+  cross-import). Confirmed this actually bundles correctly in `vite build`,
+  not just under vitest, before relying on it.
+- **A session's exercise list is a separate mutable copy (`draftDefs` in
+  `sessionStore.ts`), not a live view of `config.json`.** Swapping/adding/
+  removing during a session never touches the static program — it only
+  diverges `draftDefs` from `program[code].ex` for that one occurrence.
+  `TodayTab` falls back to `program[code].ex` whenever `draftDefs` is null,
+  which is both the pre-this-feature behavior and the fallback for a draft
+  that was already in progress when this shipped (see `hydrateDraftDefs`).
+- **Removal is guarded at the store level, not just hidden in the UI** —
+  `removeExercise` silently no-ops if that exercise already has logged sets
+  (`r.length > 0`), so a stray call can't drop real data even if the button
+  that's supposed to be hidden somehow fires anyway.
+
 ## General debugging approach that actually worked this session
 
 - **When something "works" (200 response) but produces no visible effect,

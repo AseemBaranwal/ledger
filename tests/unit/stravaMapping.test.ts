@@ -49,6 +49,14 @@ describe('stravaExerciseTypeForCode', () => {
   it('falls back to CORE_GENERIC for an unmapped code rather than throwing', () => {
     expect(stravaExerciseTypeForCode('NOT_A_REAL_CODE')).toBe('CORE_GENERIC')
   })
+
+  it('passes through a code that is already a valid Strava exercise_type unchanged', () => {
+    // This is exactly what the exercise-swap picker produces when a user
+    // picks something straight from Strava's catalog — it needs zero
+    // entries in the hand-maintained map to upload correctly.
+    expect(stravaExerciseTypeForCode('LEG_PRESS')).toBe('LEG_PRESS')
+    expect(stravaExerciseTypeForCode('SEATED_CALF_RAISE')).toBe('SEATED_CALF_RAISE')
+  })
 })
 
 describe('buildStravaSets', () => {

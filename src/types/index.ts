@@ -43,7 +43,7 @@ export interface ProgramExercise {
   r: number; // reps
   w: number; // starting weight
   u: string; // unit (lb, +lb, reps, in)
-  group: 'Legs' | 'Push' | 'Pull' | 'Sprint';
+  group: 'Legs' | 'Push' | 'Pull' | 'Sprint' | 'Other';
   cue: string;
 }
 

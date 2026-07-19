@@ -3,12 +3,14 @@ import type { ProgramExercise } from '@/types'
 import { lastOf } from '@/services/trendCalculations'
 import { ago } from '@/services/dateUtils'
 import { unlockAudioContext } from '@/services/audio'
-import { StarIcon, CloseIcon } from '@/components/icons/Icons'
+import { StarIcon, CloseIcon, SwapIcon, TrashIcon } from '@/components/icons/Icons'
 import styles from '../../styles/components.module.css'
 
 interface ExerciseLoggerProps {
   def: ProgramExercise
   index: number
+  onRequestSwap?: (index: number) => void
+  onRequestRemove?: (index: number) => void
 }
 
 const INCREMENTS = [2.5, 5, 10, 25]
@@ -19,7 +21,7 @@ function repOpts(target: number): number[] {
   return [...o]
 }
 
-export function ExerciseLogger({ def, index }: ExerciseLoggerProps) {
+export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: ExerciseLoggerProps) {
   const draftEx = useSessionStore((s) => s.draftEx)
   const sessions = useSessionStore((s) => s.sessions)
   const bumpWeight = useSessionStore((s) => s.bumpWeight)
@@ -59,8 +61,28 @@ export function ExerciseLogger({ def, index }: ExerciseLoggerProps) {
             </>
           ) : def.n}
         </div>
-        <div className={`${styles.exTarget} mono`}>
-          {def.s}×{def.r}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 'none' }}>
+          <div className={`${styles.exTarget} mono`}>
+            {def.s}×{def.r}
+          </div>
+          {onRequestSwap && (
+            <button
+              className={styles.exIconBtn}
+              onClick={() => onRequestSwap(index)}
+              title="Swap this exercise for an alternate"
+            >
+              <SwapIcon size="15px" />
+            </button>
+          )}
+          {ex.r.length === 0 && onRequestRemove && (
+            <button
+              className={styles.exIconBtn}
+              onClick={() => onRequestRemove(index)}
+              title="Remove this exercise from today's session"
+            >
+              <TrashIcon size="15px" />
+            </button>
+          )}
         </div>
       </div>
 

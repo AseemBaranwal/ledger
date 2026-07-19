@@ -1,6 +1,8 @@
 import { useSessionStore, useUIStore, useConfigStore } from '@/store'
+import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD } from '@/services/dateUtils'
 import { volume } from '@/services/trendCalculations'
+import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
@@ -8,6 +10,7 @@ export function HistoryTab() {
   const sessions = useSessionStore((s) => s.sessions)
   const program = useConfigStore((s) => s.program)
   const colours = useConfigStore((s) => s.colours)
+  const customExercises = useCustomExerciseStore((s) => s.customExercises)
   const expandedRow = useUIStore((s) => s.expandedHistoryRow)
   const toggleExpand = useUIStore((s) => s.toggleExpandHistory)
 
@@ -74,7 +77,6 @@ export function HistoryTab() {
                   </div>
                   <div className={`${styles.hdetail} ${isOpen ? styles.on : ''}`}>
                     {(s.ex || []).map((e) => {
-                      const def = program[s.s || '']?.ex?.find((x) => x.k === e.k)
                       const setsStr = e.r
                         .map((r, i) => {
                           const w = e.ws ? e.ws[i] : e.w
@@ -83,7 +85,7 @@ export function HistoryTab() {
                         .join(', ')
                       return (
                         <div key={e.k} className={styles.ln}>
-                          <span className={styles.k}>{def ? def.n.replace(' ★', '') : e.k}</span>
+                          <span className={styles.k}>{resolveExerciseDisplay(e.k, program, colours, customExercises).name}</span>
                           <span>{setsStr}</span>
                         </div>
                       )

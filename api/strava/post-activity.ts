@@ -6,6 +6,8 @@ import {
   buildActivityDescription,
   buildStravaSets,
   resolveTiming,
+  stravaUtcOffsetSeconds,
+  toLocalNaiveIso,
 } from '../_lib/stravaMapping.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
@@ -94,6 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
     notes?: string
     startTime?: string
     endTime?: string
+    tzOffsetMinutes?: number
   }
   try {
     payload = await req.json()
@@ -101,7 +104,7 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400 })
   }
 
-  const { code, name, date, exercises, notes, startTime, endTime } = payload
+  const { code, name, date, exercises, notes, startTime, endTime, tzOffsetMinutes } = payload
   if (!code || !date || !Array.isArray(exercises) || exercises.length === 0) {
     return new Response(JSON.stringify({ error: 'Missing code, date, or exercises' }), { status: 400 })
   }
@@ -143,7 +146,7 @@ export default async function handler(req: Request): Promise<Response> {
     const file = {
       version: '1.0',
       start_time: startTimeIso,
-      utc_offset: 0,
+      utc_offset: stravaUtcOffsetSeconds(tzOffsetMinutes),
       elapsed_time: elapsedSeconds,
       sets: buildStravaSets(exercises),
     }
@@ -218,7 +221,7 @@ export default async function handler(req: Request): Promise<Response> {
     body: JSON.stringify({
       name: activityName,
       sport_type: sportType,
-      start_date_local: startTimeIso,
+      start_date_local: toLocalNaiveIso(startTimeIso, tzOffsetMinutes),
       elapsed_time: elapsedSeconds,
       description,
     }),

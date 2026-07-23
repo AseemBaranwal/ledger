@@ -154,6 +154,36 @@ export function resolveTiming(
   return { startTimeIso: `${date}T12:00:00Z`, elapsedSeconds: estimateElapsedSeconds(exercises) }
 }
 
+// Strava's structured-upload `utc_offset` field is "for display purposes;
+// does not affect how timestamps are parsed" (confirmed against their docs)
+// — start_time is always correctly interpreted as the real UTC instant, but
+// Strava's UI shows start_time shifted by utc_offset when rendering the
+// activity's local time. Hardcoding utc_offset to 0 (as this used to do)
+// silently told Strava "the athlete is in UTC+0", which is why a session
+// really logged at 7am Pacific showed up in Strava at 2pm — a wrong DISPLAY
+// time despite a correct underlying instant.
+//
+// JS's Date.getTimezoneOffset() returns minutes to ADD to local time to
+// reach UTC (positive for timezones behind UTC, e.g. +480 for PST) — the
+// opposite sign convention from Strava's utc_offset (seconds, negative for
+// behind-UTC, e.g. -28800 for PST).
+export function stravaUtcOffsetSeconds(tzOffsetMinutes?: number): number {
+  if (tzOffsetMinutes == null) return 0
+  return -tzOffsetMinutes * 60
+}
+
+// Strava's plain-activity start_date_local expects a naive local-time ISO
+// string (no trailing Z / offset), for the same "real instant, correct
+// display" reason as utc_offset above. Built by hand from the UTC instant
+// plus the athlete's offset at that moment, rather than trusting any single
+// Date method's own formatting (which is tied to the server's timezone, not
+// the athlete's).
+export function toLocalNaiveIso(utcIso: string, tzOffsetMinutes?: number): string {
+  const utcMs = new Date(utcIso).getTime()
+  const localMs = utcMs - (tzOffsetMinutes ?? 0) * 60_000
+  return new Date(localMs).toISOString().replace('Z', '')
+}
+
 export function buildActivityDescription(exercises: ExerciseLike[], notes: string | undefined): string {
   const lines = exercises.map((e) => {
     const sets = e.r.map((r, i) => {

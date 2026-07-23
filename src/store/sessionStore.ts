@@ -94,7 +94,11 @@ export const useSessionStore = create<SessionStore>()(
         const m = String(today.getMonth() + 1).padStart(2, '0')
         const d = String(today.getDate()).padStart(2, '0')
         set({
-          draft: { d: `${y}-${m}-${d}`, s: code, g: gym, n: '', type: 'PROGRAM', st: new Date().toISOString() },
+          // tz captured now (not at save time) — it's the offset that was
+          // actually true while the workout happened, and it's what lets
+          // the Strava post show the real local start time instead of the
+          // UTC instant mislabeled as local.
+          draft: { d: `${y}-${m}-${d}`, s: code, g: gym, n: '', type: 'PROGRAM', st: new Date().toISOString(), tz: new Date().getTimezoneOffset() },
           draftEx: exList.map((e) => ({ k: e.k, w: e.w, r: [], ws: [] })),
           draftDefs: defs ?? null,
           draftItems: null,

@@ -18,6 +18,7 @@ export interface Session {
   items?: RestItem[]; // items for REST sessions
   st?: string; // start time (ISO 8601, set when the session was started)
   et?: string; // end time (ISO 8601, set when the session was saved)
+  tz?: number; // Date.getTimezoneOffset() at session start — minutes to ADD to local time to reach UTC (e.g. +480 for PST). Needed to show the correct wall-clock time on Strava, which is otherwise oblivious to the athlete's timezone.
 }
 
 export interface RestItem {

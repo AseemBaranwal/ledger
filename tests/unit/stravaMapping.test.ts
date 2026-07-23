@@ -7,6 +7,8 @@ import {
   estimateElapsedSeconds,
   resolveTiming,
   buildActivityDescription,
+  stravaUtcOffsetSeconds,
+  toLocalNaiveIso,
 } from '../../api/_lib/stravaMapping'
 
 describe('sportTypeForCode', () => {
@@ -149,5 +151,41 @@ describe('buildActivityDescription', () => {
   it('appends notes as a trailing blank-line-separated block', () => {
     const desc = buildActivityDescription([{ k: 'SQ', n: 'Back Squat', r: [5], ws: [100] }], 'Felt strong today')
     expect(desc).toBe('Back Squat: 100×5\n\nFelt strong today')
+  })
+})
+
+describe('stravaUtcOffsetSeconds', () => {
+  it('flips sign and converts minutes to seconds (JS getTimezoneOffset -> Strava utc_offset)', () => {
+    // PST: getTimezoneOffset() = +480 (minutes to ADD to local to reach UTC)
+    // Strava wants -28800 seconds for the same zone.
+    expect(stravaUtcOffsetSeconds(480)).toBe(-28800)
+  })
+
+  it('handles a positive-UTC zone (e.g. IST, getTimezoneOffset -330)', () => {
+    expect(stravaUtcOffsetSeconds(-330)).toBe(19800)
+  })
+
+  it('defaults to 0 (UTC) when no offset was recorded, matching the old always-0 behavior for old sessions', () => {
+    expect(stravaUtcOffsetSeconds(undefined)).toBe(0)
+  })
+})
+
+describe('toLocalNaiveIso', () => {
+  it('shifts a UTC instant back to the naive local wall-clock string, PST example', () => {
+    // 2026-07-14T14:30:00Z minus 8h (PST, +480min offset) = 06:30 local
+    expect(toLocalNaiveIso('2026-07-14T14:30:00.000Z', 480)).toBe('2026-07-14T06:30:00.000')
+  })
+
+  it('shifts forward for a positive-UTC zone', () => {
+    // IST is UTC+5:30, getTimezoneOffset() = -330
+    expect(toLocalNaiveIso('2026-07-14T14:30:00.000Z', -330)).toBe('2026-07-14T20:00:00.000')
+  })
+
+  it('has no trailing Z, unlike a plain toISOString() call', () => {
+    expect(toLocalNaiveIso('2026-07-14T14:30:00.000Z', 480)).not.toMatch(/Z$/)
+  })
+
+  it('defaults to no shift (treats the instant as already local) when offset is missing', () => {
+    expect(toLocalNaiveIso('2026-07-14T14:30:00.000Z', undefined)).toBe('2026-07-14T14:30:00.000')
   })
 })

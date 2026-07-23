@@ -256,6 +256,26 @@ Practical pattern established in `tests/unit/`:
   `GET /uploads/:id` for the real `activity_id`. Strava's docs list a <2s
   mean processing time, but real-world variance is higher, especially for
   Edge Function timeout math (see the 25s-first-byte note above).
+- **`utc_offset` on the structured JSON upload is display-only — it does
+  NOT affect how `start_time` is parsed.** Confirmed against Strava's docs:
+  "Athlete's local UTC offset in seconds... Used for display purposes; does
+  not affect how timestamps are parsed." `start_time` must already be a
+  correct UTC instant (with `Z` or an offset) — this app's `resolveTiming()`
+  already produced that correctly. The actual bug was `utc_offset`
+  hardcoded to `0`, which told Strava's UI "the athlete is in UTC+0" —
+  so a session really logged at 7am Pacific rendered on Strava at 2pm. The
+  underlying instant was always right; only the *displayed* wall-clock time
+  was wrong, which is why this was easy to miss in testing unless you
+  actually checked the time shown on the Strava activity itself, not just
+  that the post succeeded. Fixed by capturing `Date.getTimezoneOffset()`
+  at session-start time (stored on `Session.tz`) and converting it via
+  `stravaUtcOffsetSeconds()`/`toLocalNaiveIso()` in `api/_lib/stravaMapping.ts`
+  — note JS's offset sign convention (positive = behind UTC) is inverted
+  from Strava's (negative = behind UTC). The plain-activity fallback path
+  (`start_date_local`, used for non-weight-training sport types like
+  sprint sessions) had the same class of bug — it was being fed a UTC ISO
+  string directly, which reads as literally-that-wall-clock-time to Strava
+  since the field is documented as a naive local timestamp.
 
 ## Exercise swap / add / custom (`src/services/exerciseCatalog.ts`)
 

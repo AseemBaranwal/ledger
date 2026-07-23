@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { supabase, type Profile } from '@/services/supabaseClient'
 import { setCurrentUserId } from '@/services/userScope'
-import { restoreFromSheet } from '@/services/appScript'
 import { useSessionStore } from './sessionStore'
 import { useBodyStore } from './bodyStore'
 import { useConfigStore } from './configStore'
@@ -33,13 +32,11 @@ interface AuthStore {
   user: AuthUser | null
   profile: Profile | null
   loading: boolean // true until the initial session check resolves
-  profileError: string | null // set when the profile fetch itself failed (distinct from "no sheet configured yet")
-  savingUrl: boolean
+  profileError: string | null // set when the profile fetch itself failed
 
   init: () => () => void // returns an unsubscribe function
   signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
-  saveSheetUrl: (url: string) => Promise<void>
   retryProfileLoad: () => Promise<void>
 }
 
@@ -97,7 +94,7 @@ async function applyUser(
   let rehydratePromise: Promise<void> = Promise.resolve()
   if (isNewUser) {
     rehydratePromise = rehydrateUserScopedStores(user.id)
-    useConfigStore.setState({ sheetUrl: '' }) // never show a previous user's sheet while the new one's profile is loading
+    useConfigStore.getState().resetProgram() // never show a previous user's program while the new one's profile is loading
   }
   const [{ profile, error }] = await Promise.all([loadProfile(user.id), rehydratePromise])
   // On a transient error for an already-established session, keep the last
@@ -106,8 +103,8 @@ async function applyUser(
   // gets set either way so a banner/retry can surface if callers want it.
   const nextProfile = profile ?? (isNewUser ? null : get().profile)
   set({ user, profile: nextProfile, profileError: error, loading: false })
-  if (nextProfile?.sheet_url) {
-    useConfigStore.getState().updateSheetUrl(nextProfile.sheet_url)
+  if (nextProfile) {
+    useConfigStore.getState().loadOrSeedProgram(user.id, nextProfile.routine_config)
   }
 }
 
@@ -134,7 +131,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         await rehydrateUserScopedStores(null)
-        useConfigStore.setState({ sheetUrl: '' })
+        useConfigStore.getState().resetProgram()
         set({ user: null, profile: null, profileError: null })
         return
       }
@@ -160,7 +157,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   signOut: async () => {
     await supabase.auth.signOut()
     await rehydrateUserScopedStores(null)
-    useConfigStore.setState({ sheetUrl: '' })
+    useConfigStore.getState().resetProgram()
     set({ user: null, profile: null, profileError: null })
   },
 
@@ -169,36 +166,5 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     if (!user) return
     set({ loading: true })
     await applyUser(set, get, user, false)
-  },
-
-  saveSheetUrl: async (url: string) => {
-    const user = get().user
-    if (!user) return
-    set({ savingUrl: true })
-    try {
-      // Validate before persisting — a typo'd or unreachable Apps Script URL
-      // saved silently would leave the user stuck on a broken app with no
-      // clear reason why, since every subsequent load reads this same URL.
-      try {
-        const data = await restoreFromSheet(url)
-        if (!data || !Array.isArray(data.sessions)) {
-          throw new Error('That URL responded, but not in the format Ledger expects. Double-check it\'s the /exec URL from your Apps Script deployment.')
-        }
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith('That URL')) throw e
-        throw new Error('Could not reach that URL. Check it\'s correct and the Apps Script deployment access is set to "Anyone".')
-      }
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .upsert({ id: user.id, email: user.email, sheet_url: url }, { onConflict: 'id' })
-        .select()
-        .single()
-      if (error) throw error
-      set({ profile: data as Profile, profileError: null })
-      useConfigStore.getState().updateSheetUrl(url)
-    } finally {
-      set({ savingUrl: false })
-    }
   },
 }))

@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { supabase } from '@/services/supabaseClient'
+import { STARTER_PROGRAM } from '@/data/starterProgram'
 import type { Program, RestDays, Config } from '@/types'
 import { fetchExerciseSubstitutions, type ExerciseSubstitution } from '@/services/chat'
 
@@ -7,7 +9,6 @@ interface ConfigStore {
   restDays: RestDays
   colours: Record<string, string>
   schedule: { weekDays: number[]; priority: string[]; restColour: Record<string, string> }
-  sheetUrl: string
   loading: boolean
   error: string | null
   // Standing exercise substitutions accepted from the Coach (original code
@@ -16,82 +17,65 @@ interface ConfigStore {
   // else; fetching it is harmless either way (the endpoint 403s cleanly).
   substitutions: Record<string, ExerciseSubstitution>
 
-  loadConfig: () => Promise<void>
-  loadWeights: () => Promise<void>
+  // Reads the signed-in user's own program from profiles.routine_config.
+  // A brand-new user has none yet (null) — seeded from STARTER_PROGRAM so
+  // they're immediately usable, no manual setup required. Replaces the old
+  // "static config.json + Sheet weight overlay" two-step: the program and
+  // its current weight/reps/sets targets now live in one place.
+  loadOrSeedProgram: (userId: string, routineConfig: unknown | null) => Promise<void>
   loadSubstitutions: () => Promise<void>
   // Optimistic local update so a swap accepted this session is reflected
   // immediately, without waiting for a re-fetch.
   setSubstitution: (originalCode: string, replacement: ExerciseSubstitution) => void
-  // Applies a sheet URL to in-memory state only. Callers that need it to
-  // survive a reload should go through authStore.saveSheetUrl, which
-  // persists it to the signed-in user's profile and calls this after.
-  updateSheetUrl: (url: string) => void
+  // Back to a neutral, unpersonalized state — called on sign-out or when
+  // switching to a different signed-in user, so the previous person's
+  // program can't flash on screen while the new one's profile is loading.
+  resetProgram: () => void
 }
 
-const DEFAULT_CONFIG: Config = {
-  program: {},
-  restDays: {},
-  colours: { legs: '#00C2A8', push: '#4C9BE8', pull: '#B57CF6', sprint: '#FF6B4A' },
-  schedule: { weekDays: [1, 2, 3, 4, 5, 6, 0], priority: [], restColour: {} },
+function isConfig(value: unknown): value is Config {
+  return Boolean(value && typeof value === 'object' && 'program' in (value as object))
 }
 
 export const useConfigStore = create<ConfigStore>((set) => ({
-  program: DEFAULT_CONFIG.program,
-  restDays: DEFAULT_CONFIG.restDays,
-  colours: DEFAULT_CONFIG.colours,
-  schedule: DEFAULT_CONFIG.schedule,
-  sheetUrl: '',
+  program: STARTER_PROGRAM.program,
+  restDays: STARTER_PROGRAM.restDays,
+  colours: STARTER_PROGRAM.colours,
+  schedule: STARTER_PROGRAM.schedule,
   loading: true,
   error: null,
   substitutions: {},
 
-  loadConfig: async () => {
-    try {
-      set({ loading: true, error: null })
-      const response = await fetch('/config.json')
-      if (!response.ok) throw new Error('Failed to load config')
-      const config: Config = await response.json()
+  loadOrSeedProgram: async (userId, routineConfig) => {
+    if (isConfig(routineConfig)) {
       set({
-        program: config.program,
-        restDays: config.restDays,
-        colours: config.colours,
-        schedule: config.schedule || DEFAULT_CONFIG.schedule,
+        program: routineConfig.program,
+        restDays: routineConfig.restDays,
+        colours: routineConfig.colours,
+        schedule: routineConfig.schedule || STARTER_PROGRAM.schedule,
         loading: false,
+        error: null,
       })
-    } catch (error) {
-      set({
-        error: (error as Error).message,
-        loading: false,
-      })
+      return
     }
-  },
 
-  loadWeights: async () => {
-    const url = useConfigStore.getState().sheetUrl
-    if (!url) return
-
+    // No program yet — brand-new user. Show the starter template
+    // immediately (it's a bundled constant, no network round trip needed
+    // before it's usable), then persist it as their own so it survives a
+    // reload and can be edited from here on.
+    set({
+      program: STARTER_PROGRAM.program,
+      restDays: STARTER_PROGRAM.restDays,
+      colours: STARTER_PROGRAM.colours,
+      schedule: STARTER_PROGRAM.schedule,
+      loading: false,
+      error: null,
+    })
     try {
-      const response = await fetch(`${url}?action=weights`)
-      const data = await response.json()
-
-      if (data.weights && Array.isArray(data.weights)) {
-        set((state) => {
-          const program = { ...state.program }
-          data.weights.forEach((w: { code: string; weight?: number | null; reps?: number | null; sets?: number | null }) => {
-            Object.values(program).forEach((session) => {
-              session.ex?.forEach((ex) => {
-                if (ex.k !== w.code) return
-                if (w.weight != null) ex.w = w.weight
-                if (w.reps != null) ex.r = w.reps
-                if (w.sets != null) ex.s = w.sets
-              })
-            })
-          })
-          return { program }
-        })
-      }
-    } catch (error) {
-      console.warn('Could not load weights from sheet:', error)
+      await supabase.from('profiles').update({ routine_config: STARTER_PROGRAM }).eq('id', userId)
+    } catch {
+      // best-effort — the starter template is already showing locally;
+      // worst case this retries the seed on the next load
     }
   },
 
@@ -103,5 +87,13 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   setSubstitution: (originalCode, replacement) =>
     set((state) => ({ substitutions: { ...state.substitutions, [originalCode]: replacement } })),
 
-  updateSheetUrl: (url) => set({ sheetUrl: url }),
+  resetProgram: () =>
+    set({
+      program: STARTER_PROGRAM.program,
+      restDays: STARTER_PROGRAM.restDays,
+      colours: STARTER_PROGRAM.colours,
+      schedule: STARTER_PROGRAM.schedule,
+      substitutions: {},
+      loading: true,
+    }),
 }))

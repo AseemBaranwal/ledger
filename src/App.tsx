@@ -7,22 +7,18 @@ import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 // putting in the main bundle every visitor downloads for the other 4 tabs.
 const CoachTab = lazy(() => import('@/components/tabs/CoachTab').then((m) => ({ default: m.CoachTab })))
 import { RestTimer } from '@/components/session'
-import { SignInScreen, OnboardingScreen, ErrorScreen } from '@/components/auth'
+import { SignInScreen, ErrorScreen } from '@/components/auth'
 import { streak } from '@/services/trendCalculations'
-import { restoreFromSheet } from '@/services/appScript'
+import { fetchSessions } from '@/services/sessionsApi'
 import { unlockAudioContext } from '@/services/audio'
 import { STRAVA_CALLBACK_PATH, exchangeStravaCode } from '@/services/strava'
 import { registerSW } from 'virtual:pwa-register'
-import type { Session } from '@/types'
 import styles from '@/styles/App.module.css'
 
 export default function App() {
   const activeTab = useUIStore((s) => s.activeTab)
   const setTab = useUIStore((s) => s.setTab)
-  const loadConfig = useConfigStore((s) => s.loadConfig)
-  const loadWeights = useConfigStore((s) => s.loadWeights)
   const loadSubstitutions = useConfigStore((s) => s.loadSubstitutions)
-  const sheetUrl = useConfigStore((s) => s.sheetUrl)
   const clearDraft = useSessionStore((s) => s.clearDraft)
   const sessions = useSessionStore((s) => s.sessions)
   const authLoading = useAuthStore((s) => s.loading)
@@ -31,11 +27,11 @@ export default function App() {
   const profileError = useAuthStore((s) => s.profileError)
   const authInit = useAuthStore((s) => s.init)
 
-  // App-wide, auth-independent bootstrap: static program config, PWA
-  // service worker, and the audio-unlock fallback. Runs once.
+  // App-wide, auth-independent bootstrap: PWA service worker and the
+  // audio-unlock fallback. Runs once. (No more static config.json fetch
+  // here — each user's program now comes from their own profile, loaded
+  // once auth resolves, via authStore.applyUser -> configStore.loadOrSeedProgram.)
   useEffect(() => {
-    loadConfig()
-
     const unsubscribeAuth = authInit()
 
     const unlock = () => {
@@ -69,29 +65,24 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Per-user bootstrap: once the signed-in user's sheet URL is known (set by
-  // authStore from their profile), load their weight overrides, pull down
-  // anything missing locally, and retry any sessions that failed to push.
+  // Per-user bootstrap: once signed in, load standing exercise
+  // substitutions, pull down sessions from Supabase if this device's local
+  // cache is empty (e.g. a fresh browser/device), and retry any sessions
+  // that failed to save.
   useEffect(() => {
-    if (!sheetUrl) return
+    if (!user?.id) return
+    const userId = user.id
 
-    loadWeights()
     loadSubstitutions()
 
     const autoRestore = async () => {
       if (useSessionStore.getState().sessions.length > 0) return
       try {
-        const data = await restoreFromSheet(sheetUrl)
-        if (data.sessions && Array.isArray(data.sessions)) {
-          const deduped: Record<string, Session> = {}
-          data.sessions.forEach((s: Session) => {
-            deduped[`${s.d}|${s.s}`] = s
-          })
-          const restored = Object.values(deduped).sort((a, b) => a.d.localeCompare(b.d))
-          useSessionStore.setState({ sessions: restored })
-        }
+        const restored = await fetchSessions(userId)
+        if (restored.length) useSessionStore.setState({ sessions: restored })
       } catch (e) {
-        // silent — user can still restore manually from the Sync tab
+        // silent — local cache (if any) still shows; pendingSync/next
+        // reload will pick up anything missing
       }
     }
     autoRestore()
@@ -104,7 +95,7 @@ export default function App() {
       window.removeEventListener('online', onOnline)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheetUrl])
+  }, [user?.id])
 
   // Strava: check connection status once signed in, and handle the OAuth
   // redirect landing back on its own dedicated path (see strava.ts for why
@@ -153,10 +144,6 @@ export default function App() {
   // see authStore's applyUser — so this won't fire for those.
   if (profileError && !profile) {
     return <ErrorScreen />
-  }
-
-  if (!profile?.sheet_url) {
-    return <OnboardingScreen />
   }
 
   return (

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useSessionStore } from '@/store/sessionStore'
 import { useUIStore } from '@/store/uiStore'
+import { setCurrentUserId } from '@/services/userScope'
 import type { ProgramExercise } from '@/types'
 
 const SQ_DEF: ProgramExercise = { k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }
@@ -8,7 +9,13 @@ const LEG_PRESS_DEF: ProgramExercise = { k: 'LEG_PRESS', n: 'Leg Press', s: 3, r
 
 describe('sessionStore', () => {
   beforeEach(() => {
+    // saveDraft() now fires off a real (fire-and-forget) Supabase write —
+    // with nobody signed in here it fails synchronously and shows a
+    // notification, which would otherwise leak into unrelated uiStore
+    // tests in this same file.
+    setCurrentUserId(null)
     useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftDefs: null, draftItems: null })
+    useUIStore.setState({ notifications: [] })
   })
 
   it('should start a PROGRAM session and populate draftEx', () => {
@@ -124,6 +131,10 @@ describe('sessionStore', () => {
 })
 
 describe('uiStore', () => {
+  beforeEach(() => {
+    useUIStore.setState({ notifications: [] })
+  })
+
   it('should switch tabs', () => {
     useUIStore.getState().setTab('history')
     expect(useUIStore.getState().activeTab).toBe('history')

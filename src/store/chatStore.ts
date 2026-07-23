@@ -183,9 +183,8 @@ export const useChatStore = create<ChatStore>()(
         try {
           await applyExerciseChange(suggestion.exerciseCode, changes)
 
-          // Optimistic local update — same in-place mutation pattern
-          // configStore.loadWeights() already uses, so the new target shows
-          // up immediately without waiting for a fresh sheet pull.
+          // Optimistic local update so the new target shows up immediately,
+          // without waiting for a fresh profile reload.
           useConfigStore.setState((state) => {
             const program = { ...state.program }
             Object.values(program).forEach((session) => {

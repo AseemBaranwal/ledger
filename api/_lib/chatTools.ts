@@ -6,7 +6,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions from their connected Google Sheet. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, optionally filtered, plus activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, optionally filtered, plus activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
     input_schema: {
       type: 'object',
       properties: {
@@ -107,11 +107,11 @@ interface ActiveSwap {
   currentName: string
 }
 
-// Reads the owner's sheet_url (and any standing exercise substitutions —
-// see supabase/exercise_substitutions.sql) from their profile in one query,
-// then pulls sessions directly from the Sheet — the same GET the client
-// makes via restoreFromSheet, just called from the backend so tool results
-// are grounded in real data rather than trusting anything the client sends.
+// Reads the owner's standing exercise substitutions from their profile, and
+// their logged sessions directly from Supabase's `sessions` table (see
+// supabase/sessions.sql) — the same table sessionStore.ts writes to
+// client-side, just queried from the backend so tool results are grounded
+// in real data rather than trusting anything the client sends.
 //
 // Including activeSwaps here (not a separate tool) matters for a specific
 // failure mode caught in live testing: without knowing whether an earlier
@@ -126,44 +126,39 @@ export async function getTrainingData(
   ownerUserId: string,
   args: { exerciseCode?: string; sinceDate?: string; limit?: number }
 ): Promise<{ rows: TrainingDataRow[]; activeSwaps?: ActiveSwap[] } | { error: string }> {
-  const { data: profile, error } = await supabaseAdmin()
+  const { data: profile } = await supabaseAdmin()
     .from('profiles')
-    .select('sheet_url, exercise_substitutions')
+    .select('exercise_substitutions')
     .eq('id', ownerUserId)
     .single()
 
-  if (error || !profile || !(profile as { sheet_url?: string }).sheet_url) {
-    return { error: 'No Sheet connected for this account yet.' }
-  }
-
-  const sheetUrl = (profile as { sheet_url: string }).sheet_url
-  const substitutions = (profile as { exercise_substitutions?: Record<string, { code: string; name: string }> }).exercise_substitutions || {}
+  const substitutions = (profile as { exercise_substitutions?: Record<string, { code: string; name: string }> } | null)?.exercise_substitutions || {}
   const activeSwaps: ActiveSwap[] = Object.entries(substitutions).map(([originalCode, sub]) => ({
     originalCode,
     currentCode: sub.code,
     currentName: sub.name,
   }))
 
-  let data: { sessions?: SheetSession[] }
-  try {
-    const res = await fetch(`${sheetUrl}?action=export`)
-    data = await res.json()
-  } catch {
-    return { error: 'Could not reach the Google Sheet right now.' }
-  }
-
-  const sessions = Array.isArray(data.sessions) ? data.sessions : []
   const sinceDate = args.sinceDate
   const exerciseCode = args.exerciseCode
   const limit = args.limit && args.limit > 0 ? Math.min(args.limit, 30) : 12
 
-  const filtered = sessions
-    .filter((s) => (sinceDate ? s.d >= sinceDate : true))
-    .sort((a, b) => b.d.localeCompare(a.d))
-    .slice(0, limit)
+  let query = supabaseAdmin()
+    .from('sessions')
+    .select('d, s, ex')
+    .eq('user_id', ownerUserId)
+    .eq('type', 'PROGRAM')
+    .order('d', { ascending: false })
+    .limit(limit)
+  if (sinceDate) query = query.gte('d', sinceDate)
+
+  const { data: sessionRows, error } = await query
+  if (error) return { error: 'Could not read training data right now.' }
+
+  const sessions = (sessionRows || []) as SheetSession[]
 
   const rows: TrainingDataRow[] = []
-  for (const session of filtered) {
+  for (const session of sessions) {
     for (const ex of session.ex || []) {
       if (exerciseCode && ex.k !== exerciseCode) continue
       rows.push({

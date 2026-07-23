@@ -12,15 +12,25 @@ function isOwner(userId: string): boolean {
   return allowList.includes(userId)
 }
 
-// The ONLY code path that can write an exercise's weight/reps/sets target
-// into the Sheet. Deliberately separate from api/chat/message.ts: the chat
-// endpoint's suggest_exercise_adjustment tool only ever produces a proposal,
-// never a write. This endpoint takes a plain {exerciseCode, weight?, reps?,
-// sets?} body from an explicit user tap on a rendered suggestion card —
-// never raw LLM output — so the model itself never has write access to
-// training data, only proposal access. (Formerly apply-weight.ts, before
-// this also covered reps/sets — renamed for clarity, same endpoint shape
-// otherwise.)
+interface ProgramExerciseLike {
+  k: string
+  w?: number
+  r?: number
+  s?: number
+}
+
+// The ONLY code path that can write an exercise's weight/reps/sets target.
+// Deliberately separate from api/chat/message.ts: the chat endpoint's
+// suggest_exercise_adjustment tool only ever produces a proposal, never a
+// write. This endpoint takes a plain {exerciseCode, weight?, reps?, sets?}
+// body from an explicit user tap on a rendered suggestion card — never raw
+// LLM output — so the model itself never has write access to training
+// data, only proposal access.
+//
+// Writes into profiles.routine_config (read-modify-write, same pattern as
+// api/_lib/chatHistory.ts's updateSuggestionStatus — jsonb has no partial-
+// field update in supabase-js) rather than the old Google Sheet Weights
+// tab: the program and its current targets now live in one place per user.
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
@@ -57,29 +67,35 @@ export default async function handler(req: Request): Promise<Response> {
 
   const { data: profile, error } = await supabaseAdmin()
     .from('profiles')
-    .select('sheet_url')
+    .select('routine_config')
     .eq('id', user.id)
     .single()
 
-  if (error || !profile || !(profile as { sheet_url?: string }).sheet_url) {
-    return new Response(JSON.stringify({ error: 'No Sheet connected for this account' }), { status: 404 })
+  const routineConfig = (profile as { routine_config?: { program?: Record<string, { ex?: ProgramExerciseLike[] }> } } | null)?.routine_config
+  if (error || !routineConfig || !routineConfig.program) {
+    return new Response(JSON.stringify({ error: 'No training program found for this account' }), { status: 404 })
   }
-  const sheetUrl = (profile as { sheet_url: string }).sheet_url
 
-  // Same no-cors / text-plain handling pushSession() uses in appScript.ts —
-  // application/json isn't CORS-safelisted for a no-cors request, and the
-  // opaque response means we can't read back real success/failure, only
-  // that the request was sent. Same known limitation as every other write
-  // in this app.
-  try {
-    await fetch(sheetUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ type: 'weight', code: exerciseCode, weight, reps, sets }),
-    })
-  } catch {
-    return new Response(JSON.stringify({ error: 'Could not reach the Google Sheet' }), { status: 502 })
+  let found = false
+  for (const session of Object.values(routineConfig.program)) {
+    for (const ex of session.ex || []) {
+      if (ex.k !== exerciseCode) continue
+      found = true
+      if (weight != null) ex.w = weight
+      if (reps != null) ex.r = reps
+      if (sets != null) ex.s = sets
+    }
+  }
+
+  if (!found) {
+    return new Response(JSON.stringify({ error: `"${exerciseCode}" isn't in your current program` }), { status: 404 })
+  }
+
+  const { error: updateError } = await (supabaseAdmin().from('profiles') as any)
+    .update({ routine_config: routineConfig })
+    .eq('id', user.id)
+  if (updateError) {
+    return new Response(JSON.stringify({ error: 'Could not save the update' }), { status: 500 })
   }
 
   return new Response(JSON.stringify({ success: true }), {

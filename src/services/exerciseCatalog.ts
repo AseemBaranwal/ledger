@@ -83,9 +83,9 @@ export function resolveExerciseDisplay(
 // same exercise, not the preview showing the original while the started
 // session shows the swap. Carries forward the ORIGINAL exercise's current
 // target weight (e.w) rather than defaulting to 0 — that weight is kept
-// fresh by both loadWeights() and the Coach's in-memory program patch on
-// an accepted weight suggestion, so dropping it here would silently reset
-// a swapped-in exercise's starting weight even when a real target exists.
+// fresh by the Coach's in-memory program patch on an accepted weight
+// suggestion, so dropping it here would silently reset a swapped-in
+// exercise's starting weight even when a real target exists.
 export function applySubstitutions(exList: ProgramExercise[], substitutions: Record<string, ExerciseSubstitution>): ProgramExercise[] {
   return exList.map((e) => {
     const sub = substitutions[e.k]

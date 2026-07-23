@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { topWeightOf, formatSets, TOOLS, resolveExerciseSwap, getTrainingData } from '../../api/_lib/chatTools'
 import { supabaseAdmin } from '../../api/_lib/supabaseAdmin'
 
@@ -66,25 +66,39 @@ describe('resolveExerciseSwap', () => {
 })
 
 describe('getTrainingData', () => {
-  function mockProfile(data: unknown) {
-    vi.mocked(supabaseAdmin).mockReturnValue({
-      from: () => ({ select: () => ({ eq: () => ({ single: () => Promise.resolve({ data, error: null }) }) }) }),
-    } as any)
+  // supabase-js query builders are "thenable" at every step in the chain
+  // (select/eq/gte/order/limit all return something awaitable), not just
+  // at the end — this mock chain resolves to {data, error} no matter where
+  // the real code stops chaining, matching that behavior.
+  function makeSessionsChain(data: unknown[], error: unknown = null) {
+    const chain: any = {
+      select: () => chain,
+      eq: () => chain,
+      gte: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      then: (resolve: (v: { data: unknown; error: unknown }) => void) => resolve({ data, error }),
+    }
+    return chain
   }
 
-  beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: () => Promise.resolve({ sessions: [] }) }))
-  })
+  function mockSupabase(profileData: unknown, sessionRows: unknown[], sessionError: unknown = null) {
+    vi.mocked(supabaseAdmin).mockReturnValue({
+      from: (table: string) => {
+        if (table === 'profiles') {
+          return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: profileData, error: null }) }) }) }
+        }
+        return makeSessionsChain(sessionRows, sessionError)
+      },
+    } as any)
+  }
 
   // Caught live: without visibility into whether an earlier swap actually
   // took effect, the model would sometimes hedge in prose instead of
   // calling suggest_exercise_swap again. activeSwaps gives it the real
   // current state instead of making it guess from conversation history.
   it('includes activeSwaps when the profile has standing substitutions', async () => {
-    mockProfile({
-      sheet_url: 'https://example.com/exec',
-      exercise_substitutions: { SQ: { code: 'BARBELL_BACK_SQUAT', name: 'Barbell Back Squat' } },
-    })
+    mockSupabase({ exercise_substitutions: { SQ: { code: 'BARBELL_BACK_SQUAT', name: 'Barbell Back Squat' } } }, [])
 
     const result = await getTrainingData('user-1', {})
 
@@ -94,10 +108,41 @@ describe('getTrainingData', () => {
   })
 
   it('omits activeSwaps entirely when there are none, rather than sending an empty array', async () => {
-    mockProfile({ sheet_url: 'https://example.com/exec', exercise_substitutions: {} })
+    mockSupabase({ exercise_substitutions: {} }, [])
 
     const result = await getTrainingData('user-1', {})
 
     expect(result).not.toHaveProperty('activeSwaps')
+  })
+
+  it('shapes rows from the sessions table, one per logged exercise', async () => {
+    mockSupabase({ exercise_substitutions: {} }, [
+      { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5, 5], ws: [80, 80] }] },
+    ])
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).toMatchObject({
+      rows: [{ date: '2026-07-14', session: 'LA', exercise: 'SQ', sets: '80x5,80x5', topWeight: 80 }],
+    })
+  })
+
+  it('filters rows to the requested exerciseCode', async () => {
+    mockSupabase({ exercise_substitutions: {} }, [
+      { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5], ws: [80] }, { k: 'BSS', r: [8], ws: [20] }] },
+    ])
+
+    const result = await getTrainingData('user-1', { exerciseCode: 'SQ' })
+
+    expect(result).toMatchObject({ rows: [{ exercise: 'SQ' }] })
+    expect((result as { rows: unknown[] }).rows).toHaveLength(1)
+  })
+
+  it('surfaces a clean error when the sessions query fails, rather than throwing', async () => {
+    mockSupabase({ exercise_substitutions: {} }, [], { message: 'connection refused' })
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).toEqual({ error: 'Could not read training data right now.' })
   })
 })

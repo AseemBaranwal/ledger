@@ -194,8 +194,7 @@ export interface ExerciseSubstitution {
 
 // Fetches the current standing substitutions (original code -> replacement)
 // so the client can apply them at session-start time. Fails soft (empty
-// map) — this is the same "best-effort config load" tolerance loadWeights()
-// already has, not something that should block the app from loading.
+// map) — a hiccup here shouldn't block the app from loading.
 export async function fetchExerciseSubstitutions(): Promise<Record<string, ExerciseSubstitution>> {
   try {
     const res = await authedGet('/api/chat/apply-exercise-swap')

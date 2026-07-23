@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Session, Exercise, RestItem, ProgramExercise } from '@/types'
-import { pushSession } from '@/services/appScript'
+import { insertSession } from '@/services/sessionsApi'
 import { postSessionToStrava } from '@/services/strava'
 import { scopedStorage } from '@/services/userScope'
 import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
@@ -20,7 +20,7 @@ interface SessionStore {
   draftEx: DraftExercise[] | null // live weights while logging a PROGRAM session
   draftDefs: ProgramExercise[] | null // this occurrence's exercise list (may diverge from config.json via swap/add/remove)
   draftItems: RestItem[] | null // live done-state while logging a REST session
-  pendingSync: string[] // session ids not yet confirmed pushed to the sheet
+  pendingSync: string[] // session ids not yet confirmed saved to Supabase
   lastSyncedAt: number | null // ms epoch of the last successful push or manual sync
 
   startSession: (code: string, exList: { k: string; w: number }[], gym: string, defs?: ProgramExercise[]) => void
@@ -57,19 +57,18 @@ interface SessionStore {
 // inherit that stale data — zustand's persist.rehydrate() merges onto
 // whatever's already in memory rather than resetting it when the target
 // storage key is empty, so the leftover initial state would stick. The
-// user's Sheet is the durable source of truth now; auto-restore-on-empty
-// in App.tsx repopulates real per-user data safely instead.
+// user's Supabase `sessions` table is the durable source of truth now;
+// auto-restore-on-empty in App.tsx repopulates real per-user data safely
+// instead.
 
-// Fire the sheet push and update the pending-sync queue based on the outcome.
-// mode:'no-cors' means we can't see whether Apps Script actually processed the
-// request, only whether the network call itself completed — so "resolved" is
-// the best signal of success we have. A thrown error (offline, DNS, etc.)
+// Write the session to Supabase and update the pending-sync queue based on
+// the outcome. A thrown error (offline, RLS denial, constraint violation —
+// insertSession() explicitly surfaces all of these, see sessionsApi.ts)
 // queues the session id so flushPendingSync() can retry it later.
 async function syncSession(session: Session, markPending: (id: string) => void, clearPending: (id: string) => void) {
-  const sheetUrl = useConfigStore.getState().sheetUrl
-  if (!sheetUrl || !session.id) return
+  if (!session.id) return
   try {
-    await pushSession(sheetUrl, session)
+    await insertSession(session)
     clearPending(session.id)
     useSessionStore.setState({ lastSyncedAt: Date.now() })
   } catch (e) {
@@ -222,7 +221,11 @@ export const useSessionStore = create<SessionStore>()(
           sessionToSave = { ...state.draft, ex: loggedEx, et: new Date().toISOString() }
         }
 
-        const savedSession = { ...sessionToSave, id: Date.now().toString() }
+        // A real uuid, not a timestamp string — the new `sessions` table's
+        // primary key is `uuid`, and pendingSync needs a stable id assigned
+        // before the write confirms (it's what flushPendingSync() retries
+        // against on failure).
+        const savedSession = { ...sessionToSave, id: crypto.randomUUID() }
         const newSessions = [...state.sessions, savedSession]
         newSessions.sort((a, b) => a.d.localeCompare(b.d))
 
@@ -241,12 +244,14 @@ export const useSessionStore = create<SessionStore>()(
 
         set({ sessions: newSessions, draft: null, draftEx: null, draftDefs: null, draftItems: null })
 
-        // Push PROGRAM sessions to the sheet (fire-and-forget, non-blocking).
+        // Write PROGRAM sessions to Supabase (fire-and-forget, non-blocking —
+        // local Zustand state, already updated above, is what the UI reads
+        // immediately; pendingSync covers the case where this write fails).
         // REST sessions are local-only, matching the original app's behavior.
         if (!isRest) {
           const markPending = (id: string) => {
             set((s) => (s.pendingSync.includes(id) ? s : { pendingSync: [...s.pendingSync, id] }))
-            useUIStore.getState().showNotification('Could not sync to sheet — will retry', 'error')
+            useUIStore.getState().showNotification('Could not save session — will retry', 'error')
           }
           const clearPending = (id: string) => {
             set((s) => ({ pendingSync: s.pendingSync.filter((x) => x !== id) }))
@@ -254,8 +259,8 @@ export const useSessionStore = create<SessionStore>()(
           syncSession(savedSession, markPending, clearPending)
 
           // Best-effort, non-blocking Strava post — never affects the local
-          // save or the sheet sync above, and silently no-ops if the user
-          // hasn't connected Strava.
+          // save or the Supabase write above, and silently no-ops if the
+          // user hasn't connected Strava.
           if (savedSession.ex?.length && useStravaStore.getState().connected) {
             const { program, colours } = useConfigStore.getState()
             const programDef = savedSession.s ? program[savedSession.s] : undefined

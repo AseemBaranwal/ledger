@@ -96,12 +96,21 @@ Practical pattern established in `tests/unit/`:
   `https://ledger-*-aseems-projects-a684aa0d.vercel.app/**` as a wildcard
   redirect URL in Supabase Auth → URL Configuration. If sign-in on a new
   preview URL ever redirects somewhere broken, check this first.
-- **RLS pattern used throughout**: every user-data table has a
-  `select`-own policy for the `authenticated` role and *no* insert/update/
-  delete policies at all — only the `service_role` key (used exclusively
-  server-side in `api/_lib/supabaseAdmin.ts`) can write. This is deliberate
-  hardening, not an oversight — client code should never be able to write
-  directly to `strava_connections`, `chat_logs`, or `chat_messages`.
+- **Two deliberate RLS patterns, not one** — pick based on data
+  sensitivity, don't default to either without thinking about it:
+  - *Service-role-write-only* (`strava_connections`, `chat_logs`,
+    `chat_messages`): `select`-own policy only, no insert/update/delete for
+    `authenticated` — only the `service_role` key (used exclusively
+    server-side in `api/_lib/supabaseAdmin.ts`) can write. Used where the
+    data is security-sensitive (OAuth tokens) or where a server-side
+    invariant matters (chat history shouldn't be editable by the client).
+  - *Direct client writes via `auth.uid() = user_id`* (`profiles`,
+    `sessions`): select/insert/update(/delete) policies scoped to the
+    caller's own row, written straight from the browser with the normal
+    RLS-scoped `supabase` client — no server proxy. Used for benign
+    per-user data where a proxy endpoint would add latency and code for no
+    real security benefit. `sessions` (see below) is the newest table on
+    this pattern.
 - **`requireUser()` in `api/_lib/auth.ts` calls Supabase's `/auth/v1/user`
   REST endpoint directly via `fetch`, not the `supabase-js` SDK's
   `auth.getUser(jwt)`.** The SDK method threw a spurious `"Auth session
@@ -109,26 +118,42 @@ Practical pattern established in `tests/unit/`:
   unexpired token — never fully root-caused, not worth chasing further
   given the direct REST call works and is simpler anyway.
 
-## Google Apps Script gotchas
+## Workout data lives in Supabase, not a Google Sheet (as of the
+onboarding-removal migration)
 
-- **`curl` needs `-L`** — Apps Script's `/exec` endpoint always responds
-  with a 302 redirect to a `script.googleusercontent.com` URL for the
-  actual payload; without `-L` you get the raw redirect HTML, not the data.
-- **"New deployment" vs. "Manage deployments → edit existing" produce
-  different `/exec` URLs.** Clicking "New deployment" mints a fresh URL
-  even against the same script/spreadsheet, silently orphaning whatever
-  URL the app currently has saved (the sheet's actual data isn't lost, just
-  disconnected until the app's saved URL is updated). If a resync starts
-  failing right after redeploying Apps Script, check whether the URL
-  changed.
-- **Sheets auto-converts number-like strings** (e.g. `"100,100,100,100"` →
-  `100100100100`). `apps-script.gs` force-formats the sets column as text
-  and has a recovery function for already-corrupted rows — don't remove the
-  text-formatting call when touching sheet-write code.
-- Monaco's auto-bracket-closing in the Apps Script web editor corrupts
-  programmatically-typed code (keystroke simulation adds spurious closing
-  brackets). Either have the user paste manually, or drive it via a
-  temporary API hook + curl instead of typing into the editor.
+- **`sessions` table is now the source of truth for logged workouts**,
+  written directly by the client (`src/services/sessionsApi.ts`) via RLS —
+  see `supabase/sessions.sql`. Each user's training program (previously
+  the single static `public/config.json`, shared by everyone) now lives in
+  their own `profiles.routine_config` jsonb column, seeded from
+  `src/data/starterProgram.ts` on first sign-in
+  (`configStore.loadOrSeedProgram`) so a brand-new user never has to set
+  anything up. This was a deliberate pivot away from the Google
+  Sheet/Apps Script setup a new user used to need before they could log
+  a single set — see the git history around the commit that removed
+  `OnboardingScreen.tsx`/`appScript.ts` for the full reasoning.
+- **`supabase-js` does NOT throw on a query error** the way the old
+  `no-cors` fetch calls to Apps Script effectively did (a resolved fetch
+  was the only "it worked" signal available then) — `.insert()`/`.select()`
+  resolve normally with `{error}` set for an RLS denial or constraint
+  violation. Every write in `sessionsApi.ts` explicitly checks and throws
+  on `error`; a naive port that skipped this would silently treat a real
+  failure (e.g. an RLS policy denial) as a successful sync. Caught during
+  the migration's own Plan review, not in production — worth remembering
+  as a category of bug whenever porting code off a `no-cors` fetch pattern.
+- **`apps-script.gs` still exists in the repo but is inert** — nothing in
+  the running app calls it anymore. Kept only as scaffolding in case a
+  "export your data to a Google Sheet" feature gets built later (a
+  one-way export is a different shape of feature than "Sheet as required
+  source of truth," so it'd likely be rewritten fresh rather than
+  reactivating this file as-is). The gotchas below only apply if that
+  happens — Monaco's auto-bracket-closing in the Apps Script web editor
+  corrupts programmatically-typed code (paste manually, or drive it via a
+  temporary API hook + curl); `curl` needs `-L` since `/exec` always
+  302-redirects; "New deployment" mints a fresh URL and orphans the old
+  one, unlike "Manage deployments → edit existing"; Sheets auto-converts
+  number-like strings (e.g. `"100,100,100,100"` → `100100100100`) unless
+  the column is force-formatted as text.
 
 ## Claude API integration (`api/_lib/anthropic.ts`)
 
@@ -164,25 +189,28 @@ Practical pattern established in `tests/unit/`:
   each going through a dedicated write endpoint gated the same way as
   everything else in this file — owner-only, human-tap-to-accept, never
   direct LLM write access:
-  - `get_training_data` — read-only, pulls from the Sheet.
+  - `get_training_data` — read-only, pulls from the Supabase `sessions`
+    table (see the workout-data section above).
   - `suggest_exercise_adjustment` — weight/reps/sets, each field
     independently optional so a proposal can touch just one. Accept writes
-    through `api/chat/apply-exercise-change.ts` to the Sheet's `Weights` tab
-    (persistent — same "next time" target semantics weight-only suggestions
-    always had) and additionally syncs the live session draft if one is
-    active with that exercise.
+    through `api/chat/apply-exercise-change.ts` to the user's own
+    `profiles.routine_config` (read-modify-write — find the exercise by
+    code across the program's sessions, mutate `w`/`r`/`s`, write the whole
+    jsonb blob back; persistent "next time" target, same semantics
+    weight-only suggestions always had) and additionally syncs the live
+    session draft if one is active with that exercise.
   - `suggest_exercise_swap` — the model only ever sends a **plain-language
     guess** (`replacementQuery`, e.g. `"leg press"`); the ~500-entry Strava
     catalog never enters its context. Resolution happens server-side via
     `resolveExerciseQuery()` in the shared `api/_lib/exerciseCatalog.ts` —
     same module the frontend's manual swap picker uses, so a swap the Coach
     proposes and one picked by hand resolve identically. Unlike weight/reps/
-    sets (written to the Sheet's `Weights` tab), a swap can't touch
-    config.json (genuinely static, not writable by this app) — so it's
-    stored as a standing substitution on `profiles.exercise_substitutions`
-    instead (see `supabase/exercise_substitutions.sql` — a jsonb column,
-    not a new table, since this is a per-user setting like `sheet_url`, not
-    an append-only log). Accepting one **always** writes that persistent
+    sets (written into the program's own `routine_config`), a swap doesn't
+    touch the program definition itself — it's stored as a standing
+    substitution on `profiles.exercise_substitutions` instead (see
+    `supabase/exercise_substitutions.sql` — a jsonb column, not a new
+    table, same reasoning as `routine_config`: a per-user setting, not an
+    append-only log). Accepting one **always** writes that persistent
     substitution (regardless of whether a session is open) via
     `api/chat/apply-exercise-swap.ts`, *and* additionally patches the live
     draft immediately if one's open with that exercise right now — same
@@ -225,14 +253,6 @@ Practical pattern established in `tests/unit/`:
   don't assume one instruction-based fix is sufficient for a tool-call-
   skipping failure mode — verify against `chat_logs.tool_calls` after the
   fix ships, not just that the wording looks right.
-- **Extending the Sheet's `Weights` tab to carry `reps`/`sets` (not just
-  `weight`) needs a manual Apps Script redeploy** — same
-  paste-and-redeploy dance as every prior `apps-script.gs` change in this
-  project (see the Google Apps Script section below). Until redeployed, the
-  *old* deployed script silently ignores the new `reps`/`sets` fields in the
-  POST body (it only ever read `body.weight`) — weight-only suggestions
-  keep working exactly as before with zero degradation, only the new
-  reps/sets persistence is unavailable until the redeploy happens.
 
 ## Strava gotchas
 

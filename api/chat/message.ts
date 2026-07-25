@@ -41,6 +41,10 @@ interface Suggestion {
 }
 
 // Best-effort — a logging failure must never fail the actual chat response.
+// stop_reason and reply are logged on every call (success, silent-empty, or
+// error) — see supabase/chat_logs_add_reply_debug_columns.sql. Previously
+// only token counts and a generic error string were persisted, so a call
+// that "succeeded" with an empty reply left zero trace to debug from.
 async function logChatCall(row: {
   user_id: string
   input_tokens: number
@@ -49,6 +53,8 @@ async function logChatCall(row: {
   cache_creation_tokens: number
   tool_calls: string[]
   latency_ms: number
+  stop_reason: string | null
+  reply: string
   error: string | null
 }) {
   try {
@@ -195,6 +201,7 @@ export default async function handler(req: Request): Promise<Response> {
     let totalCacheCreationTokens = 0
     let reply = ''
     let callError: string | null = null
+    let finalStopReason: string | null = null
 
     try {
       send({ type: 'status', message: 'Thinking…' })
@@ -213,6 +220,7 @@ export default async function handler(req: Request): Promise<Response> {
         messages.push({ role: 'assistant', content: response.content })
 
         if (response.stop_reason !== 'tool_use') {
+          finalStopReason = response.stop_reason
           reply = response.content
             .filter((b): b is Extract<AnthropicResponseBlock, { type: 'text' }> => b.type === 'text')
             .map((b) => b.text)
@@ -300,6 +308,16 @@ export default async function handler(req: Request): Promise<Response> {
       callError = e instanceof Error ? e.message : 'Unknown error calling Anthropic'
     }
 
+    // A call can "succeed" (nothing thrown) yet still carry no usable text —
+    // e.g. hitting max_tokens while still in extended thinking, before any
+    // text block was ever emitted. This used to save and send that empty
+    // reply as if it were a normal successful turn, with chat_logs.error
+    // staying null the whole time — indistinguishable from a real success
+    // without the stop_reason, which wasn't logged anywhere either.
+    if (!callError && !reply) {
+      callError = `Coach didn't return any reply text (stop_reason: ${finalStopReason ?? 'unknown'}) — try again, maybe with a shorter or more focused question.`
+    }
+
     const latencyMs = Date.now() - startedAt
 
     await logChatCall({
@@ -310,6 +328,8 @@ export default async function handler(req: Request): Promise<Response> {
       cache_creation_tokens: totalCacheCreationTokens,
       tool_calls: toolCallNames,
       latency_ms: latencyMs,
+      stop_reason: finalStopReason,
+      reply,
       error: callError,
     })
 

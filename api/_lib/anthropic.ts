@@ -90,7 +90,14 @@ export async function callAnthropic({
   systemPrompt,
   messages,
   tools,
-  maxTokens = 3072,
+  // Was 3072 — too tight for a "high effort" adaptive-thinking call asked
+  // to review a full week of data and reason deeply about it. The model
+  // can hit max_tokens mid-reasoning (thinking tokens count against this
+  // budget even though display:'omitted' hides them from the response
+  // body) before ever emitting a text block, producing an empty reply
+  // with no thrown error — see message.ts's stop_reason/empty-reply check
+  // for how that's now surfaced instead of silently accepted.
+  maxTokens = 8192,
   effort = 'high',
 }: CallAnthropicParams): Promise<AnthropicResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY

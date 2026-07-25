@@ -12,7 +12,14 @@
   --line-2: #3A4552;
   --text: #E8ECF1;
   --muted: #7E8A98;
-  --dim: #5A6572;
+  /* Was #5A6572 — measured 2.5-3.0:1 against --raised/--surface/--ink,
+     failing WCAG AA even at the 3:1 UI-component floor, let alone 4.5:1
+     for text. It's used for genuinely informational text throughout the
+     app (last-logged weight, set targets, unit labels, section/stat
+     labels), not just decorative hints. Matched to --muted's existing
+     value (already used elsewhere, already known-good) rather than
+     picking a new one — 4.2-5.1:1 against the same three backgrounds. */
+  --dim: #7E8A98;
 
   --amber: #FFB020;      /* the work colour. logged, done, PR */
   --amber-dim: #8A5F14;

@@ -13,7 +13,7 @@ const TABS = [
   { id: 'trends', label: 'Trends', Icon: TrendsIcon },
   { id: 'sync', label: 'Sync', Icon: SyncIcon },
   { id: 'coach', label: 'Coach', Icon: CoachIcon },
-]
+] as const
 
 export function BottomNav({ activeTab, onTabChange, showCoach }: BottomNavProps) {
   const tabs = showCoach ? TABS : TABS.filter((tab) => tab.id !== 'coach')
@@ -25,7 +25,7 @@ export function BottomNav({ activeTab, onTabChange, showCoach }: BottomNavProps)
           <button
             key={tab.id}
             className={`${styles.tab} ${activeTab === tab.id ? styles.on : ''}`}
-            onClick={() => onTabChange(tab.id as any)}
+            onClick={() => onTabChange(tab.id)}
           >
             <tab.Icon />
             {tab.label}

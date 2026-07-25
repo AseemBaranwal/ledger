@@ -1225,6 +1225,27 @@ svg.chart {
   border-color: var(--amber);
 }
 
+.equipmentChipsWrap {
+  position: relative;
+}
+
+/* Right-edge fade as the "more chips this way" hint, done as a plain
+   gradient overlay rather than mask-image — WebKit does not reliably
+   recompute a mask-image's alpha channel on a dynamically-sized flex/
+   scroll container at first paint, only after something forces a repaint
+   (e.g. clicking a chip), which was rendering every chip undersized until
+   the first tap. A gradient overlay has no such recompute step. */
+.equipmentChipsWrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 8px;
+  width: 28px;
+  background: linear-gradient(to right, transparent, var(--surface));
+  pointer-events: none;
+}
+
 .equipmentChips {
   display: flex;
   gap: 6px;
@@ -1233,11 +1254,6 @@ svg.chart {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  /* Edge fade instead of a scrollbar as the "more chips this way" hint —
-     transparent right at the edges, fully opaque past the existing 16px
-     padding so it lines up with the search box and section labels above. */
-  -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
 }
 
 .equipmentChips::-webkit-scrollbar {

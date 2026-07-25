@@ -178,17 +178,19 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
           />
         </div>
 
-        <div className={styles.equipmentChips}>
-          {EQUIPMENT_CHIPS.map((eq) => (
-            <button
-              key={eq}
-              className={`${styles.equipmentChip} ${equipmentFilter === eq ? styles.on : ''}`}
-              onClick={() => setEquipmentFilter(equipmentFilter === eq ? null : eq)}
-            >
-              <EquipmentIcon equipment={eq} size="14px" />
-              {EQUIPMENT_LABEL[eq]}
-            </button>
-          ))}
+        <div className={styles.equipmentChipsWrap}>
+          <div className={styles.equipmentChips}>
+            {EQUIPMENT_CHIPS.map((eq) => (
+              <button
+                key={eq}
+                className={`${styles.equipmentChip} ${equipmentFilter === eq ? styles.on : ''}`}
+                onClick={() => setEquipmentFilter(equipmentFilter === eq ? null : eq)}
+              >
+                <EquipmentIcon equipment={eq} size="14px" />
+                {EQUIPMENT_LABEL[eq]}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className={styles.pickerScroll}>

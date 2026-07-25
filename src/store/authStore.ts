@@ -116,28 +116,25 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   savingUrl: false,
 
   init: () => {
-    // Pick up whatever session already exists (e.g. a returning visit)
-    // before subscribing to future changes.
-    supabase.auth.getSession().then(async ({ data }) => {
-      const sessionUser = data.session?.user
-      if (sessionUser) {
-        const user = toAuthUser(sessionUser)
-        await applyUser(set, get, user, true)
-      } else {
-        set({ loading: false })
-      }
-    })
-
+    // No separate getSession() call — installed @supabase/auth-js fires an
+    // INITIAL_SESSION event to every new onAuthStateChange listener
+    // immediately on subscription, carrying whatever session already
+    // exists (or null). Calling getSession() as well as subscribing here
+    // used to fire two full profile loads on every cold app open, on the
+    // gym wifi this app is meant to tolerate.
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         await rehydrateUserScopedStores(null)
         useConfigStore.getState().resetProgram()
-        set({ user: null, profile: null, profileError: null })
+        set({ user: null, profile: null, profileError: null, loading: false })
         return
       }
 
       const sessionUser = session?.user
-      if (!sessionUser) return
+      if (!sessionUser) {
+        set({ loading: false }) // INITIAL_SESSION with nothing signed in
+        return
+      }
 
       const user = toAuthUser(sessionUser)
       const isNewUser = get().user?.id !== user.id

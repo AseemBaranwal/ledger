@@ -11,7 +11,6 @@ import type { Session } from '@/types'
 vi.mock('@/services/supabaseClient', () => ({
   supabase: {
     auth: {
-      getSession: vi.fn(),
       onAuthStateChange: vi.fn(),
       signInWithOAuth: vi.fn(),
       signOut: vi.fn(),
@@ -36,7 +35,11 @@ function profilesChain(response: { data: unknown; error: { message: string } | n
 }
 
 // Captures the callback authStore.init() registers so tests can fire
-// SIGNED_OUT / sign-in events manually, the same way Supabase would.
+// INITIAL_SESSION / SIGNED_OUT / sign-in events manually, the same way
+// Supabase's auth-js would (it fires INITIAL_SESSION to every new listener
+// immediately on subscription — there's no separate getSession() call to
+// mock anymore, see the "duplicate profile fetch" fix this test file was
+// updated alongside).
 let authChangeCallback: (event: string, session: { user: typeof USER_A } | null) => Promise<void> | void
 
 describe('authStore', () => {
@@ -53,27 +56,26 @@ describe('authStore', () => {
     })
   })
 
-  describe('init — no existing session', () => {
+  describe('init — INITIAL_SESSION with nothing signed in', () => {
     it('resolves loading without setting a user', async () => {
-      vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as any)
-
       useAuthStore.getState().init()
-      await vi.waitFor(() => expect(useAuthStore.getState().loading).toBe(false))
+      await authChangeCallback('INITIAL_SESSION', null)
 
+      expect(useAuthStore.getState().loading).toBe(false)
       expect(useAuthStore.getState().user).toBeNull()
     })
   })
 
-  describe('init — existing session', () => {
+  describe('init — INITIAL_SESSION with an existing session', () => {
     it('loads the profile and seeds the program on success', async () => {
-      vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: { user: USER_A } } } as any)
       vi.mocked(supabase.from).mockReturnValue(
         profilesChain({ data: { id: 'user-a', routine_config: REAL_CONFIG }, error: null })
       )
 
       useAuthStore.getState().init()
-      await vi.waitFor(() => expect(useAuthStore.getState().loading).toBe(false))
+      await authChangeCallback('INITIAL_SESSION', { user: USER_A })
 
+      expect(useAuthStore.getState().loading).toBe(false)
       expect(useAuthStore.getState().user?.id).toBe('user-a')
       expect(useAuthStore.getState().profileError).toBeNull()
       expect(useConfigStore.getState().program).toEqual(REAL_CONFIG.program)
@@ -84,27 +86,24 @@ describe('authStore', () => {
     // first, a previous user's in-memory data would just sit there.
     it('blanks stale in-memory sessions before rehydrating a different user, never leaving old data on screen', async () => {
       useSessionStore.setState({ sessions: [{ id: 'stale-from-user-a', d: '2020-01-01' } as Session] })
-
-      vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: { user: USER_B } } } as any)
       vi.mocked(supabase.from).mockReturnValue(
         profilesChain({ data: { id: 'user-b', routine_config: REAL_CONFIG }, error: null })
       )
 
       useAuthStore.getState().init()
-      await vi.waitFor(() => expect(useAuthStore.getState().loading).toBe(false))
+      await authChangeCallback('INITIAL_SESSION', { user: USER_B })
 
       expect(useSessionStore.getState().sessions).toEqual([])
       expect(getCurrentUserId()).toBe('user-b')
     })
 
     it('sets profile to null (not a stale value) when a brand-new session fails to load its profile', async () => {
-      vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: { user: USER_A } } } as any)
       vi.mocked(supabase.from).mockReturnValue(
         profilesChain({ data: null, error: { message: 'network error' } })
       )
 
       useAuthStore.getState().init()
-      await vi.waitFor(() => expect(useAuthStore.getState().loading).toBe(false))
+      await authChangeCallback('INITIAL_SESSION', { user: USER_A })
 
       expect(useAuthStore.getState().profile).toBeNull()
       expect(useAuthStore.getState().profileError).toBe('network error')
@@ -131,10 +130,7 @@ describe('authStore', () => {
     it('SIGNED_OUT clears user, profile, and rehydrates stores to blank', async () => {
       useAuthStore.setState({ user: { id: 'user-a', email: null, name: null, avatarUrl: null }, profile: { id: 'user-a' } as any, loading: false, profileError: 'stale error' })
       useSessionStore.setState({ sessions: [{ id: 'x', d: '2020-01-01' } as Session] })
-
-      vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as any)
       useAuthStore.getState().init()
-      await vi.waitFor(() => expect(useAuthStore.getState().loading).toBe(false))
 
       await authChangeCallback('SIGNED_OUT', null)
 
@@ -146,10 +142,7 @@ describe('authStore', () => {
     })
 
     it('does not re-blank sessions when the same user fires a redundant auth event', async () => {
-      vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as any)
       useAuthStore.getState().init()
-      await vi.waitFor(() => expect(useAuthStore.getState().loading).toBe(false))
-
       vi.mocked(supabase.from).mockReturnValue(
         profilesChain({ data: { id: 'user-a', routine_config: REAL_CONFIG }, error: null })
       )

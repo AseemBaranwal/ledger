@@ -122,7 +122,10 @@ export async function callAnthropic({
   const body: Record<string, unknown> = {
     model: MODEL,
     max_tokens: maxTokens,
-    thinking: { type: 'adaptive', display: 'omitted' },
+    // display:'summarized' costs nothing extra — thinking happens and is
+    // billed identically under every display setting; this only changes
+    // whether we get the readable summary back to log (see #34).
+    thinking: { type: 'adaptive', display: 'summarized' },
     output_config: { effort },
     system: [
       {

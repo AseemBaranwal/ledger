@@ -55,6 +55,7 @@ async function logChatCall(row: {
   latency_ms: number
   stop_reason: string | null
   reply: string
+  thinking: string
   error: string | null
 }) {
   try {
@@ -202,6 +203,7 @@ export default async function handler(req: Request): Promise<Response> {
     let reply = ''
     let callError: string | null = null
     let finalStopReason: string | null = null
+    const thinkingChunks: string[] = []
 
     try {
       send({ type: 'status', message: 'Thinking…' })
@@ -218,6 +220,13 @@ export default async function handler(req: Request): Promise<Response> {
         // re-appended as-is between loop iterations — stripping thinking
         // blocks before sending tool_results back breaks the turn.
         messages.push({ role: 'assistant', content: response.content })
+
+        const thinkingText = response.content
+          .filter((b): b is Extract<AnthropicResponseBlock, { type: 'thinking' }> => b.type === 'thinking')
+          .map((b) => b.thinking)
+          .filter(Boolean)
+          .join('\n')
+        if (thinkingText) thinkingChunks.push(`[iteration ${iteration}] ${thinkingText}`)
 
         if (response.stop_reason !== 'tool_use') {
           finalStopReason = response.stop_reason
@@ -330,6 +339,7 @@ export default async function handler(req: Request): Promise<Response> {
       latency_ms: latencyMs,
       stop_reason: finalStopReason,
       reply,
+      thinking: thinkingChunks.join('\n\n'),
       error: callError,
     })
 

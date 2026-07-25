@@ -172,7 +172,7 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
               {v}
             </button>
           ))}
-          <button className={`${styles.rep} ${styles.x}`} onClick={() => setOpenExerciseIndex(null)}>
+          <button className={`${styles.rep} ${styles.x}`} onClick={() => setOpenExerciseIndex(null)} aria-label="Close rep picker">
             <CloseIcon size="15px" />
           </button>
         </div>

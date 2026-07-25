@@ -173,7 +173,7 @@
 
 .inc.on {
   background: var(--amber);
-  color: #14181D;
+  color: var(--ink);
   border-color: var(--amber);
 }
 
@@ -228,7 +228,7 @@
 }
 
 .blk.filled .n {
-  color: #14181D;
+  color: var(--ink);
 }
 
 .blk.filled .lab {
@@ -290,7 +290,7 @@
 
 .rep:active {
   background: var(--amber);
-  color: #14181D;
+  color: var(--ink);
 }
 
 .rep.tgt {
@@ -323,7 +323,7 @@
   margin: 0 auto 8px;
   padding: 11px 14px;
   background: var(--amber);
-  color: #14181D;
+  color: var(--ink);
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -382,7 +382,7 @@
 
 .btn.primary {
   background: var(--amber);
-  color: #14181D;
+  color: var(--ink);
 }
 
 .btn.ghost {
@@ -1250,7 +1250,7 @@ svg.chart {
 
 .pickerChip:active {
   background: var(--amber);
-  color: #14181D;
+  color: var(--ink);
   border-color: var(--amber);
 }
 
@@ -1311,6 +1311,6 @@ svg.chart {
 
 .equipmentChip.on {
   background: var(--amber);
-  color: #14181D;
+  color: var(--ink);
   border-color: var(--amber);
 }

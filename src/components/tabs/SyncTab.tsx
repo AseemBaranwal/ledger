@@ -99,8 +99,10 @@ export function SyncTab() {
       {/* Status card */}
       <div className={styles.card} style={{ padding: '14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--teal)', flex: 'none' }} />
-          <span style={{ fontSize: '13px', fontWeight: 600 }}>Synced to your account</span>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: pendingSync.length ? 'var(--coral)' : 'var(--teal)', flex: 'none' }} />
+          <span style={{ fontSize: '13px', fontWeight: 600 }}>
+            {pendingSync.length ? `${pendingSync.length} session${pendingSync.length === 1 ? '' : 's'} pending sync` : 'Synced to your account'}
+          </span>
         </div>
         <div className={styles.statGrid} style={{ marginBottom: 0 }}>
           <div className={styles.stat}>

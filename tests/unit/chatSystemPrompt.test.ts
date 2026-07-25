@@ -38,7 +38,15 @@ describe('buildSystemPrompt', () => {
   // most recent session row.
   it('tells the model to use get_training_data\'s today field rather than inferring the date', () => {
     const prompt = buildSystemPrompt()
-    expect(prompt).toContain('response also includes today')
+    expect(prompt).toContain('response also includes `today`')
     expect(prompt).toContain("Don't guess today's date")
+  })
+
+  it('backtick-formats tool names and code references so the model distinguishes them from prose', () => {
+    const prompt = buildSystemPrompt()
+    expect(prompt).toContain('`get_training_data`')
+    expect(prompt).toContain('`suggest_exercise_adjustment`')
+    expect(prompt).toContain('`suggest_exercise_swap`')
+    expect(prompt).toContain('`activeSwaps`')
   })
 })

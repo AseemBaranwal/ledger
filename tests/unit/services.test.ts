@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { iso, dayName, weekNumber } from '@/services/dateUtils'
-import { calculateVolume, getMaxWeight, checkPRs } from '@/services/trendCalculations'
+import { calculateVolume, getMaxWeight, checkPRs, lastDialedWeight } from '@/services/trendCalculations'
 import type { Exercise, Session } from '@/types'
 
 describe('dateUtils', () => {
@@ -55,5 +55,33 @@ describe('trendCalculations', () => {
       ex: [{ k: 'SQ', r: [6], ws: [75, 75, 75] }],
     }
     expect(checkPRs(latest, [prior, latest])).toEqual(['SQ'])
+  })
+
+  describe('lastDialedWeight', () => {
+    it('returns the weight from the most recent session containing the code', () => {
+      const sessions: Session[] = [
+        { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', w: 80, r: [5] }] },
+        { d: '2026-07-21', s: 'LA', ex: [{ k: 'SQ', w: 85, r: [5] }] },
+      ]
+      expect(lastDialedWeight(sessions, 'SQ')).toBe(85)
+    })
+
+    // The key difference from lastOf(): this must NOT require a logged set —
+    // handleStart carries forward whatever weight was last dialed in on the
+    // stepper, even for an exercise that was in the session but never had a
+    // rep logged (e.g. skipped that day).
+    it('returns a weight even when the exercise had no logged reps', () => {
+      const sessions: Session[] = [{ d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', w: 80, r: [] }] }]
+      expect(lastDialedWeight(sessions, 'SQ')).toBe(80)
+    })
+
+    it('returns undefined for a code that has never appeared', () => {
+      const sessions: Session[] = [{ d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', w: 80, r: [5] }] }]
+      expect(lastDialedWeight(sessions, 'BSS')).toBeUndefined()
+    })
+
+    it('returns undefined for no session history at all', () => {
+      expect(lastDialedWeight([], 'SQ')).toBeUndefined()
+    })
   })
 })

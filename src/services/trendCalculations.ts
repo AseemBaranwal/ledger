@@ -36,6 +36,19 @@ export function lastOf(sessions: Session[], code: string): (Exercise & { d: stri
   return null
 }
 
+// The weight dialed in for a code the last time it appeared in any
+// session's exercise list — unlike lastOf, this does NOT require the
+// exercise to have actually had a set logged (e.w tracks the stepper's
+// current value even before a rep is logged), which is what a session
+// starting mid-workout wants: carry forward whatever weight was last
+// dialed in, not just the last completed set's weight.
+export function lastDialedWeight(sessions: Session[], code: string): number | undefined {
+  const last = sessions.length
+    ? [...sessions].reverse().flatMap((s) => s.ex || []).find((x) => x.k === code)
+    : null
+  return last?.w ?? undefined
+}
+
 // Consecutive weeks (most recent first) with >= 3 logged sessions
 export function streak(sessions: Session[]): number {
   const wk: Record<string, number> = {}

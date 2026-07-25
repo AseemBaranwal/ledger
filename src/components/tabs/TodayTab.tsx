@@ -1,21 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
-import { iso, mondayOf } from '@/services/dateUtils'
 import { applySubstitutions } from '@/services/exerciseCatalog'
 import { saveSubstitution } from '@/services/exerciseSubstitutionsApi'
+import { doneThisWeek, owedThisWeek, tgtStr } from '@/services/weekProgress'
+import { lastDialedWeight } from '@/services/trendCalculations'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 import { StarIcon, CheckIcon, ChevronIcon, PlusIcon } from '@/components/icons/Icons'
 
 const DOW_LABEL: Record<number, string> = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' }
-
-function tgtStr(e: ProgramExercise): string {
-  let t = `${e.s}×${e.r}`
-  if (e.w > 0) t += e.u === '+lb' ? ` · +${e.w} lb` : ` · ${e.w} ${e.u === 'reps' ? '' : e.u}`.trimEnd()
-  return t
-}
 
 export function TodayTab() {
   const draft = useSessionStore((s) => s.draft)
@@ -55,36 +50,12 @@ export function TodayTab() {
 
   const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] => applySubstitutions(exList, substitutions)
 
-  const doneThisWeek = (): Set<string> => {
-    const mon = mondayOf(new Date())
-    const sun = new Date(mon)
-    sun.setDate(sun.getDate() + 6)
-    const sunStr = iso(sun)
-    const set = new Set<string>()
-    sessions.forEach((x) => {
-      if (x.d >= mon && x.d <= sunStr && x.s) set.add(x.s)
-    })
-    return set
-  }
-
-  const owedThisWeek = (): string[] => {
-    const done = doneThisWeek()
-    const todayPos = weekDays.indexOf(dayOfWeek)
-    return priority.filter((k) => program[k] && weekDays.indexOf(program[k].day) <= todayPos && !done.has(k))
-  }
-
   const handleStart = (code: string) => {
     const p = program[code]
     const defs = withSubstitutions(p.ex)
     startSession(
       code,
-      defs.map((e) => {
-        // start at the last logged weight, or the config default
-        const last = sessions.length
-          ? [...sessions].reverse().flatMap((s) => s.ex || []).find((x) => x.k === e.k)
-          : null
-        return { k: e.k, w: last?.w != null ? last.w : e.w }
-      }),
+      defs.map((e) => ({ k: e.k, w: lastDialedWeight(sessions, e.k) ?? e.w })),
       p.gym,
       defs
     )
@@ -302,8 +273,8 @@ export function TodayTab() {
   // returns) — the full sessions-history scan behind doneThisWeek/
   // owedThisWeek is real work, no reason to redo it on every rep logged
   // mid-workout when this card isn't even on screen.
-  const done = doneThisWeek()
-  const owed = owedThisWeek()
+  const done = doneThisWeek(sessions, today)
+  const owed = owedThisWeek(program, priority, weekDays, dayOfWeek, done)
 
   const weekCard = (
     <div className={styles.wkCard}>

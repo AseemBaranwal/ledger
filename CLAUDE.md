@@ -38,6 +38,18 @@ Practical pattern established in `tests/unit/`:
   first write because the test's own expectation was wrong (didn't account
   for a clamp), not the code. A red test isn't automatically a caught bug.
 
+## Workflow: issues first, isolated changes
+
+- **Every feature request or bug report becomes a GitHub issue before any
+  code changes** — `gh issue create` (repo: `AseemBaranwal/ledger`), then
+  work toward closing it. Keeps a durable, filterable record of what's been
+  asked for and fixed instead of it only living in a chat transcript.
+- **Every change is isolated — one logical fix per commit, never bundled
+  with unrelated changes**, even two small fixes that happen to touch the
+  same file. Reference the issue being closed in the commit message
+  (`Fixes #N`) so GitHub auto-closes it on push/merge to main. A revert of
+  one fix shouldn't have to take an unrelated one with it.
+
 ## Infra references
 
 - Vercel project: `aseems-projects-a684aa0d/ledger` — prod domain

@@ -82,8 +82,12 @@ export default function App() {
         const restored = await fetchSessions(userId)
         if (restored.length) useSessionStore.setState({ sessions: restored })
       } catch (e) {
-        // silent — local cache (if any) still shows; pendingSync/next
-        // reload will pick up anything missing
+        // A real fetch failure here used to look identical to a genuine
+        // brand-new account with no history — both rendered the same empty
+        // state. Surfacing it distinctly, even though local cache (if any)
+        // still shows and pendingSync/next reload will pick up anything
+        // missing.
+        useUIStore.getState().showNotification('Could not load your history — check your connection and reload', 'error')
       }
     }
     autoRestore()
@@ -131,8 +135,15 @@ export default function App() {
   // /api/chat/* request is checked against.
   const showCoach = Boolean(user?.email && user.email === import.meta.env.VITE_CHAT_OWNER_EMAIL)
 
+  // A bare empty div here used to be the first thing every cold start
+  // showed — same branding as SignInScreen (minus the button) so there's
+  // at least a visible, intentional-looking moment instead of a blank flash.
   if (authLoading) {
-    return <div className={styles.root} />
+    return (
+      <div className={styles.root} style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <img src="/icon.svg" width={48} height={48} style={{ borderRadius: '12px', opacity: 0.8 }} alt="" />
+      </div>
+    )
   }
 
   if (!user) {

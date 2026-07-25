@@ -1289,6 +1289,14 @@ svg.chart {
   display: none;
 }
 
+/* Deliberately not sharing a base class with .pickerChip above, despite
+   looking like a near-duplicate (both: raised pill, amber+ink when
+   selected). The only actually-duplicated piece is the 3-line selected-
+   state block; padding/radius/font-size genuinely differ (a bigger
+   standalone choice chip vs. a denser icon+text filter chip in a
+   scrollable row), and this one alone needs flex/gap/appearance/
+   white-space for its icon and the WebKit hit-testing fix. A shared class
+   would need as much override per variant as it'd save. */
 .equipmentChip {
   flex: none;
   display: flex;

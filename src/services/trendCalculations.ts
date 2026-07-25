@@ -81,16 +81,3 @@ export function checkPRs(session: Session, allSessions: Session[]): string[] {
   })
   return prs
 }
-
-export function calculateTotalVolume(sessions: Session[], code: string): number {
-  let total = 0
-  sessions.forEach((s) => {
-    s.ex?.forEach((e) => {
-      if (e.k === code) {
-        const reps = e.r.reduce((a, b) => a + b, 0)
-        total += calculateVolume(e, reps)
-      }
-    })
-  })
-  return Math.round(total)
-}

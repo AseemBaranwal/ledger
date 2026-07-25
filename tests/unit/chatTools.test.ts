@@ -115,6 +115,20 @@ describe('getTrainingData', () => {
     expect(result).not.toHaveProperty('activeSwaps')
   })
 
+  // The system prompt is deliberately static/cached so it can never carry
+  // today's date — without this, the model had to infer "today" from the
+  // most recent session row, fragile for this-week/last-week reasoning.
+  it('includes today as a real ISO date, not derived from the session rows', async () => {
+    mockSupabase({ exercise_substitutions: {} }, [{ d: '2020-01-01', s: 'LA', ex: [] }])
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).toHaveProperty('today')
+    const today = (result as { today: string }).today
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(today).not.toBe('2020-01-01') // must reflect the real date, not a row's date
+  })
+
   it('shapes rows from the sessions table, one per logged exercise', async () => {
     mockSupabase({ exercise_substitutions: {} }, [
       { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5, 5], ws: [80, 80] }] },

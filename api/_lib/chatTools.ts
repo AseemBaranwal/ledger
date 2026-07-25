@@ -6,7 +6,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, optionally filtered, plus activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
     input_schema: {
       type: 'object',
       properties: {
@@ -125,7 +125,7 @@ interface ActiveSwap {
 export async function getTrainingData(
   ownerUserId: string,
   args: { exerciseCode?: string; sinceDate?: string; limit?: number }
-): Promise<{ rows: TrainingDataRow[]; activeSwaps?: ActiveSwap[] } | { error: string }> {
+): Promise<{ rows: TrainingDataRow[]; today: string; activeSwaps?: ActiveSwap[] } | { error: string }> {
   const { data: profile } = await supabaseAdmin()
     .from('profiles')
     .select('exercise_substitutions')
@@ -171,7 +171,16 @@ export async function getTrainingData(
     }
   }
 
-  return activeSwaps.length ? { rows, activeSwaps } : { rows }
+  // The system prompt is deliberately static/cached (see
+  // chatSystemPrompt.ts's header comment) so it can never carry today's
+  // date — without it anywhere, the model had to infer "today" purely from
+  // the most recent row it happened to see, fragile for "this week vs last
+  // week" reasoning. get_training_data is always called before any
+  // data-grounded claim (per the system prompt's DATA HONESTY rule) and
+  // isn't cached, so this is where a reliable date anchor actually belongs.
+  const today = new Date().toISOString().slice(0, 10)
+
+  return activeSwaps.length ? { rows, today, activeSwaps } : { rows, today }
 }
 
 export interface ResolvedSwap {

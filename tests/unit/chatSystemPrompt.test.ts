@@ -31,4 +31,14 @@ describe('buildSystemPrompt', () => {
   it('instructs Markdown output for the chat bubble', () => {
     expect(buildSystemPrompt().toLowerCase()).toContain('markdown')
   })
+
+  // The prompt itself is deliberately static (see the byte-stability test
+  // above), so it can never carry today's date — this tells the model to
+  // get it from get_training_data's response instead of guessing from the
+  // most recent session row.
+  it('tells the model to use get_training_data\'s today field rather than inferring the date', () => {
+    const prompt = buildSystemPrompt()
+    expect(prompt).toContain('response also includes today')
+    expect(prompt).toContain("Don't guess today's date")
+  })
 })

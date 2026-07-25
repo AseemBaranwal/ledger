@@ -34,14 +34,14 @@ const PATHS: Record<Equipment, JSX.Element> = {
   ),
   Cable: (
     <>
-      <circle cx="12" cy="6" r="3" />
-      <path d="M12 9v9M8 18h8" />
+      <circle cx="12" cy="7.5" r="3" />
+      <path d="M12 10.5v9M8 19.5h8" />
     </>
   ),
   Kettlebell: (
     <>
-      <circle cx="12" cy="15" r="6" />
-      <path d="M9 10a3 3 0 0 1 6 0" />
+      <circle cx="12" cy="13" r="6" />
+      <path d="M9 8a3 3 0 0 1 6 0" />
     </>
   ),
   Box: (
@@ -59,9 +59,9 @@ const PATHS: Record<Equipment, JSX.Element> = {
   ),
   Rings: (
     <>
-      <path d="M8 3v10M16 3v10" />
-      <circle cx="8" cy="16.3" r="2.3" />
-      <circle cx="16" cy="16.3" r="2.3" />
+      <path d="M8 4.2v10M16 4.2v10" />
+      <circle cx="8" cy="17.5" r="2.3" />
+      <circle cx="16" cy="17.5" r="2.3" />
     </>
   ),
   MedicineBall: (
@@ -72,8 +72,8 @@ const PATHS: Record<Equipment, JSX.Element> = {
   ),
   StabilityBall: (
     <>
-      <circle cx="12" cy="11" r="7" />
-      <path d="M4 19h16" />
+      <circle cx="12" cy="12" r="7" />
+      <path d="M4 20h16" />
     </>
   ),
   Bodyweight: (
@@ -88,7 +88,7 @@ export function EquipmentIcon({ equipment, size = '1em' }: EquipmentIconProps) {
   return (
     <svg
       viewBox="0 0 24 24"
-      style={{ width: size, height: size, display: 'inline-block', flex: 'none' }}
+      style={{ width: size, height: size, display: 'block', flex: 'none' }}
       stroke="currentColor"
       fill="none"
       strokeWidth="2"

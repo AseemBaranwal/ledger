@@ -25,6 +25,28 @@ interface ResultRow {
 
 const GROUP_CHIPS: MuscleGroup[] = ['Legs', 'Push', 'Pull', 'Sprint']
 
+// Same order as the equipment reference sheet — commonest gym equipment
+// first, Bodyweight last as the "needs nothing" option.
+const EQUIPMENT_CHIPS: Equipment[] = [
+  'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Kettlebell', 'Box',
+  'Band', 'Plate', 'Rings', 'MedicineBall', 'StabilityBall', 'Bodyweight',
+]
+
+const EQUIPMENT_LABEL: Record<Equipment, string> = {
+  Barbell: 'Barbell',
+  Dumbbell: 'Dumbbell',
+  Machine: 'Machine',
+  Cable: 'Cable',
+  Kettlebell: 'Kettlebell',
+  Box: 'Box',
+  Band: 'Band',
+  Plate: 'Plate',
+  Rings: 'Rings',
+  MedicineBall: 'Med ball',
+  StabilityBall: 'Stability ball',
+  Bodyweight: 'Bodyweight',
+}
+
 export function ExercisePicker({ mode, currentCode, onSelect, onClose }: ExercisePickerProps) {
   const sessions = useSessionStore((s) => s.sessions)
   const program = useConfigStore((s) => s.program)
@@ -34,6 +56,7 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
 
   const [query, setQuery] = useState('')
   const [addingCustom, setAddingCustom] = useState(false)
+  const [equipmentFilter, setEquipmentFilter] = useState<Equipment | null>(null)
 
   const startWeightFor = (code: string, fallback: number): number => {
     const last = lastOf(sessions, code)
@@ -118,8 +141,15 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
     onSelect(def, 0)
   }
 
-  const showAlternates = !query.trim() && alternates.length > 0
-  const showRecent = !query.trim() && recentlyUsed.length > 0
+  const byEquipment = (rows: ResultRow[]): ResultRow[] =>
+    equipmentFilter ? rows.filter((r) => r.equipment === equipmentFilter) : rows
+
+  const filteredAlternates = byEquipment(alternates)
+  const filteredRecentlyUsed = byEquipment(recentlyUsed)
+  const filteredSearchResults = byEquipment(searchResults)
+
+  const showAlternates = !query.trim() && filteredAlternates.length > 0
+  const showRecent = !query.trim() && filteredRecentlyUsed.length > 0
   const showSearch = query.trim().length > 0
 
   return (
@@ -148,11 +178,24 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
           />
         </div>
 
+        <div className={styles.equipmentChips}>
+          {EQUIPMENT_CHIPS.map((eq) => (
+            <button
+              key={eq}
+              className={`${styles.equipmentChip} ${equipmentFilter === eq ? styles.on : ''}`}
+              onClick={() => setEquipmentFilter(equipmentFilter === eq ? null : eq)}
+            >
+              <EquipmentIcon equipment={eq} size="14px" />
+              {EQUIPMENT_LABEL[eq]}
+            </button>
+          ))}
+        </div>
+
         <div className={styles.pickerScroll}>
           {showAlternates && (
             <>
               <div className={styles.pickerSectionLabel}>Compatible alternates</div>
-              {alternates.map((row) => (
+              {filteredAlternates.map((row) => (
                 <PickerRow key={row.key} row={row} onPick={handlePick} />
               ))}
             </>
@@ -161,7 +204,7 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
           {showRecent && (
             <>
               <div className={styles.pickerSectionLabel}>Recently logged</div>
-              {recentlyUsed.map((row) => (
+              {filteredRecentlyUsed.map((row) => (
                 <PickerRow key={row.key} row={row} onPick={handlePick} />
               ))}
             </>
@@ -169,8 +212,8 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
 
           {showSearch && (
             <>
-              <div className={styles.pickerSectionLabel}>{searchResults.length ? 'Results' : 'No matches'}</div>
-              {searchResults.map((row) => (
+              <div className={styles.pickerSectionLabel}>{filteredSearchResults.length ? 'Results' : 'No matches'}</div>
+              {filteredSearchResults.map((row) => (
                 <PickerRow key={row.key} row={row} onPick={handlePick} />
               ))}
 
@@ -206,8 +249,8 @@ function PickerRow({ row, onPick }: { row: ResultRow; onPick: (def: ProgramExerc
   return (
     <button className={styles.pickerRow} onClick={() => onPick(row.def)}>
       <span className={styles.pickerRowMain}>
-        <span style={{ color: 'var(--dim)' }}>
-          <EquipmentIcon equipment={row.equipment} size="18px" />
+        <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--dim)' }}>
+          <EquipmentIcon equipment={row.equipment} size="21px" />
         </span>
         {row.label}
       </span>

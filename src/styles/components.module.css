@@ -19,6 +19,9 @@
 }
 
 .exName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   font-size: 15px;
   line-height: 1.25;
@@ -1154,7 +1157,7 @@ svg.chart {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 13px;
+  padding: 11px 10px;
   background: var(--raised);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1170,7 +1173,7 @@ svg.chart {
 .pickerRowMain {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
@@ -1217,6 +1220,36 @@ svg.chart {
 }
 
 .pickerChip:active {
+  background: var(--amber);
+  color: #14181D;
+  border-color: var(--amber);
+}
+
+.equipmentChips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 16px 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.equipmentChip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 16px;
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.equipmentChip.on {
   background: var(--amber);
   color: #14181D;
   border-color: var(--amber);

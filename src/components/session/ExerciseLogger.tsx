@@ -4,6 +4,8 @@ import { lastOf } from '@/services/trendCalculations'
 import { ago } from '@/services/dateUtils'
 import { unlockAudioContext } from '@/services/audio'
 import { StarIcon, CloseIcon, SwapIcon, TrashIcon } from '@/components/icons/Icons'
+import { EquipmentIcon } from '@/components/icons/EquipmentIcon'
+import { equipmentForCode } from '@/services/exerciseCatalog'
 import styles from '../../styles/components.module.css'
 
 interface ExerciseLoggerProps {
@@ -51,6 +53,9 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
     <div className={`${styles.card} ${full ? styles.done : ''}`}>
       <div className={styles.exHead}>
         <div className={styles.exName}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--dim)', flex: 'none' }}>
+            <EquipmentIcon equipment={equipmentForCode(def.k)} size="17px" />
+          </span>
           {def.n.includes('★') ? (
             <>
               {def.n.replace('★', '')}

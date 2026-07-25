@@ -30,6 +30,12 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // CoachTab is lazy-loaded specifically so non-owner users never pay
+        // for react-markdown — but without this, workbox precaches it into
+        // every install regardless, silently defeating that split for
+        // everyone but the owner. Excluded from precache; still fetched
+        // normally (on-demand) for the owner when they open the Coach tab.
+        globIgnores: ['**/CoachTab-*.js'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

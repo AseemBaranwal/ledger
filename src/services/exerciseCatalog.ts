@@ -10,7 +10,7 @@ export * from '../../api/_lib/exerciseCatalog.js'
 import { STRAVA_EXERCISE_TYPES } from '../../api/_lib/stravaExerciseCatalog.js'
 import { prettifyExerciseType, groupForType, type MuscleGroup } from '../../api/_lib/exerciseCatalog.js'
 import type { Program, ProgramExercise } from '@/types'
-import type { ExerciseSubstitution } from './chat'
+import type { ExerciseSubstitution } from './exerciseSubstitutionsApi'
 
 const GROUP_TO_COLOUR_KEY: Record<MuscleGroup, string> = {
   Legs: 'legs',

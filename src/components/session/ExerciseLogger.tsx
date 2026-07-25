@@ -129,7 +129,10 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
       </div>
 
       <div className={styles.sets}>
-        {Array.from({ length: Math.max(def.s, ex.r.length) }).map((_, j) => {
+        {/* Always render one empty slot past the last logged set, even once
+            def.s is reached — otherwise there's no way to log a set beyond
+            the program's target (e.g. an extra AMRAP set). */}
+        {Array.from({ length: Math.max(def.s, ex.r.length + 1) }).map((_, j) => {
           const v = ex.r[j]
           if (v == null) {
             return (

@@ -73,7 +73,7 @@ export default function App() {
     if (!user?.id) return
     const userId = user.id
 
-    loadSubstitutions()
+    loadSubstitutions(userId)
 
     const autoRestore = async () => {
       if (useSessionStore.getState().sessions.length > 0) return

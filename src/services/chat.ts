@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import type { ExerciseSubstitution } from './exerciseSubstitutionsApi'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -185,27 +186,11 @@ export async function updateSuggestionStatus(
   }
 }
 
-export interface ExerciseSubstitution {
-  code: string
-  name: string
-  group: string
-  unit: string
-}
-
-// Fetches the current standing substitutions (original code -> replacement)
-// so the client can apply them at session-start time. Fails soft (empty
-// map) — a hiccup here shouldn't block the app from loading.
-export async function fetchExerciseSubstitutions(): Promise<Record<string, ExerciseSubstitution>> {
-  try {
-    const res = await authedGet('/api/chat/apply-exercise-swap')
-    if (!res.ok) return {}
-    const data = await res.json().catch(() => ({}))
-    return data.substitutions || {}
-  } catch {
-    return {}
-  }
-}
-
+// Coach-accept path only — writes through the owner-gated
+// api/chat/apply-exercise-swap.ts endpoint (tied to the suggestion-accept
+// flow). A manual swap from the in-session picker is a general feature for
+// every user, so it goes through exerciseSubstitutionsApi.ts's direct RLS
+// write instead, not this one.
 export async function applyExerciseSwap(originalCode: string, replacement: ExerciseSubstitution): Promise<void> {
   const res = await authedFetch('/api/chat/apply-exercise-swap', {
     originalCode,

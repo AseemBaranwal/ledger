@@ -10,7 +10,6 @@ vi.mock('@/services/chat', () => ({
   applyExerciseSwap: vi.fn(),
   updateSuggestionStatus: vi.fn(),
   fetchChatHistory: vi.fn(),
-  fetchExerciseSubstitutions: vi.fn(),
   deleteChatMessages: vi.fn(),
 }))
 

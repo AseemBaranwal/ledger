@@ -3,6 +3,7 @@ import { useSessionStore, useConfigStore, useUIStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { iso, mondayOf } from '@/services/dateUtils'
 import { applySubstitutions } from '@/services/exerciseCatalog'
+import { saveSubstitution } from '@/services/exerciseSubstitutionsApi'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -385,6 +386,19 @@ export function TodayTab() {
               onSelect={(def, startWeight) => {
                 if (picker.mode === 'swap' && picker.index != null) {
                   swapExercise(picker.index, def, startWeight)
+                  // Keyed by the BASE program's code at this slot (not
+                  // whatever's currently in draftDefs, which may already
+                  // reflect an earlier swap) — applySubstitutions() matches
+                  // against p.ex, so this is the key handleStart() will
+                  // actually look up next time this session comes around.
+                  const originalCode = p.ex[picker.index]?.k
+                  if (originalCode) {
+                    const replacement = { code: def.k, name: def.n, group: def.group, unit: def.u }
+                    useConfigStore.getState().setSubstitution(originalCode, replacement)
+                    saveSubstitution(originalCode, replacement).catch(() => {
+                      useUIStore.getState().showNotification('Swap saved for today, but may not carry over to next week — will retry', 'error')
+                    })
+                  }
                 } else {
                   addExercise(def, startWeight)
                 }

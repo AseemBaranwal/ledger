@@ -8,6 +8,10 @@ import { stravaExerciseTypeForCode } from './stravaMapping.js'
 
 export type MuscleGroup = 'Legs' | 'Push' | 'Pull' | 'Sprint' | 'Other'
 
+export type Equipment =
+  | 'Barbell' | 'Dumbbell' | 'Machine' | 'Cable' | 'Kettlebell' | 'Box'
+  | 'Band' | 'Plate' | 'Rings' | 'MedicineBall' | 'StabilityBall' | 'Bodyweight'
+
 export interface CatalogEntry {
   type: string
   label: string
@@ -83,6 +87,54 @@ export function movementPatternForType(type: string): string | null {
 export function groupForType(type: string): MuscleGroup {
   const pattern = movementPatternForType(type)
   return (pattern && MOVEMENT_PATTERN_GROUP[pattern]) || 'Other'
+}
+
+// Equipment, derived from the exercise_type string itself — no new data to
+// maintain, since Strava's own naming already bakes equipment into most
+// codes (e.g. BARBELL_BACK_SQUAT, CABLE_CRUNCH). Token-matched (split on
+// `_`, exact membership) rather than substring-matched — a naive substring
+// check on "RING" or "STABILITY" false-positives on HAMSTRING and the
+// unrelated HIP_STABILITY_GENERIC/SHOULDER_STABILITY_GENERIC movement-
+// pattern categories.
+//
+// The 12-category list and priority order were chosen by running this
+// classifier against all ~508 codes and checking real coverage, not
+// guessed — categories below 4 matches were folded into a neighbor rather
+// than kept as their own barely-used bucket. Order matters: checked
+// top-to-bottom, first match wins (e.g. SMITH_MACHINE_BENCH_PRESS matches
+// Machine before it could match anything else).
+const EQUIPMENT_TOKENS: [Equipment, string[]][] = [
+  ['Kettlebell', ['KETTLEBELL']],
+  ['Cable', ['CABLE']],
+  ['Machine', ['MACHINE', 'SMITH', 'SLED']],
+  ['Barbell', ['BARBELL', 'EZ', 'TRAP']],
+  ['Dumbbell', ['DUMBBELL']],
+  ['Band', ['BANDED', 'BAND']],
+  ['MedicineBall', ['MEDICINE']],
+  ['Rings', ['SUSPENSION', 'RING', 'TRX']],
+  ['StabilityBall', ['SWISSBALL', 'BOSU']],
+  ['Plate', ['PLATE']],
+  ['Box', ['BOX']],
+]
+
+// Anything matching none of the above defaults to Bodyweight — correctly
+// so, since that's the real majority case (push-ups, planks, lunges,
+// sprints, stretches — ~60% of the catalog needs no equipment at all).
+export function equipmentForType(type: string): Equipment {
+  const tokens = new Set(type.split('_'))
+  for (const [equipment, keywords] of EQUIPMENT_TOKENS) {
+    if (keywords.some((kw) => tokens.has(kw))) return equipment
+  }
+  return 'Bodyweight'
+}
+
+// Equipment for one of Ledger's own program codes (e.g. "SQ") or a custom
+// exercise slug — resolves to a Strava type first (same as
+// alternatesForCode), so the picker can show an icon regardless of which
+// of the picker's several row sources a given exercise came from.
+export function equipmentForCode(code: string): Equipment {
+  const type = stravaExerciseTypeForCode(code)
+  return equipmentForType(type)
 }
 
 // Same-movement-pattern siblings for a given Strava exercise_type — the

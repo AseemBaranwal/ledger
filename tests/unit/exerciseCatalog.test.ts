@@ -10,8 +10,12 @@ import {
   resolveExerciseDisplay,
   resolveExerciseQuery,
   applySubstitutions,
+  equipmentForType,
+  equipmentForCode,
 } from '@/services/exerciseCatalog'
+import { STRAVA_EXERCISE_TYPES } from '../../api/_lib/stravaExerciseCatalog'
 import type { Program, ProgramExercise } from '@/types'
+import type { Equipment } from '@/services/exerciseCatalog'
 
 describe('prettifyExerciseType', () => {
   it('turns a Strava exercise_type constant into a readable label', () => {
@@ -40,6 +44,61 @@ describe('groupForType', () => {
 
   it('falls back to Other for an unknown type', () => {
     expect(groupForType('NOT_A_REAL_TYPE')).toBe('Other')
+  })
+})
+
+describe('equipmentForType', () => {
+  it('classifies one representative code per equipment category', () => {
+    expect(equipmentForType('BARBELL_BACK_SQUAT')).toBe('Barbell')
+    expect(equipmentForType('DUMBBELL_BENCH_PRESS')).toBe('Dumbbell')
+    expect(equipmentForType('MACHINE_LEG_PRESS')).toBe('Machine')
+    expect(equipmentForType('CABLE_LATERAL_RAISE')).toBe('Cable')
+    expect(equipmentForType('KETTLEBELL_SWING')).toBe('Kettlebell')
+    expect(equipmentForType('BOX_JUMP')).toBe('Box')
+    expect(equipmentForType('BAND_CHEST_FLY')).toBe('Band')
+    expect(equipmentForType('PLATE_FRONT_RAISE')).toBe('Plate')
+    expect(equipmentForType('RING_DIP')).toBe('Rings')
+    expect(equipmentForType('MEDICINE_BALL_SLAM')).toBe('MedicineBall')
+    expect(equipmentForType('SWISSBALL_BACK_EXTENSION')).toBe('StabilityBall')
+  })
+
+  it('falls back to Bodyweight for a code naming no equipment at all', () => {
+    expect(equipmentForType('AIR_SQUAT')).toBe('Bodyweight')
+    expect(equipmentForType('PUSH_UP')).toBe('Bodyweight')
+    expect(equipmentForType('NOT_A_REAL_TYPE')).toBe('Bodyweight')
+  })
+
+  // Caught during design: a naive substring check (rather than exact
+  // token matching) false-positives "RING" inside "HAMSTRING" and bare
+  // "STABILITY" against the unrelated HIP_STABILITY_GENERIC/
+  // SHOULDER_STABILITY_GENERIC movement-pattern categories — neither of
+  // those involves suspension rings or a stability ball.
+  it('does not false-positive on a keyword embedded inside an unrelated word', () => {
+    expect(equipmentForType('INVERTED_HAMSTRING_STRETCH')).toBe('Bodyweight')
+    expect(equipmentForType('HIP_STABILITY_GENERIC')).toBe('Bodyweight')
+    expect(equipmentForType('SHOULDER_STABILITY_GENERIC')).toBe('Bodyweight')
+  })
+
+  it('gives every real Strava exercise_type a valid equipment category, never crashing', () => {
+    const valid = new Set<Equipment>([
+      'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Kettlebell', 'Box',
+      'Band', 'Plate', 'Rings', 'MedicineBall', 'StabilityBall', 'Bodyweight',
+    ])
+    for (const type of STRAVA_EXERCISE_TYPES) {
+      expect(valid.has(equipmentForType(type))).toBe(true)
+    }
+  })
+})
+
+describe('equipmentForCode', () => {
+  it('resolves a Ledger program code to its Strava type first, then classifies equipment', () => {
+    expect(equipmentForCode('SQ')).toBe('Barbell') // BARBELL_BACK_SQUAT
+    expect(equipmentForCode('CLR')).toBe('Cable') // CABLE_LATERAL_RAISE
+    expect(equipmentForCode('BSS')).toBe('Dumbbell') // DUMBBELL_BULGARIAN_SPLIT_SQUATS
+  })
+
+  it('falls back to Bodyweight for a code with no Strava mapping, rather than throwing', () => {
+    expect(equipmentForCode('NOT_A_REAL_CODE')).toBe('Bodyweight')
   })
 })
 

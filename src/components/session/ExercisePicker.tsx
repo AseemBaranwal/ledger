@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useSessionStore, useConfigStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { lastOf } from '@/services/trendCalculations'
-import { alternatesForCode, searchCatalog, toProgramExercise, resolveExerciseDisplay, type MuscleGroup } from '@/services/exerciseCatalog'
+import { alternatesForCode, searchCatalog, toProgramExercise, resolveExerciseDisplay, equipmentForCode, type MuscleGroup, type Equipment } from '@/services/exerciseCatalog'
 import type { ProgramExercise } from '@/types'
 import { CloseIcon, SearchIcon } from '@/components/icons/Icons'
+import { EquipmentIcon } from '@/components/icons/EquipmentIcon'
 import styles from '../../styles/components.module.css'
 
 interface ExercisePickerProps {
@@ -19,6 +20,7 @@ interface ResultRow {
   label: string
   sub: string
   def: ProgramExercise
+  equipment: Equipment
 }
 
 const GROUP_CHIPS: MuscleGroup[] = ['Legs', 'Push', 'Pull', 'Sprint']
@@ -44,6 +46,7 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
     label: def.n,
     sub: subOverride ?? def.group,
     def,
+    equipment: equipmentForCode(def.k),
   })
 
   const alternates = useMemo(() => {
@@ -202,7 +205,12 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
 function PickerRow({ row, onPick }: { row: ResultRow; onPick: (def: ProgramExercise) => void }) {
   return (
     <button className={styles.pickerRow} onClick={() => onPick(row.def)}>
-      <span className={styles.pickerRowMain}>{row.label}</span>
+      <span className={styles.pickerRowMain}>
+        <span style={{ color: 'var(--dim)' }}>
+          <EquipmentIcon equipment={row.equipment} size="18px" />
+        </span>
+        {row.label}
+      </span>
       <span className={styles.pickerRowSub}>{row.sub}</span>
     </button>
   )

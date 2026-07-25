@@ -24,7 +24,12 @@ function repOpts(target: number): number[] {
 }
 
 export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: ExerciseLoggerProps) {
-  const draftEx = useSessionStore((s) => s.draftEx)
+  // Narrowed to this card's own entry, not the whole draftEx array — every
+  // set-logging action replaces the array via [...state.draftEx] with only
+  // one index actually patched, so subscribing to the full array here made
+  // every other mounted card re-render on every single tap, not just the
+  // one that changed.
+  const ex = useSessionStore((s) => s.draftEx?.[index])
   const sessions = useSessionStore((s) => s.sessions)
   const bumpWeight = useSessionStore((s) => s.bumpWeight)
   const setWeight = useSessionStore((s) => s.setWeight)
@@ -36,8 +41,7 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
   const openExerciseIndex = useUIStore((s) => s.openExerciseIndex)
   const setOpenExerciseIndex = useUIStore((s) => s.setOpenExerciseIndex)
 
-  if (!draftEx || !draftEx[index]) return null
-  const ex = draftEx[index]
+  if (!ex) return null
   const last = lastOf(sessions, def.k)
   const full = ex.r.length >= def.s
   const isOpen = openExerciseIndex === index

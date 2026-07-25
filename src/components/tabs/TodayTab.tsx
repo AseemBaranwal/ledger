@@ -116,157 +116,10 @@ export function TodayTab() {
     }
   }, [draft, draftEx, draftDefs, program, hydrateDraftDefs])
 
-  // ─── WEEK CARD ───
-  const done = doneThisWeek()
-  const owed = owedThisWeek()
-
-  const weekCard = (
-    <div className={styles.wkCard}>
-      <div className={styles.wkHead}>
-        <h2>This week</h2>
-        <div className={styles.rule} />
-      </div>
-      {weekDays.map((dow) => {
-        const codes = codesForDay(dow)
-        const isToday = dow === dayOfWeek
-        const isOpen = openWeekDay === dow
-        let detail = ''
-
-        if (!codes.length) {
-          const r = restDays[dow]
-          if (isToday && r) detail = r.s
-        }
-
-        return (
-          <div key={dow}>
-            <div
-              className={`${styles.wkRow} ${isToday ? styles.now : ''} ${isOpen ? styles.open : ''}`}
-              onClick={() => toggleWeekDay(dow)}
-            >
-              <span className={styles.wkDay}>
-                {DOW_LABEL[dow]}{isToday ? ' · today' : ''}
-              </span>
-              <span className={styles.wkBody}>
-                {codes.length ? (
-                  codes.map((c) => {
-                    const p = program[c]
-                    const col = colours[p.colour] || 'var(--dim)'
-                    const ok = done.has(c)
-                    return (
-                      <span key={c} className={`${styles.wkItem} ${ok ? styles.ok : ''}`}>
-                        <span className={styles.wkDot} style={{ background: col }} />
-                        {p.name}
-                        {ok ? (
-                          <span className={styles.wkCheck}>
-                            {' '}
-                            <CheckIcon />
-                          </span>
-                        ) : null}
-                      </span>
-                    )
-                  })
-                ) : (
-                  <span className={`${styles.wkItem} ${styles.rest}`}>
-                    <span className={styles.wkDot} style={{ background: schedule.restColour[dow] || 'var(--line-2)' }} />
-                    {restDays[dow]?.t || 'Rest'}
-                  </span>
-                )}
-                {detail && <span className={styles.wkDetail}>{detail}</span>}
-              </span>
-              <span className={styles.wkChev}>
-                <ChevronIcon open={isOpen} />
-              </span>
-            </div>
-            {isOpen && (
-              <div className={styles.wkExpand}>
-                {codes.length ? (
-                  codes.map((c) => {
-                    const p = program[c]
-                    const col = colours[p.colour] || 'var(--dim)'
-                    return (
-                      <div key={c} className={styles.wdSess} style={{ boxShadow: `inset 2px 0 0 ${col}` }}>
-                        <div className={styles.wdH}>
-                          {p.full}
-                          <span className={`${styles.wdGym} mono`}>{p.gym}</span>
-                        </div>
-                        {withSubstitutions(p.ex).map((e) => {
-                          const last = [...sessions].reverse().flatMap((s) => (s.ex || []).map((x) => ({ ...x, d: s.d }))).find((x) => x.k === e.k && x.r.length)
-                          const lastStr = last
-                            ? `Last ${last.ws ? last.ws.join(',') : last.w}${e.u === '+lb' ? '+' : ''}×${last.r.join(',')}`
-                            : 'First time — start at target'
-                          return (
-                            <div key={e.k} className={styles.wdEx}>
-                              <div className={styles.wdExh}>
-                                <span className={styles.wdName}>
-                                  {e.n.includes('★') ? (
-                                    <>
-                                      {e.n.replace('★', '')}
-                                      <span className={styles.star}>
-                                        {' '}
-                                        <StarIcon />
-                                      </span>
-                                    </>
-                                  ) : e.n}
-                                </span>
-                                <span className={`${styles.wdTgt} mono`}>{tgtStr(e)}</span>
-                              </div>
-                              <div className={`${styles.wdLast} mono`}>{lastStr}</div>
-                              <div className={styles.wdCue}>{e.cue}</div>
-                            </div>
-                          )
-                        })}
-                        <button className={styles.wdStart} onClick={() => handleStart(c)}>
-                          Start {p.name} →
-                        </button>
-                      </div>
-                    )
-                  })
-                ) : restDays[dow]?.items ? (
-                  <div className={styles.wdSess}>
-                    {restDays[dow].items.map((it, i) => (
-                      <div key={i} className={styles.wdEx}>
-                        <div className={styles.wdExh}>
-                          <span className={styles.wdName}>{it.n}</span>
-                          <span className={`${styles.wdTgt} mono`}>{it.d}</span>
-                        </div>
-                        <div className={styles.wdCue}>{(it as any).cue}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className={styles.wdSess}>
-                    <div className={styles.wdEx}>
-                      <div className={styles.wdCue}>Nothing scheduled — full rest.</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-      {owed.length ? (
-        <div className={styles.wkOwed}>
-          <span className={styles.wkOwedLbl}>Still owed this week</span>
-          {owed.map((c) => {
-            const p = program[c]
-            return (
-              <button key={c} className={styles.wkOwedBtn} onClick={() => handleStart(c)}>
-                <span className={styles.wkDot} style={{ background: colours[p.colour] }} />
-                {p.full} →
-              </button>
-            )
-          })}
-        </div>
-      ) : (
-        <div className={styles.wkOwed}>
-          <span className={`${styles.wkOwedLbl} ${styles.done}`}>All priority lifts hit ✓</span>
-        </div>
-      )}
-    </div>
-  )
-
   // ─── ACTIVE SESSION ───
+  // (weekCard is computed further below, after this block, since it's
+  // never rendered while a session is active — no reason to re-scan the
+  // full session history on every single rep logged mid-workout.)
   if (draft) {
     const isRest = draft.type === 'REST'
 
@@ -443,6 +296,160 @@ export function TodayTab() {
       )
     }
   }
+
+  // ─── WEEK CARD ───
+  // Only reached once there's no active session (every branch above
+  // returns) — the full sessions-history scan behind doneThisWeek/
+  // owedThisWeek is real work, no reason to redo it on every rep logged
+  // mid-workout when this card isn't even on screen.
+  const done = doneThisWeek()
+  const owed = owedThisWeek()
+
+  const weekCard = (
+    <div className={styles.wkCard}>
+      <div className={styles.wkHead}>
+        <h2>This week</h2>
+        <div className={styles.rule} />
+      </div>
+      {weekDays.map((dow) => {
+        const codes = codesForDay(dow)
+        const isToday = dow === dayOfWeek
+        const isOpen = openWeekDay === dow
+        let detail = ''
+
+        if (!codes.length) {
+          const r = restDays[dow]
+          if (isToday && r) detail = r.s
+        }
+
+        return (
+          <div key={dow}>
+            <div
+              className={`${styles.wkRow} ${isToday ? styles.now : ''} ${isOpen ? styles.open : ''}`}
+              onClick={() => toggleWeekDay(dow)}
+            >
+              <span className={styles.wkDay}>
+                {DOW_LABEL[dow]}{isToday ? ' · today' : ''}
+              </span>
+              <span className={styles.wkBody}>
+                {codes.length ? (
+                  codes.map((c) => {
+                    const p = program[c]
+                    const col = colours[p.colour] || 'var(--dim)'
+                    const ok = done.has(c)
+                    return (
+                      <span key={c} className={`${styles.wkItem} ${ok ? styles.ok : ''}`}>
+                        <span className={styles.wkDot} style={{ background: col }} />
+                        {p.name}
+                        {ok ? (
+                          <span className={styles.wkCheck}>
+                            {' '}
+                            <CheckIcon />
+                          </span>
+                        ) : null}
+                      </span>
+                    )
+                  })
+                ) : (
+                  <span className={`${styles.wkItem} ${styles.rest}`}>
+                    <span className={styles.wkDot} style={{ background: schedule.restColour[dow] || 'var(--line-2)' }} />
+                    {restDays[dow]?.t || 'Rest'}
+                  </span>
+                )}
+                {detail && <span className={styles.wkDetail}>{detail}</span>}
+              </span>
+              <span className={styles.wkChev}>
+                <ChevronIcon open={isOpen} />
+              </span>
+            </div>
+            {isOpen && (
+              <div className={styles.wkExpand}>
+                {codes.length ? (
+                  codes.map((c) => {
+                    const p = program[c]
+                    const col = colours[p.colour] || 'var(--dim)'
+                    return (
+                      <div key={c} className={styles.wdSess} style={{ boxShadow: `inset 2px 0 0 ${col}` }}>
+                        <div className={styles.wdH}>
+                          {p.full}
+                          <span className={`${styles.wdGym} mono`}>{p.gym}</span>
+                        </div>
+                        {withSubstitutions(p.ex).map((e) => {
+                          const last = [...sessions].reverse().flatMap((s) => (s.ex || []).map((x) => ({ ...x, d: s.d }))).find((x) => x.k === e.k && x.r.length)
+                          const lastStr = last
+                            ? `Last ${last.ws ? last.ws.join(',') : last.w}${e.u === '+lb' ? '+' : ''}×${last.r.join(',')}`
+                            : 'First time — start at target'
+                          return (
+                            <div key={e.k} className={styles.wdEx}>
+                              <div className={styles.wdExh}>
+                                <span className={styles.wdName}>
+                                  {e.n.includes('★') ? (
+                                    <>
+                                      {e.n.replace('★', '')}
+                                      <span className={styles.star}>
+                                        {' '}
+                                        <StarIcon />
+                                      </span>
+                                    </>
+                                  ) : e.n}
+                                </span>
+                                <span className={`${styles.wdTgt} mono`}>{tgtStr(e)}</span>
+                              </div>
+                              <div className={`${styles.wdLast} mono`}>{lastStr}</div>
+                              <div className={styles.wdCue}>{e.cue}</div>
+                            </div>
+                          )
+                        })}
+                        <button className={styles.wdStart} onClick={() => handleStart(c)}>
+                          Start {p.name} →
+                        </button>
+                      </div>
+                    )
+                  })
+                ) : restDays[dow]?.items ? (
+                  <div className={styles.wdSess}>
+                    {restDays[dow].items.map((it, i) => (
+                      <div key={i} className={styles.wdEx}>
+                        <div className={styles.wdExh}>
+                          <span className={styles.wdName}>{it.n}</span>
+                          <span className={`${styles.wdTgt} mono`}>{it.d}</span>
+                        </div>
+                        <div className={styles.wdCue}>{(it as any).cue}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.wdSess}>
+                    <div className={styles.wdEx}>
+                      <div className={styles.wdCue}>Nothing scheduled — full rest.</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {owed.length ? (
+        <div className={styles.wkOwed}>
+          <span className={styles.wkOwedLbl}>Still owed this week</span>
+          {owed.map((c) => {
+            const p = program[c]
+            return (
+              <button key={c} className={styles.wkOwedBtn} onClick={() => handleStart(c)}>
+                <span className={styles.wkDot} style={{ background: colours[p.colour] }} />
+                {p.full} →
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div className={styles.wkOwed}>
+          <span className={`${styles.wkOwedLbl} ${styles.done}`}>All priority lifts hit ✓</span>
+        </div>
+      )}
+    </div>
+  )
 
   // ─── OVERVIEW ───
   const codes = codesForDay(dayOfWeek)

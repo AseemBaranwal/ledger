@@ -40,7 +40,26 @@
       "Bash(git commit -m 'Fix: Restore old data, expandable history, and charts *)",
       "Bash(git commit -m 'Fix: History expandable, charts rendering, icon size, and weekly view *)",
       "Bash(git commit -m 'Restore week calendar view to Today tab *)",
-      "Bash(git commit -m 'Rebuild Today tab with complete UX workflow *)"
+      "Bash(git commit -m 'Rebuild Today tab with complete UX workflow *)",
+      "Bash(python3 -c ' *)",
+      "Bash(git fetch *)",
+      "Bash(gh pr *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(npm test *)",
+      "WebSearch",
+      "WebFetch(domain:developers.strava.com)",
+      "WebFetch(domain:communityhub.strava.com)",
+      "Bash(awk -F_ '{print $1}')",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget",
+      "Bash(git branch *)",
+      "Bash(vercel --version)",
+      "Bash(npx vercel *)",
+      "Bash(git merge *)",
+      "Bash(git commit *)",
+      "Bash(sort -k5 -n -r)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

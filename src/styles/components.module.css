@@ -1231,6 +1231,17 @@ svg.chart {
   overflow-x: auto;
   padding: 0 16px 8px;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Edge fade instead of a scrollbar as the "more chips this way" hint —
+     transparent right at the edges, fully opaque past the existing 16px
+     padding so it lines up with the search box and section labels above. */
+  -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
+}
+
+.equipmentChips::-webkit-scrollbar {
+  display: none;
 }
 
 .equipmentChip {

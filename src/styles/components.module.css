@@ -1256,8 +1256,12 @@ svg.chart {
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.2;
+  box-sizing: border-box;
   cursor: pointer;
   white-space: nowrap;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .equipmentChip.on {

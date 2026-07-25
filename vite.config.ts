@@ -49,6 +49,19 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: 'terser'
+    minify: 'terser',
+    rollupOptions: {
+      output: {
+        // react/react-dom/supabase-js make up the bulk of the main chunk
+        // but change far less often than app code — without this they
+        // shared one content hash with everything else, so every deploy
+        // forced returning PWA users to re-fetch the whole chunk via the
+        // service worker's precache diff, when only the app-code slice
+        // had actually changed.
+        manualChunks: {
+          vendor: ['react', 'react-dom', '@supabase/supabase-js'],
+        },
+      },
+    },
   }
 })

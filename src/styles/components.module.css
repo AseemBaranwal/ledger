@@ -1253,7 +1253,7 @@ svg.chart {
   border-radius: 16px;
   border: 1px solid var(--line-2);
   background: var(--raised);
-  color: var(--dim);
+  color: var(--text);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;

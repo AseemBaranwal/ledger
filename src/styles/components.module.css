@@ -42,6 +42,7 @@
 }
 
 .exIconBtn {
+  position: relative;
   flex: none;
   width: 26px;
   height: 26px;
@@ -53,6 +54,19 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+/* Expands the tappable area to the 44px floor without growing the visible
+   circle or disturbing the tight header row it sits in — an invisible,
+   centered hit-area rather than a bigger button. */
+.exIconBtn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 
 .exIconBtn:active {
@@ -1100,6 +1114,7 @@ svg.chart {
 }
 
 .pickerClose {
+  position: relative;
   flex: none;
   width: 30px;
   height: 30px;
@@ -1111,6 +1126,16 @@ svg.chart {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+.pickerClose::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 
 .pickerSearchWrap {

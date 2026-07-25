@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useSessionStore, useConfigStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { lastOf } from '@/services/trendCalculations'
@@ -57,6 +57,17 @@ export function ExercisePicker({ mode, currentCode, onSelect, onClose }: Exercis
   const [query, setQuery] = useState('')
   const [addingCustom, setAddingCustom] = useState(false)
   const [equipmentFilter, setEquipmentFilter] = useState<Equipment | null>(null)
+
+  // The search input autofocuses on open, but there was previously no way
+  // to close this modal from the keyboard at all besides tabbing to the
+  // small close button.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
 
   const startWeightFor = (code: string, fallback: number): number => {
     const last = lastOf(sessions, code)

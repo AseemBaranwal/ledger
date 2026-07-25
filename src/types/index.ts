@@ -24,6 +24,9 @@ export interface Session {
 export interface RestItem {
   n: string; // activity name
   d: string; // duration
+  cue?: string; // coaching note, shown under the item — real production
+                // routine_config data already carries this per item, it
+                // was just missing from this type (masked by an `as any`)
   done?: boolean;
 }
 

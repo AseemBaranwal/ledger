@@ -386,7 +386,7 @@ export function TodayTab() {
                           <span className={styles.wdName}>{it.n}</span>
                           <span className={`${styles.wdTgt} mono`}>{it.d}</span>
                         </div>
-                        <div className={styles.wdCue}>{(it as any).cue}</div>
+                        <div className={styles.wdCue}>{it.cue}</div>
                       </div>
                     ))}
                   </div>
@@ -449,7 +449,7 @@ export function TodayTab() {
                   <span className={styles.restName}>{it.n}</span>
                   <span className={`${styles.restDur} mono`}>{it.d}</span>
                 </div>
-                <div className={styles.restCue}>{(it as any).cue}</div>
+                <div className={styles.restCue}>{it.cue}</div>
               </div>
             ))}
             <button

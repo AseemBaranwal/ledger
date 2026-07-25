@@ -90,14 +90,30 @@ export async function callAnthropic({
   systemPrompt,
   messages,
   tools,
-  // Was 3072 — too tight for a "high effort" adaptive-thinking call asked
-  // to review a full week of data and reason deeply about it. The model
-  // can hit max_tokens mid-reasoning (thinking tokens count against this
-  // budget even though display:'omitted' hides them from the response
-  // body) before ever emitting a text block, producing an empty reply
-  // with no thrown error — see message.ts's stop_reason/empty-reply check
-  // for how that's now surfaced instead of silently accepted.
-  maxTokens = 8192,
+  // Was 3072 (too tight, see #28), then 8192 — raised again per the
+  // owner's explicit request for more headroom on deep "think hard and
+  // deep" replies, with an accepted cost tradeoff. Adaptive-thinking
+  // tokens count against this budget even though display:'omitted' hides
+  // them from the response body, so a low ceiling can still truncate a
+  // reply mid-reasoning before any text block is emitted (see #28 and
+  // message.ts's stop_reason/empty-reply check for how that's surfaced).
+  //
+  // Cost math (claude-sonnet-5: $3/$15 per MTok input/output, standard
+  // rate — a $2/$10 intro rate applies through 2026-08-31): a typical
+  // deep session is one get_training_data tool call plus one substantial
+  // final answer, i.e. 2 of the up to MAX_TOOL_ITERATIONS=4 calls this
+  // file makes per turn (api/chat/message.ts). System prompt + tools are
+  // cached (cache_control ttl:'1h' below), so only the growing message
+  // history bills at full input price — roughly 3K input tokens across
+  // both calls. Output is the real cost driver: a genuinely deep reply
+  // (thinking + text) runs ~6-8K tokens, well under a 16384 ceiling, for
+  // an estimated ~$0.10/session at standard pricing (less under the
+  // intro rate) — the ceiling itself isn't usually what's binding, the
+  // model's own adaptive-thinking judgment is. (The theoretical worst
+  // case — all 4 iterations independently maxing out — is a much higher
+  // ~$0.98 ceiling that doesn't reflect real usage; monitor actual spend
+  // via chat_logs rather than treating that as the expected cost.)
+  maxTokens = 16384,
   effort = 'high',
 }: CallAnthropicParams): Promise<AnthropicResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY

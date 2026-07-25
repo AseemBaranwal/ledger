@@ -13,7 +13,10 @@ Everything else — history, trends, sync — is secondary to that. Sign in with
 - **React 18 + TypeScript + Vite**, Zustand for state, CSS Modules for styling, `vite-plugin-pwa` for offline/installable support
 - **Supabase** (Postgres + Google OAuth) for everything: auth, each user's own training program (`profiles.routine_config`), and every logged workout (`sessions` table) — one backend, no external spreadsheet dependency
 - A brand-new user gets a generic starter training program (`src/data/starterProgram.ts`) automatically on first sign-in, editable from there on
-- Deployed on **Vercel** (free tier)
+- Deployed on **Vercel** (free tier), with **Vercel Speed Insights**
+  (`@vercel/speed-insights/react`, mounted in `src/App.tsx`) tracking real-user
+  page performance — view it at
+  [the project's Speed Insights tab](https://vercel.com/aseems-projects-a684aa0d/ledger/speed-insights)
 
 Nothing here costs money at personal-use scale: Vercel Hobby and Supabase's free tier cover it.
 

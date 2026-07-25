@@ -225,12 +225,6 @@ export function CoachTab() {
           placeholder="Ask your coach…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
         />
         <button
           className={`${styles.btn} ${styles.primary}`}

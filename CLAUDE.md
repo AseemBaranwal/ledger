@@ -1,9 +1,11 @@
 # Ledger — working notes for Claude
 
 Personal training-log PWA. React/Vite/TypeScript frontend, Vercel serverless
-functions backend, Supabase (Postgres + Auth), Google Sheets (via Apps
-Script) as the workout-data source of truth, Strava integration, and an
-owner-only AI Coach chat backed by the Claude API directly (not Claude Code).
+functions backend, Supabase (Postgres + Auth) as the workout-data and
+per-user program source of truth (a Google Sheet/Apps Script used to fill
+this role — see the "Workout data lives in Supabase" section below for why
+that was retired), Strava integration, and an owner-only AI Coach chat
+backed by the Claude API directly (not Claude Code).
 
 Full architecture is in [README.md](README.md). This file is a debugging
 playbook — things that cost real time to figure out once and will cost it
@@ -45,6 +47,31 @@ Practical pattern established in `tests/unit/`:
 - SQL migrations live in `supabase/*.sql` — run manually in the Supabase SQL
   editor (or directly via the dashboard if already authenticated in-session;
   they're all idempotent `CREATE TABLE IF NOT EXISTS`, safe to re-run).
+- **Vercel CLI isn't on `PATH` as a bare `vercel` command in this
+  environment — use `npx vercel ...`** (it resolves/runs fine, first
+  invocation prompts a one-time device-auth login flow). Useful commands:
+  `npx vercel ls ledger --scope aseems-projects-a684aa0d` lists recent
+  deployments (age, URL, Preview/Production, status); `npx vercel inspect
+  <deployment-url> --scope aseems-projects-a684aa0d` shows a deployment's
+  aliases, which is how you find a **branch's stable preview URL**:
+  `https://ledger-git-<branch-name>-aseems-projects-a684aa0d.vercel.app`.
+  That alias stays the same across every subsequent push to that branch
+  (unlike the per-deployment hash URL, which changes every push) — hand
+  that one to a human for repeated testing, not the hash URL.
+- **Supabase's SQL editor is Monaco-based and corrupts long
+  programmatically-typed SQL the same way Apps Script's editor does** (see
+  the `apps-script.gs` bullet below) — auto-indent compounds with your own
+  indentation on every newline, turning e.g. a 12KB paste into 50KB+ of
+  runaway leading whitespace by the end. Confirmed by directly inspecting
+  the editor's live content after a simulated-keystroke "type" action
+  (`window.monaco.editor.getModels()[0].getValue().length` was 4x+ larger
+  than the input). Two working fixes: a real clipboard paste (⌘V) bypasses
+  Monaco's auto-indent-on-newline logic entirely and is safe; if driving
+  the browser programmatically instead of a human pasting, set the model
+  value directly — `window.monaco.editor.getModels()[0].setValue(exactSql)`
+  — which also bypasses keystroke handling. Do not trust a "type" action
+  against this editor for anything beyond a single short line without
+  verifying the resulting content length/preview first.
 
 ## Vercel Edge Functions — hard-won gotchas
 
@@ -256,6 +283,20 @@ onboarding-removal migration)
 
 ## Strava gotchas
 
+- **A new Strava API app starts hard-capped at 1 connected athlete
+  ("single-player mode")** — only the developer's own account can
+  authorize; anyone else hits `Error 403: Limit of connected athletes
+  exceeded` on the OAuth consent screen, which reads like a bug but isn't
+  one. Confirmed by checking the app's own settings page
+  (`strava.com/settings/api`) — "Number of athletes allowed to connect"
+  showed `1`. **Simply opening that settings page in a browser
+  auto-upgraded it to the 10-athlete tier** (rate limits doubled too, no
+  review/approval step, no button to click) — the number changed from `1`
+  to `10` between two page loads with no other action taken. Beyond 10
+  athletes, Strava's actual review process kicks in (submit via the
+  developer portal, ~7–10 business days per their FAQ). If a friend/tester
+  ever reports Strava connect failing with an athlete-limit error, check
+  that settings page first before assuming it's a code issue.
 - **Uploads are tracked by `external_id` per athlete+app, and Strava honors
   a past deletion of that id** — reuse the same `external_id` (e.g. a
   hardcoded literal filename) on a later upload, and if an earlier upload

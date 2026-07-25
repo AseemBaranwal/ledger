@@ -278,8 +278,9 @@ function FieldRow({
       <span style={{ color: 'var(--dim)' }}>→</span>
       <input
         type="number"
+        inputMode="decimal"
         value={value}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
         disabled={disabled}
         style={{
           width: '64px',

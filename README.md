@@ -105,3 +105,9 @@ Each user's program (exercises, targets, starting weights, coaching cues, rest-d
 `k` = code, `n` = name, `s`/`r` = sets/reps, `w` = starting weight, `u` = unit, `group` = muscle group (drives the Trends tab filter). Keep `k` codes stable once you've logged against them — they're what links history together across sessions.
 
 There's no in-app program editor yet (planned, not built) — for now, editing your own program means updating your `profiles.routine_config` row directly in the Supabase dashboard. `src/data/starterProgram.ts` is what every *new* sign-up gets seeded with; editing it only affects future sign-ups, not existing users.
+
+---
+
+## License
+
+[MIT](LICENSE) — fork it, run it, change it, just keep the copyright notice.

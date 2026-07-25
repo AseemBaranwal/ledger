@@ -63,7 +63,11 @@ export function HistoryTab() {
               const isOpen = expandedRow === id
               return (
                 <div key={id}>
-                  <div className={styles.hrow} onClick={() => toggleExpand(id)}>
+                  <button
+                    className={styles.hrow}
+                    onClick={() => toggleExpand(id)}
+                    aria-expanded={isOpen}
+                  >
                     <div className={styles.bar} style={{ background: colours[p.colour] || 'var(--dim)' }} />
                     <div className={styles.m}>
                       <div className={styles.t}>{p.name}</div>
@@ -74,7 +78,7 @@ export function HistoryTab() {
                     <div className={`${styles.v} mono`}>
                       <b>{(volume(s) / 1000).toFixed(1)}k</b>lb vol
                     </div>
-                  </div>
+                  </button>
                   <div className={`${styles.hdetail} ${isOpen ? styles.on : ''}`}>
                     {(s.ex || []).map((e) => {
                       const setsStr = e.r

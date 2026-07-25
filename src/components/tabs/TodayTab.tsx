@@ -295,9 +295,10 @@ export function TodayTab() {
 
         return (
           <div key={dow}>
-            <div
+            <button
               className={`${styles.wkRow} ${isToday ? styles.now : ''} ${isOpen ? styles.open : ''}`}
               onClick={() => toggleWeekDay(dow)}
+              aria-expanded={isOpen}
             >
               <span className={styles.wkDay}>
                 {DOW_LABEL[dow]}{isToday ? ' · today' : ''}
@@ -332,7 +333,7 @@ export function TodayTab() {
               <span className={styles.wkChev}>
                 <ChevronIcon open={isOpen} />
               </span>
-            </div>
+            </button>
             {isOpen && (
               <div className={styles.wkExpand}>
                 {codes.length ? (

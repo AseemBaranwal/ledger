@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "export:sheet": "node scripts/exportSessionsToSheet.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",

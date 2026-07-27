@@ -6,7 +6,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
     input_schema: {
       type: 'object',
       properties: {
@@ -80,6 +80,7 @@ interface TrainingDataRow {
   date: string
   session: string
   exercise: string
+  exerciseName: string
   sets: string
   topWeight: number | null
 }
@@ -128,7 +129,7 @@ export async function getTrainingData(
 ): Promise<{ rows: TrainingDataRow[]; today: string; activeSwaps?: ActiveSwap[] } | { error: string }> {
   const { data: profile } = await supabaseAdmin()
     .from('profiles')
-    .select('exercise_substitutions')
+    .select('exercise_substitutions, routine_config')
     .eq('id', ownerUserId)
     .single()
 
@@ -138,6 +139,22 @@ export async function getTrainingData(
     currentCode: sub.code,
     currentName: sub.name,
   }))
+
+  // Real exercise names, keyed by code, straight from the owner's own
+  // program — without this the model has no grounded source for a human-
+  // readable name and has to guess one from the code alone (e.g. "SLC"
+  // guessed as "Seated Leg Curl" when the program's real name is
+  // "Single-Leg Calf Raise"). Falls back to the bare code for anything not
+  // in the current program (e.g. a since-removed exercise still showing up
+  // in older logged sessions).
+  type RoutineProgram = Record<string, { ex?: Array<{ k: string; n?: string }> }>
+  const program = (profile as { routine_config?: { program?: RoutineProgram } } | null)?.routine_config?.program || {}
+  const exerciseNames: Record<string, string> = {}
+  for (const session of Object.values(program)) {
+    for (const ex of session.ex || []) {
+      if (ex.n) exerciseNames[ex.k] = ex.n
+    }
+  }
 
   const sinceDate = args.sinceDate
   const exerciseCode = args.exerciseCode
@@ -165,6 +182,7 @@ export async function getTrainingData(
         date: session.d,
         session: session.s || '',
         exercise: ex.k,
+        exerciseName: exerciseNames[ex.k] || ex.k,
         sets: formatSets(ex),
         topWeight: topWeightOf(ex),
       })

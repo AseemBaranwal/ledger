@@ -141,6 +141,32 @@ describe('getTrainingData', () => {
     })
   })
 
+  // Caught live: the model guessed "SLC" was "Seated Leg Curl" when it's
+  // actually "Single-Leg Calf Raise" in the real program — get_training_data
+  // never gave it a real name to work from, only the bare code, so it had
+  // to guess from an inherently ambiguous abbreviation. Resolving the name
+  // from the owner's own routine_config.program removes the guesswork.
+  it("resolves each row's exerciseName from the owner's program config, not the code", async () => {
+    mockSupabase(
+      { exercise_substitutions: {}, routine_config: { program: { LB: { ex: [{ k: 'SLC', n: 'Single-Leg Calf Raise' }] } } } },
+      [{ d: '2026-07-25', s: 'LB', ex: [{ k: 'SLC', r: [15], ws: [175] }] }]
+    )
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).toMatchObject({ rows: [{ exercise: 'SLC', exerciseName: 'Single-Leg Calf Raise' }] })
+  })
+
+  it('falls back to the bare code for an exercise no longer in the current program', async () => {
+    mockSupabase({ exercise_substitutions: {}, routine_config: { program: {} } }, [
+      { d: '2026-07-14', s: 'LA', ex: [{ k: 'OLD_CODE', r: [10] }] },
+    ])
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).toMatchObject({ rows: [{ exercise: 'OLD_CODE', exerciseName: 'OLD_CODE' }] })
+  })
+
   it('filters rows to the requested exerciseCode', async () => {
     mockSupabase({ exercise_substitutions: {} }, [
       { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5], ws: [80] }, { k: 'BSS', r: [8], ws: [20] }] },

@@ -11,6 +11,54 @@
   border-color: var(--amber-dim);
 }
 
+/* ── accordion collapsed row — combined with .card, so no border/
+   background/margin here, those already come from .card. Only the
+   button resets and its own layout. ── */
+.collapsedRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.collapsedName {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.collapsedMeta {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.pips {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+
+.pip.pipDone {
+  background: var(--amber);
+}
+
 .exHead {
   display: flex;
   align-items: flex-start;
@@ -26,6 +74,15 @@
   font-size: 15px;
   line-height: 1.25;
   flex: 1;
+  /* Also used as a real <button> (collapse control) in ExerciseLogger — these
+     resets are no-ops on the plain <div> usage elsewhere (REST items). */
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .exName .star {

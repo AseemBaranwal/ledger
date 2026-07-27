@@ -81,16 +81,23 @@ export function HistoryTab() {
                   </button>
                   <div className={`${styles.hdetail} ${isOpen ? styles.on : ''}`}>
                     {(s.ex || []).map((e) => {
-                      const setsStr = e.r
-                        .map((r, i) => {
-                          const w = e.ws ? e.ws[i] : e.w
-                          return `${w || 'BW'}×${r}`
-                        })
-                        .join(', ')
+                      const effortCls = (v: 'e' | 'o' | 'h') => (v === 'e' ? styles.easy : v === 'o' ? styles.ok : styles.hard)
                       return (
                         <div key={e.k} className={styles.ln}>
                           <span className={styles.k}>{resolveExerciseDisplay(e.k, program, colours, customExercises).name}</span>
-                          <span>{setsStr}</span>
+                          <span>
+                            {e.r.map((r, i) => {
+                              const w = e.ws ? e.ws[i] : e.w
+                              const effort = e.ef?.[i]
+                              return (
+                                <span key={i}>
+                                  {i > 0 && ', '}
+                                  {w || 'BW'}×{r}
+                                  {effort && <span className={`${styles.effDotInline} ${effortCls(effort)}`} />}
+                                </span>
+                              )
+                            })}
+                          </span>
                         </div>
                       )
                     })}

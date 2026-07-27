@@ -242,6 +242,29 @@
   background: var(--coral);
 }
 
+/* same easy/ok/hard dot, inline instead of absolute-positioned — for
+   plain-text set listings (History) rather than set-chip buttons */
+.effDotInline {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.effDotInline.easy {
+  background: var(--teal);
+}
+
+.effDotInline.ok {
+  background: var(--amber);
+}
+
+.effDotInline.hard {
+  background: var(--coral);
+}
+
 /* ── SIGNATURE: set blocks ───────────────────────────────── */
 .sets {
   display: flex;

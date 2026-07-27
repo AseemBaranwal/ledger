@@ -1,57 +1,118 @@
+import { useState, useEffect, useRef, type MouseEvent } from 'react'
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD, ago } from '@/services/dateUtils'
 import { streak } from '@/services/trendCalculations'
 import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
+import { plotLine, nearestPointIndex, type ChartPoint } from '@/services/chartGeometry'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
 interface LinePt { v: number; l: string }
 interface BarPt { l: string; v: number }
 
+// Above this point count, labeling every point would start to overlap on a
+// 320-unit-wide chart — fall back to just the two endpoints and let tap-to-
+// reveal (below) carry the rest. Most exercises stay well under this in a
+// normal trend window, so the common case is "every value visible, no tap
+// required."
+const MAX_LABELED_POINTS = 6
+
 function LineChart({ pts, colour, h = 130 }: { pts: LinePt[]; colour: string; h?: number }) {
-  if (pts.length < 2) {
-    return (
-      <div style={{ height: h, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--dim)', fontSize: 13 }}>
-        Need at least 2 data points
-      </div>
-    )
-  }
-  const W = 320, H = h, pad = { t: 14, r: 8, b: 20, l: 8 }
-  const ys = pts.map((p) => p.v)
-  const y0 = Math.min(...ys), y1 = Math.max(...ys)
-  const span = y1 - y0 || 1
-  const lo = y0 - span * 0.18, hi = y1 + span * 0.18
-  const X = (i: number) => pad.l + (i / (pts.length - 1)) * (W - pad.l - pad.r)
-  const Y = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b)
-  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).join('')
-  const area = `${d}L${X(pts.length - 1).toFixed(1)},${H - pad.b}L${X(0).toFixed(1)},${H - pad.b}Z`
+  // Tap-to-reveal an exact date + value — mainly useful once a series has
+  // more points than MAX_LABELED_POINTS shows inline. Auto-dismisses so it
+  // doesn't linger and get mistaken for a permanent label.
+  const [tap, setTap] = useState<{ i: number; xPct: number } | null>(null)
+  const dismissTimer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => () => clearTimeout(dismissTimer.current), [])
+
+  if (pts.length < 2) return null // callers already filter this; kept as a safe no-op
+
+  const W = 320
+  const H = h
+  // t:26 (was 14) makes room for a value label sitting just above the
+  // topmost point — the single biggest layout change from the old chart,
+  // since labels are now real content instead of an afterthought.
+  const pad = { t: 26, r: 10, b: 10, l: 10 }
+  const { plotted, path } = plotLine(pts as ChartPoint[], W, H, pad)
+  const last = plotted[plotted.length - 1]
+  const area = `${path}L${last.x.toFixed(1)},${H - pad.b}L${plotted[0].x.toFixed(1)},${H - pad.b}Z`
   const gid = 'g' + Math.random().toString(36).slice(2, 7)
+  const labeledIndices = pts.length <= MAX_LABELED_POINTS ? plotted.map((_, i) => i) : [0, plotted.length - 1]
+
+  const handleTap = (e: MouseEvent<SVGRectElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const frac = (e.clientX - rect.left) / rect.width
+    setTap({ i: nearestPointIndex(frac, pts.length), xPct: frac * 100 })
+    clearTimeout(dismissTimer.current)
+    dismissTimer.current = setTimeout(() => setTap(null), 1800)
+  }
 
   return (
-    <svg className={styles.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={colour} stopOpacity={0.26} />
-          <stop offset="100%" stopColor={colour} stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${gid})`} />
-      <path d={d} fill="none" stroke={colour} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-      {pts.map((p, i) => (
-        <circle
-          key={i}
-          cx={X(i)}
-          cy={Y(p.v)}
-          r={i === pts.length - 1 ? 3.6 : 2.2}
-          fill={i === pts.length - 1 ? colour : 'var(--ink)'}
-          stroke={colour}
-          strokeWidth={1.6}
-        />
-      ))}
-      <text x={pad.l} y={H - 5} fill="#5A6572" fontSize={9} fontFamily="JetBrains Mono">{pts[0].l}</text>
-      <text x={W - pad.r} y={H - 5} fill="#5A6572" fontSize={9} fontFamily="JetBrains Mono" textAnchor="end">{pts[pts.length - 1].l}</text>
-    </svg>
+    <div className={styles.chartWrap}>
+      <svg className={styles.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={colour} stopOpacity={0.26} />
+            <stop offset="100%" stopColor={colour} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        {/* Two faint horizontal reference lines — plain geometry, so unlike
+            text it isn't hurt by the non-uniform stretch below. */}
+        {[1, 2].map((g) => {
+          const gy = pad.t + (g / 3) * (H - pad.t - pad.b)
+          return <line key={g} x1={pad.l} y1={gy} x2={W - pad.r} y2={gy} stroke="var(--line)" strokeWidth={1} />
+        })}
+        <path d={area} fill={`url(#${gid})`} />
+        <path d={path} fill="none" stroke={colour} strokeWidth={2.25} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        {plotted.map((p, i) => (
+          <circle
+            key={i}
+            cx={p.x}
+            cy={p.y}
+            r={i === plotted.length - 1 ? 4 : 2.6}
+            fill={i === plotted.length - 1 ? colour : 'var(--ink)'}
+            stroke={colour}
+            strokeWidth={1.6}
+          />
+        ))}
+        {/* Transparent hit target for tap-to-reveal — the visible marks
+            above are all vector shapes tolerant of the width-only stretch;
+            this rect just needs to cover the same box for hit-testing. */}
+        <rect x={0} y={0} width={W} height={H} fill="transparent" onClick={handleTap} style={{ cursor: 'pointer' }} />
+      </svg>
+
+      {/* Value labels as real HTML, positioned by percentage over the SVG —
+          this is the actual fix for the squished-text bug: an SVG <text>
+          element inside a preserveAspectRatio="none" box gets stretched
+          along with everything else, which is exactly what mangled the old
+          date labels. Percentage-based CSS position isn't subject to that
+          internal viewBox transform at all. */}
+      {labeledIndices.map((i) => {
+        const p = plotted[i]
+        const isLast = i === plotted.length - 1
+        return (
+          <span
+            key={i}
+            className={styles.chartValueLabel}
+            style={{ left: `${(p.x / W) * 100}%`, top: `${(p.y / H) * 100}%`, color: isLast ? colour : 'var(--dim)' }}
+          >
+            {p.v}
+          </span>
+        )
+      })}
+
+      {tap && (
+        <div className={styles.chartTip} style={{ left: `${tap.xPct}%` }}>
+          {pts[tap.i].l} · {pts[tap.i].v}
+        </div>
+      )}
+
+      <div className={`${styles.chartDates} mono`}>
+        <span>{pts[0].l}</span>
+        <span>{pts[pts.length - 1].l}</span>
+      </div>
+    </div>
   )
 }
 
@@ -174,7 +235,11 @@ export function TrendsTab() {
             const w = e.ws ? Math.max(...e.ws) : e.w || 0
             return { v: w, l: fmtD(s.d).replace(/^\w+, /, '') }
           })
-        const dl = pts.length > 1 ? pts[pts.length - 1].v - pts[0].v : 0
+        // A single logged session can't show a progression — there's
+        // nothing to compare it to — so skip the whole card rather than
+        // rendering a title/delta around an empty chart placeholder.
+        if (pts.length < 2) return null
+        const dl = pts[pts.length - 1].v - pts[0].v
         const dcls = dl > 0 ? styles.up : dl < 0 ? styles.dn : styles.flat
 
         return (

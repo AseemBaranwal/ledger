@@ -14,9 +14,11 @@ import { fetchSessions } from '@/services/sessionsApi'
 import { unlockAudioContext } from '@/services/audio'
 import { STRAVA_CALLBACK_PATH, exchangeStravaCode } from '@/services/strava'
 import { registerSW } from 'virtual:pwa-register'
+import { useActiveSessionBackGuard } from '@/hooks/useActiveSessionBackGuard'
 import styles from '@/styles/App.module.css'
 
 export default function App() {
+  useActiveSessionBackGuard()
   const activeTab = useUIStore((s) => s.activeTab)
   const setTab = useUIStore((s) => s.setTab)
   const loadSubstitutions = useConfigStore((s) => s.loadSubstitutions)

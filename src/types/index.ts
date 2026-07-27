@@ -4,6 +4,7 @@ export interface Exercise {
   r: number[]; // reps per set
   ws?: number[]; // weights per set (per-set tracking)
   w?: number; // legacy: single weight fallback
+  ef?: Array<'e' | 'o' | 'h' | null>; // effort per set (easy/ok/hard), parallel to r — optional, most sets are untagged
 }
 
 export interface Session {

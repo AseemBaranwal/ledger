@@ -34,6 +34,29 @@ describe('sessionStore', () => {
     expect(ex.ws).toEqual([75])
   })
 
+  it('logs a set with no effort tag as null, not omitted, keeping ef aligned with r', () => {
+    useSessionStore.getState().startSession('LA', [{ k: 'SQ', w: 75 }], 'RSL2')
+    useSessionStore.getState().logRep(0, 6)
+    expect(useSessionStore.getState().draftEx![0].ef).toEqual([null])
+  })
+
+  it('tags a set with an effort when one is passed', () => {
+    useSessionStore.getState().startSession('LA', [{ k: 'SQ', w: 75 }], 'RSL2')
+    useSessionStore.getState().logRep(0, 6, 'h')
+    useSessionStore.getState().logRep(0, 5, 'e')
+    expect(useSessionStore.getState().draftEx![0].ef).toEqual(['h', 'e'])
+  })
+
+  it('clearSet removes the matching ef entry so later sets stay aligned with r', () => {
+    useSessionStore.getState().startSession('LA', [{ k: 'SQ', w: 75 }], 'RSL2')
+    useSessionStore.getState().logRep(0, 6, 'h')
+    useSessionStore.getState().logRep(0, 5, 'e')
+    useSessionStore.getState().clearSet(0, 0)
+    const ex = useSessionStore.getState().draftEx![0]
+    expect(ex.r).toEqual([5])
+    expect(ex.ef).toEqual(['e'])
+  })
+
   it('should clear the draft', () => {
     useSessionStore.getState().startSession('LA', [{ k: 'SQ', w: 75 }], 'RSL2')
     useSessionStore.getState().clearDraft()

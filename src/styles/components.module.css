@@ -177,6 +177,71 @@
   border-color: var(--amber);
 }
 
+/* ── optional per-set effort tag — same visual language as .inc, shown
+   only while the rep picker is open, so it never displays as a permanent
+   extra row on the card ── */
+.effortSel {
+  display: flex;
+  gap: 6px;
+  padding: 0 14px 8px;
+  animation: in 0.16s;
+}
+
+.effPill {
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.effPill.easy.on {
+  background: var(--teal);
+  color: #04231F;
+  border-color: var(--teal);
+}
+
+.effPill.ok.on {
+  background: var(--amber);
+  color: var(--ink);
+  border-color: var(--amber);
+}
+
+.effPill.hard.on {
+  background: var(--coral);
+  color: #2A0B0B;
+  border-color: var(--coral);
+}
+
+/* small corner marker on an already-logged set chip — a ring (not just a
+   filled dot) keeps it visible even when the chip's own background
+   happens to be the same color (e.g. an "over" chip is teal, same as an
+   "easy" tag) */
+.effDot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+}
+
+.effDot.easy {
+  background: var(--teal);
+}
+
+.effDot.ok {
+  background: var(--amber);
+}
+
+.effDot.hard {
+  background: var(--coral);
+}
+
 /* ── SIGNATURE: set blocks ───────────────────────────────── */
 .sets {
   display: flex;

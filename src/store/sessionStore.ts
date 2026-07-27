@@ -27,7 +27,7 @@ interface SessionStore {
   startRestSession: (dow: number, title: string, items: RestItem[]) => void
   bumpWeight: (index: number, dir: number, inc: number) => void
   setWeight: (index: number, value: number) => void
-  logRep: (index: number, reps: number) => void
+  logRep: (index: number, reps: number, effort?: 'e' | 'o' | 'h' | null) => void
   clearSet: (index: number, setIndex: number) => void
   swapExercise: (index: number, def: ProgramExercise, startWeight: number) => void
   addExercise: (def: ProgramExercise, startWeight: number) => void
@@ -131,14 +131,21 @@ export const useSessionStore = create<SessionStore>()(
         return { draftEx }
       }),
 
-      logRep: (index, reps) => set((state) => {
+      logRep: (index, reps, effort) => set((state) => {
         if (!state.draftEx) return state
         const draftEx = [...state.draftEx]
         const ex = draftEx[index]
+        // ef must stay index-aligned with r/ws. A set logged before this
+        // field existed (or before any set on this exercise was ever
+        // tagged) leaves ef shorter than r — pad with nulls up to r's
+        // current length before appending, rather than just pushing onto
+        // whatever's there, which would misalign every earlier untagged set.
+        const priorEf = ex.ef && ex.ef.length === ex.r.length ? ex.ef : Array(ex.r.length).fill(null)
         draftEx[index] = {
           ...ex,
           r: [...ex.r, reps],
           ws: [...(ex.ws || []), ex.w],
+          ef: [...priorEf, effort ?? null],
         }
         return { draftEx }
       }),
@@ -149,6 +156,7 @@ export const useSessionStore = create<SessionStore>()(
         const ex = { ...draftEx[index] }
         ex.r = ex.r.filter((_, i) => i !== setIndex)
         ex.ws = (ex.ws || []).filter((_, i) => i !== setIndex)
+        if (ex.ef) ex.ef = ex.ef.filter((_, i) => i !== setIndex)
         draftEx[index] = ex
         return { draftEx }
       }),

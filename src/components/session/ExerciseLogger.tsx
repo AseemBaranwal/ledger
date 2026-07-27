@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useSessionStore, useUIStore } from '@/store'
 import type { ProgramExercise } from '@/types'
 import { lastOf } from '@/services/trendCalculations'
@@ -16,6 +17,16 @@ interface ExerciseLoggerProps {
 }
 
 const INCREMENTS = [2.5, 5, 10, 25]
+
+// Reuses the app's existing teal/amber/coral color language (already used
+// for over/on-target/under rep counts elsewhere on this card) rather than
+// introducing a new one — easy reads as "good, room to push," hard reads
+// as "struggled," same as those colors already mean.
+const EFFORTS: Array<{ v: 'e' | 'o' | 'h'; label: string; cls: string }> = [
+  { v: 'e', label: 'Easy', cls: 'easy' },
+  { v: 'o', label: 'OK', cls: 'ok' },
+  { v: 'h', label: 'Hard', cls: 'hard' },
+]
 
 function repOpts(target: number): number[] {
   const o = new Set<number>()
@@ -41,6 +52,12 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
   const openExerciseIndex = useUIStore((s) => s.openExerciseIndex)
   const setOpenExerciseIndex = useUIStore((s) => s.setOpenExerciseIndex)
 
+  // Purely optional tag for the set about to be logged — tapping a rep
+  // count with nothing selected here logs exactly as before (zero added
+  // friction). Resets after every log so a selection never silently
+  // carries over and mislabels the next set.
+  const [pendingEffort, setPendingEffort] = useState<'e' | 'o' | 'h' | null>(null)
+
   if (!ex) return null
   const last = lastOf(sessions, def.k)
   const full = ex.r.length >= def.s
@@ -48,7 +65,8 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
 
   const handleLogRep = (v: number) => {
     unlockAudioContext() // must happen inside this click handler, not later, or mobile browsers mute it
-    logRep(index, v)
+    logRep(index, v, pendingEffort)
+    setPendingEffort(null)
     setOpenExerciseIndex(ex.r.length + 1 >= def.s ? null : index)
     useUIStore.getState().setTimer(90, true)
   }
@@ -152,14 +170,31 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
             )
           }
           const cls = v > def.r ? styles.over : v < def.r ? styles.under : styles.filled
+          const effort = ex.ef?.[j]
+          const effortCls = effort === 'e' ? styles.easy : effort === 'o' ? styles.ok : effort === 'h' ? styles.hard : ''
           return (
             <button key={j} className={`${styles.blk} ${cls}`} onClick={() => clearSet(index, j)}>
+              {effort && <span className={`${styles.effDot} ${effortCls}`} title={EFFORTS.find((e) => e.v === effort)?.label} />}
               <span className={styles.n}>{v}</span>
               <span className={styles.lab}>Set {j + 1}</span>
             </button>
           )
         })}
       </div>
+
+      {isOpen && (
+        <div className={styles.effortSel}>
+          {EFFORTS.map((e) => (
+            <button
+              key={e.v}
+              className={`${styles.effPill} ${styles[e.cls]} ${pendingEffort === e.v ? styles.on : ''}`}
+              onClick={() => setPendingEffort(pendingEffort === e.v ? null : e.v)}
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {isOpen && (
         <div className={styles.reps}>

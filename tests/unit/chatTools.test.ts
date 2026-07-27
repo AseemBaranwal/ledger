@@ -30,6 +30,14 @@ describe('formatSets', () => {
   it('formats bodyweight sets as just the rep count', () => {
     expect(formatSets({ k: 'HLR', r: [10, 12] })).toBe('10,12')
   })
+
+  it('appends an effort suffix only to sets that were actually tagged', () => {
+    expect(formatSets({ k: 'SQ', r: [5, 5, 5], ws: [100, 100, 100], ef: ['h', null, 'e'] })).toBe('100x5(h),100x5,100x5(e)')
+  })
+
+  it('omits the effort suffix entirely when nothing was tagged', () => {
+    expect(formatSets({ k: 'SQ', r: [5, 5], ws: [100, 100] })).toBe('100x5,100x5')
+  })
 })
 
 describe('TOOLS', () => {

@@ -6,7 +6,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone.",
     input_schema: {
       type: 'object',
       properties: {
@@ -67,6 +67,7 @@ interface SheetExercise {
   r: number[]
   ws?: number[]
   w?: number | null
+  ef?: Array<'e' | 'o' | 'h' | null>
 }
 
 interface SheetSession {
@@ -97,7 +98,13 @@ export function formatSets(ex: SheetExercise): string {
   return ex.r
     .map((reps, i) => {
       const w = ex.ws ? ex.ws[i] : ex.w
-      return typeof w === 'number' ? `${w}x${reps}` : `${reps}`
+      const base = typeof w === 'number' ? `${w}x${reps}` : `${reps}`
+      // Only append a suffix for sets the owner actually tagged — most
+      // sets (all historical ones, and any set today's owner skips
+      // tagging) have no effort recorded, and leaving those bare keeps
+      // the string from bloating with a marker that means nothing.
+      const effort = ex.ef?.[i]
+      return effort ? `${base}(${effort})` : base
     })
     .join(',')
 }

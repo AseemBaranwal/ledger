@@ -12,7 +12,8 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "export:sheet": "node scripts/exportSessionsToSheet.mjs"
+    "export:sheet": "node scripts/exportSessionsToSheet.mjs",
+    "export:targets": "node scripts/exportTargetsToSheet.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",

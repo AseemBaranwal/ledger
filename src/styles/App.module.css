@@ -5,6 +5,16 @@
   min-height: 100%;
 }
 
+/* The floating rest timer bar (~72px including its own margin) sits above
+   the bottom nav, which .root's own padding-bottom already accounts for —
+   without this, the timer bar floats on top of whatever content happened
+   to scroll underneath it (list rows, chart cards, buttons) instead of
+   content stopping short of it. Only added while a rest is actually
+   counting down, so idle browsing doesn't carry permanent dead space. */
+.root.timerActive {
+  padding-bottom: calc(84px + 72px + var(--safe-b));
+}
+
 .wrap {
   max-width: 640px;
   margin: 0 auto;

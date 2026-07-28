@@ -21,6 +21,7 @@ export default function App() {
   useActiveSessionBackGuard()
   const activeTab = useUIStore((s) => s.activeTab)
   const setTab = useUIStore((s) => s.setTab)
+  const timerActive = useUIStore((s) => s.timerActive)
   const loadSubstitutions = useConfigStore((s) => s.loadSubstitutions)
   const clearDraft = useSessionStore((s) => s.clearDraft)
   const sessions = useSessionStore((s) => s.sessions)
@@ -161,7 +162,7 @@ export default function App() {
   }
 
   return (
-    <div className={styles.root}>
+    <div className={`${styles.root} ${timerActive ? styles.timerActive : ''}`}>
       <Header
         date={todayStr}
         streak={streak(sessions)}

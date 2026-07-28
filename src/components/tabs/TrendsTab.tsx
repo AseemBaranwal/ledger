@@ -11,17 +11,16 @@ import styles from '../../styles/components.module.css'
 interface LinePt { v: number; l: string }
 interface BarPt { l: string; v: number }
 
-// Above this point count, labeling every point would start to overlap on a
-// 320-unit-wide chart — fall back to just the two endpoints and let tap-to-
-// reveal (below) carry the rest. Most exercises stay well under this in a
-// normal trend window, so the common case is "every value visible, no tap
-// required."
-const MAX_LABELED_POINTS = 6
-
-function LineChart({ pts, colour, h = 130 }: { pts: LinePt[]; colour: string; h?: number }) {
-  // Tap-to-reveal an exact date + value — mainly useful once a series has
-  // more points than MAX_LABELED_POINTS shows inline. Auto-dismisses so it
-  // doesn't linger and get mistaken for a permanent label.
+// "Big number, minimal sparkline" — chosen over labeled-points-per-chart
+// (see the mockup comparison linked from the commit) because it leads with
+// the one figure that matters most when glancing at a single exercise
+// (today's working weight) and keeps the supporting trend line quiet
+// rather than competing with it. The tradeoff, accepted deliberately: the
+// trend *shape* reads slightly less immediately than the labeled-points
+// version did — tap the chart for an exact date/value at any point.
+function LineChart({ pts, colour, h = 76 }: { pts: LinePt[]; colour: string; h?: number }) {
+  // Tap-to-reveal an exact date + value. Auto-dismisses so it doesn't
+  // linger and get mistaken for a permanent label.
   const [tap, setTap] = useState<{ i: number; xPct: number } | null>(null)
   const dismissTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(dismissTimer.current), [])
@@ -30,15 +29,11 @@ function LineChart({ pts, colour, h = 130 }: { pts: LinePt[]; colour: string; h?
 
   const W = 320
   const H = h
-  // t:26 (was 14) makes room for a value label sitting just above the
-  // topmost point — the single biggest layout change from the old chart,
-  // since labels are now real content instead of an afterthought.
-  const pad = { t: 26, r: 10, b: 10, l: 10 }
+  const pad = { t: 10, r: 10, b: 10, l: 10 }
   const { plotted, path } = plotLine(pts as ChartPoint[], W, H, pad)
   const last = plotted[plotted.length - 1]
   const area = `${path}L${last.x.toFixed(1)},${H - pad.b}L${plotted[0].x.toFixed(1)},${H - pad.b}Z`
   const gid = 'g' + Math.random().toString(36).slice(2, 7)
-  const labeledIndices = pts.length <= MAX_LABELED_POINTS ? plotted.map((_, i) => i) : [0, plotted.length - 1]
 
   const handleTap = (e: MouseEvent<SVGRectElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -50,19 +45,13 @@ function LineChart({ pts, colour, h = 130 }: { pts: LinePt[]; colour: string; h?
 
   return (
     <div className={styles.chartWrap}>
-      <svg className={styles.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      <svg className={styles.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height: h }}>
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={colour} stopOpacity={0.26} />
             <stop offset="100%" stopColor={colour} stopOpacity={0} />
           </linearGradient>
         </defs>
-        {/* Two faint horizontal reference lines — plain geometry, so unlike
-            text it isn't hurt by the non-uniform stretch below. */}
-        {[1, 2].map((g) => {
-          const gy = pad.t + (g / 3) * (H - pad.t - pad.b)
-          return <line key={g} x1={pad.l} y1={gy} x2={W - pad.r} y2={gy} stroke="var(--line)" strokeWidth={1} />
-        })}
         <path d={area} fill={`url(#${gid})`} />
         <path d={path} fill="none" stroke={colour} strokeWidth={2.25} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         {plotted.map((p, i) => (
@@ -70,7 +59,7 @@ function LineChart({ pts, colour, h = 130 }: { pts: LinePt[]; colour: string; h?
             key={i}
             cx={p.x}
             cy={p.y}
-            r={i === plotted.length - 1 ? 4 : 2.6}
+            r={i === plotted.length - 1 ? 4 : 2.4}
             fill={i === plotted.length - 1 ? colour : 'var(--ink)'}
             stroke={colour}
             strokeWidth={1.6}
@@ -82,32 +71,19 @@ function LineChart({ pts, colour, h = 130 }: { pts: LinePt[]; colour: string; h?
         <rect x={0} y={0} width={W} height={H} fill="transparent" onClick={handleTap} style={{ cursor: 'pointer' }} />
       </svg>
 
-      {/* Value labels as real HTML, positioned by percentage over the SVG —
-          this is the actual fix for the squished-text bug: an SVG <text>
-          element inside a preserveAspectRatio="none" box gets stretched
-          along with everything else, which is exactly what mangled the old
-          date labels. Percentage-based CSS position isn't subject to that
-          internal viewBox transform at all. */}
-      {labeledIndices.map((i) => {
-        const p = plotted[i]
-        const isLast = i === plotted.length - 1
-        return (
-          <span
-            key={i}
-            className={styles.chartValueLabel}
-            style={{ left: `${(p.x / W) * 100}%`, top: `${(p.y / H) * 100}%`, color: isLast ? colour : 'var(--dim)' }}
-          >
-            {p.v}
-          </span>
-        )
-      })}
-
       {tap && (
         <div className={styles.chartTip} style={{ left: `${tap.xPct}%` }}>
           {pts[tap.i].l} · {pts[tap.i].v}
         </div>
       )}
 
+      {/* Dates as real HTML below the SVG, not <text> inside it — the
+          actual fix for the squished-label bug: an SVG <text> element
+          inside a preserveAspectRatio="none" box (needed above so the
+          chart can fill a responsive width at a fixed height) gets
+          stretched non-uniformly along with everything else, which is
+          exactly what mangled these labels before. Plain HTML text
+          isn't subject to that internal viewBox transform at all. */}
       <div className={`${styles.chartDates} mono`}>
         <span>{pts[0].l}</span>
         <span>{pts[pts.length - 1].l}</span>
@@ -248,8 +224,10 @@ export function TrendsTab() {
               <h3>{nameOf(k)}</h3>
               <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} lb</span>
             </div>
-            <div className={styles.chartSub}>
-              {pts.length} session{pts.length > 1 ? 's' : ''} · now {pts.length ? pts[pts.length - 1].v : '—'} lb
+            <div className={styles.chartSub}>{pts.length} sessions</div>
+            <div className={styles.statNow}>
+              <span className="mono">{pts[pts.length - 1].v}</span>
+              <span className={styles.statUnit}>lb</span>
             </div>
             <LineChart pts={pts} colour={colOf(k)} />
           </div>

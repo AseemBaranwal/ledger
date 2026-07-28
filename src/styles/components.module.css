@@ -741,27 +741,35 @@ svg.chart {
   overflow: visible;
 }
 
-/* ── trend line chart — value labels, tap tooltip, date row all live
-   outside the SVG on purpose (see chartGeometry.ts / TrendsTab's
+/* ── trend line chart — the current-value stat, tap tooltip, and date row
+   all live outside the SVG on purpose (see chartGeometry.ts / TrendsTab's
    LineChart): the SVG uses preserveAspectRatio="none" so it can fill a
    responsive width at a fixed height, which stretches everything inside
    it non-uniformly — including <text>, which is what squished the old
-   date labels. Plain HTML positioned by percentage isn't subject to that
-   transform, so it stays legible regardless of the SVG's internal scale. ── */
+   date labels. Plain HTML isn't subject to that transform, so it stays
+   legible regardless of the SVG's internal scale. ── */
 .chartWrap {
   position: relative;
 }
 
-.chartValueLabel {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  margin-top: -6px;
-  font-family: 'JetBrains Mono';
-  font-size: 11px;
+.statNow {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.statNow .mono {
+  font-size: 27px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  white-space: nowrap;
+  color: var(--text);
+}
+
+.statUnit {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
 }
 
 .chartTip {

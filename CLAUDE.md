@@ -44,11 +44,25 @@ Practical pattern established in `tests/unit/`:
   code changes** — `gh issue create` (repo: `AseemBaranwal/ledger`), then
   work toward closing it. Keeps a durable, filterable record of what's been
   asked for and fixed instead of it only living in a chat transcript.
+- **Group minor findings under one broader issue rather than filing one
+  issue per small thing.** A batch of small, related fixes (a grammar nit,
+  a dead-code display bug, a formatting tweak) surfaced together — e.g.
+  from a single UX audit pass — should become one issue titled for the
+  batch or the area (`"UX audit: quick fixes"`, `"History tab display
+  polish"`), not four or five one-line issues. Filing a flood of trivial
+  issues makes the tracker noisy and harder to scan for what actually
+  matters. Reach for a dedicated issue when something is a genuinely
+  distinct, substantial piece of work (a new feature, a real architectural
+  change, a bug significant enough to want its own history) — not for
+  every individual small polish item.
 - **Every change is isolated — one logical fix per commit, never bundled
   with unrelated changes**, even two small fixes that happen to touch the
-  same file. Reference the issue being closed in the commit message
-  (`Fixes #N`) so GitHub auto-closes it on push/merge to main. A revert of
-  one fix shouldn't have to take an unrelated one with it.
+  same file. This still holds even when several small fixes share one
+  grouped issue (above): each still gets its own commit. Reference the
+  issue in every commit message; use `Fixes #N` only on the last commit
+  that closes it out (so GitHub auto-closes it on push/merge to main) and
+  `Part of #N` on the earlier ones in that batch. A revert of one fix
+  shouldn't have to take an unrelated one with it.
 
 ## Infra references
 

@@ -209,3 +209,15 @@
 .toast.up {
   transform: translate(-50%, 0);
 }
+
+/* Previously every notification looked identical regardless of type —
+   an error and a success confirmation were the same neutral pill. */
+.toast.success {
+  background: var(--teal);
+  color: #04231F;
+}
+
+.toast.error {
+  background: var(--coral);
+  color: #2A0B0B;
+}

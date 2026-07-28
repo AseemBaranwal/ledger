@@ -9,9 +9,13 @@ export function Toast() {
   useEffect(() => {
     if (notifications.length === 0) return
 
+    // Error messages tend to carry more to read (what failed, sometimes
+    // why) than a short success confirmation — give them a bit longer
+    // before they disappear.
+    const duration = notifications[0].type === 'error' ? 4500 : 3000
     const timer = setTimeout(() => {
       dismissNotification(notifications[0].id)
-    }, 3000)
+    }, duration)
 
     return () => clearTimeout(timer)
   }, [notifications, dismissNotification])
@@ -20,7 +24,7 @@ export function Toast() {
 
   const notification = notifications[0]
   return (
-    <div className={`${styles.toast} ${notifications.length > 0 ? styles.up : ''}`}>
+    <div className={`${styles.toast} ${styles[notification.type]} ${notifications.length > 0 ? styles.up : ''}`}>
       {notification.message}
     </div>
   )

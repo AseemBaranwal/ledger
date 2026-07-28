@@ -372,6 +372,24 @@
   box-shadow: 0 3px 14px -4px rgba(255, 176, 32, 0.5);
 }
 
+/* The one empty slot that tapping a rep number is about to fill — a
+   pulsing ring in the same amber used for .filled above, so "this is
+   about to become that" reads as the same color language, not a new one. */
+.blk.pending {
+  border: 2px solid var(--amber);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .blk.pending {
+    animation: pendingPulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes pendingPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 176, 32, 0); }
+}
+
 .blk.filled .n {
   color: var(--ink);
 }

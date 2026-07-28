@@ -208,8 +208,14 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
         {Array.from({ length: Math.max(def.s, ex.r.length + 1) }).map((_, j) => {
           const v = ex.r[j]
           if (v == null) {
+            // Every empty slot's tap opens the same picker (logRep always
+            // appends), but only the FIRST one — index ex.r.length — is
+            // actually what tapping a rep number is about to fill. Flag
+            // just that one so the pulse means something specific instead
+            // of lighting up every future placeholder at once.
+            const isPending = pickerOpen && j === ex.r.length
             return (
-              <button key={j} className={styles.blk} onClick={() => setPickerOpen(true)}>
+              <button key={j} className={`${styles.blk} ${isPending ? styles.pending : ''}`} onClick={() => setPickerOpen(true)}>
                 <span className={styles.n}>–</span>
                 <span className={styles.lab}>Set {j + 1}</span>
               </button>

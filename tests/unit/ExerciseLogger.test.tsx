@@ -69,6 +69,20 @@ describe('ExerciseLogger — accordion', () => {
     expect(screen.getByRole('button', { name: '6' })).toBeTruthy() // target rep, in the picker
   })
 
+  it('marks only the next-to-fill slot as pending once the picker is open, not the others', async () => {
+    const user = userEvent.setup()
+    setupDraft({ r: [6] }) // one set already logged, so two empty slots render (Set 2, Set 3, Set 4)
+    render(<ExerciseLogger def={SQ_DEF} index={0} />)
+
+    await user.click(screen.getByText('Back Squat'))
+    await user.click(screen.getByText('Set 2')) // the next-to-fill slot
+
+    const set2 = screen.getByText('Set 2').closest('button')!
+    const set3 = screen.getByText('Set 3').closest('button')!
+    expect(/_pending_/.test(set2.className)).toBe(true)
+    expect(/_pending_/.test(set3.className)).toBe(false)
+  })
+
   it('logging a set updates the store and keeps the card open for the next set', async () => {
     const user = userEvent.setup()
     setupDraft()

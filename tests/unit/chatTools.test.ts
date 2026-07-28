@@ -175,6 +175,27 @@ describe('getTrainingData', () => {
     expect(result).toMatchObject({ rows: [{ exercise: 'OLD_CODE', exerciseName: 'OLD_CODE' }] })
   })
 
+  it("attaches a session's notes to only its first exercise row, not every row", async () => {
+    mockSupabase({ exercise_substitutions: {} }, [
+      { d: '2026-07-14', s: 'LA', n: 'Felt strong today', ex: [{ k: 'SQ', r: [5], ws: [80] }, { k: 'BSS', r: [8], ws: [20] }] },
+    ])
+
+    const result = await getTrainingData('user-1', {})
+
+    expect(result).toMatchObject({ rows: [{ exercise: 'SQ', notes: 'Felt strong today' }, { exercise: 'BSS' }] })
+    expect((result as { rows: Array<{ notes?: string }> }).rows[1]).not.toHaveProperty('notes')
+  })
+
+  it('omits notes entirely when the session has none', async () => {
+    mockSupabase({ exercise_substitutions: {} }, [
+      { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5], ws: [80] }] },
+    ])
+
+    const result = await getTrainingData('user-1', {})
+
+    expect((result as { rows: Array<{ notes?: string }> }).rows[0]).not.toHaveProperty('notes')
+  })
+
   it('filters rows to the requested exerciseCode', async () => {
     mockSupabase({ exercise_substitutions: {} }, [
       { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5], ws: [80] }, { k: 'BSS', r: [8], ws: [20] }] },

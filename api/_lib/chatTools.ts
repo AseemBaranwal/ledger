@@ -6,7 +6,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone. A row may also carry notes — whatever the owner wrote down for that session (form, energy, anything worth remembering) — attached once per session on its first row, not repeated on every row. Ground observations in these notes directly rather than guessing at context the owner already told you.",
     input_schema: {
       type: 'object',
       properties: {
@@ -84,6 +84,7 @@ interface TrainingDataRow {
   exerciseName: string
   sets: string
   topWeight: number | null
+  notes?: string
 }
 
 export function topWeightOf(ex: SheetExercise): number | null {
@@ -169,7 +170,7 @@ export async function getTrainingData(
 
   let query = supabaseAdmin()
     .from('sessions')
-    .select('d, s, ex')
+    .select('d, s, ex, n')
     .eq('user_id', ownerUserId)
     .eq('type', 'PROGRAM')
     .order('d', { ascending: false })
@@ -183,8 +184,15 @@ export async function getTrainingData(
 
   const rows: TrainingDataRow[] = []
   for (const session of sessions) {
+    let noteAttached = false
     for (const ex of session.ex || []) {
       if (exerciseCode && ex.k !== exerciseCode) continue
+      // Notes are per-session, not per-exercise — attach once (on the
+      // first row for that session) rather than repeating the same
+      // string on every exercise row, which would just burn tokens.
+      // Mirrors the old Apps Script's `idx === 0 ? body.n : ''` convention.
+      const notes = !noteAttached && session.n ? session.n : undefined
+      if (notes) noteAttached = true
       rows.push({
         date: session.d,
         session: session.s || '',
@@ -192,6 +200,7 @@ export async function getTrainingData(
         exerciseName: exerciseNames[ex.k] || ex.k,
         sets: formatSets(ex),
         topWeight: topWeightOf(ex),
+        ...(notes ? { notes } : {}),
       })
     }
   }

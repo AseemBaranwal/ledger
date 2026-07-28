@@ -760,14 +760,15 @@ svg.chart {
 }
 
 .statNow .mono {
-  font-size: 27px;
+  font-size: 38px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   color: var(--text);
 }
 
 .statUnit {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--dim);
 }

@@ -60,6 +60,7 @@ export function HistoryTab() {
               const p = program[s.s || ''] || { name: s.s || 'REST', colour: 'legs', full: '', gym: '', day: 0, ex: [] }
               const id = s.d + s.s
               const sets = (s.ex || []).reduce((t, e) => t + e.r.length, 0)
+              const vol = volume(s)
               const isOpen = expandedRow === id
               return (
                 <div key={id}>
@@ -72,12 +73,22 @@ export function HistoryTab() {
                     <div className={styles.m}>
                       <div className={styles.t}>{p.name}</div>
                       <div className={`${styles.s} mono`}>
-                        {fmtD(s.d)} · {s.g || ''} · {sets} sets
+                        {fmtD(s.d)} · {s.g || ''} · {sets} set{sets === 1 ? '' : 's'}
                       </div>
                     </div>
-                    <div className={`${styles.v} mono`}>
-                      <b>{(volume(s) / 1000).toFixed(1)}k</b>lb vol
-                    </div>
+                    {/* Sprint sessions log a "weight" field that's actually
+                        something else (e.g. incline/speed, confirmed by
+                        checking the real data: SPR logged ws:[5] for 6
+                        reps — 5 isn't lb), so their "volume" is a
+                        meaningless small number, not zero — a vol>0 check
+                        alone doesn't catch it. Gate on session type
+                        instead of the number: real lb volume only exists
+                        for actual weight-training colours. */}
+                    {p.colour !== 'sprint' && vol > 0 && (
+                      <div className={`${styles.v} mono`}>
+                        <b>{(vol / 1000).toFixed(1)}k</b>lb vol
+                      </div>
+                    )}
                   </button>
                   <div className={`${styles.hdetail} ${isOpen ? styles.on : ''}`}>
                     {(s.ex || []).map((e) => {

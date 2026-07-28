@@ -35,6 +35,16 @@ export function SyncTab() {
 
   const dedupKey = (s: Session) => `${s.d}|${s.s}`
 
+  // lastSyncedAt only ever gets set by a successful save from THIS device
+  // session — on a fresh load (or a different device) it's always null,
+  // even when the account clearly has synced history, which is exactly
+  // what made this read "Last saved: never" for an account with 10 synced
+  // sessions and "all caught up" showing right above it. Falling back to
+  // the most recent local session's own date means this always reflects
+  // reality instead of only ever being accurate mid-way through the one
+  // session that happened to save something.
+  const lastActivityMs = lastSyncedAt ?? (sessions.length ? new Date(sessions[sessions.length - 1].d + 'T12:00').getTime() : null)
+
   const handleDisconnectStrava = async () => {
     try {
       await disconnectStravaAction()
@@ -120,7 +130,7 @@ export function SyncTab() {
           </div>
         </div>
         <div style={{ fontSize: '11px', color: 'var(--dim)', marginTop: '10px', fontFamily: 'JetBrains Mono' }}>
-          Last saved: {timeAgo(lastSyncedAt)}
+          Last activity: {timeAgo(lastActivityMs)}
         </div>
         {pendingSync.length > 0 && (
           <button

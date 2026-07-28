@@ -70,7 +70,7 @@ async function syncSession(session: Session, markPending: (id: string) => void, 
   try {
     await insertSession(session)
     clearPending(session.id)
-    useSessionStore.setState({ lastSyncedAt: Date.now() })
+    useSessionStore.getState().markSynced()
   } catch (e) {
     markPending(session.id)
   }

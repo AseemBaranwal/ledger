@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSessionStore, useConfigStore, useUIStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
-import { applySubstitutions } from '@/services/exerciseCatalog'
+import { applySubstitutions, resolveExerciseDisplay } from '@/services/exerciseCatalog'
+import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { saveSubstitution } from '@/services/exerciseSubstitutionsApi'
 import { doneThisWeek, owedThisWeek, tgtStr } from '@/services/weekProgress'
 import { lastDialedWeight, formatLastSets } from '@/services/trendCalculations'
@@ -35,6 +36,7 @@ export function TodayTab() {
   const colours = useConfigStore((s) => s.colours)
   const schedule = useConfigStore((s) => s.schedule)
   const substitutions = useConfigStore((s) => s.substitutions)
+  const customExercises = useCustomExerciseStore((s) => s.customExercises)
 
   const openWeekDay = useUIStore((s) => s.openWeekDay)
   const toggleWeekDay = useUIStore((s) => s.toggleWeekDay)
@@ -49,6 +51,18 @@ export function TodayTab() {
   const codesForDay = (dow: number) => Object.keys(program).filter((k) => program[k].day === dow)
 
   const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] => applySubstitutions(exList, substitutions)
+
+  // saveDraft() already computed which exercises hit a new PR this session
+  // (via the previously-orphaned checkPRs()) but nothing ever surfaced it —
+  // there was no in-app moment marking a PR at all. A toast is the smallest
+  // change that actually closes the loop from "detected" to "seen."
+  const handleSaveDraft = () => {
+    const prCodes = saveDraft()
+    if (!prCodes.length) return
+    const names = prCodes.map((k) => resolveExerciseDisplay(k, program, colours, customExercises).name)
+    const label = names.length === 1 ? names[0] : `${names.length} exercises`
+    useUIStore.getState().showNotification(`New PR: ${label}`, 'success')
+  }
 
   const handleStart = (code: string) => {
     const p = program[code]
@@ -141,7 +155,7 @@ export function TodayTab() {
             onClick={() => {
               const logged = draftItems.filter((i) => i.done)
               if (!logged.length) return
-              saveDraft()
+              handleSaveDraft()
             }}
           >
             Save session
@@ -248,7 +262,7 @@ export function TodayTab() {
             onClick={() => {
               const logged = draftEx.filter((e) => e.r.length)
               if (!logged.length) return
-              saveDraft()
+              handleSaveDraft()
             }}
           >
             Save session

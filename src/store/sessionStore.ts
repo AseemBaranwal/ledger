@@ -5,6 +5,7 @@ import { insertSession } from '@/services/sessionsApi'
 import { postSessionToStrava } from '@/services/strava'
 import { scopedStorage } from '@/services/userScope'
 import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
+import { checkPRs } from '@/services/trendCalculations'
 import { useConfigStore } from './configStore'
 import { useUIStore } from './uiStore'
 import { useStravaStore } from './stravaStore'
@@ -44,7 +45,7 @@ interface SessionStore {
   toggleRestItem: (index: number) => void
   setRestItemDuration: (index: number, value: string) => void
   updateNotes: (notes: string) => void
-  saveDraft: () => number // returns count of PRs
+  saveDraft: () => string[] // returns exercise codes that hit a new PR this session
   clearDraft: () => void
   flushPendingSync: () => void
   markSynced: () => void
@@ -217,7 +218,7 @@ export const useSessionStore = create<SessionStore>()(
 
       saveDraft: () => {
         const state = get()
-        if (!state.draft) return 0
+        if (!state.draft) return []
 
         const isRest = state.draft.type === 'REST'
         let sessionToSave: Session
@@ -237,18 +238,12 @@ export const useSessionStore = create<SessionStore>()(
         const newSessions = [...state.sessions, savedSession]
         newSessions.sort((a, b) => a.d.localeCompare(b.d))
 
-        let prCount = 0
-        if (!isRest) {
-          sessionToSave.ex?.forEach((e) => {
-            if (!e.r.length) return
-            const curMax = e.ws ? Math.max(...e.ws) : e.w || 0
-            const prior = state.sessions
-              .filter((x) => x.d < sessionToSave.d)
-              .flatMap((x) => x.ex?.filter((y) => y.k === e.k) || [])
-              .map((y) => (y.ws ? Math.max(...y.ws) : y.w || 0))
-            if (prior.length && curMax > Math.max(...prior)) prCount++
-          })
-        }
+        // checkPRs() already existed as a tested pure function but was never
+        // actually wired to anything — this inline block used to duplicate
+        // its exact logic just to get a bare count. Reuse it directly
+        // instead, which also gives callers the actual exercise codes (for
+        // a real "new PR: Back Squat" notification) rather than just a number.
+        const prCodes = isRest ? [] : checkPRs(sessionToSave, state.sessions)
 
         set({ sessions: newSessions, draft: null, draftEx: null, draftDefs: null, draftItems: null })
 
@@ -289,7 +284,7 @@ export const useSessionStore = create<SessionStore>()(
           }
         }
 
-        return prCount
+        return prCodes
       },
 
       clearDraft: () => set({ draft: null, draftEx: null, draftDefs: null, draftItems: null }),

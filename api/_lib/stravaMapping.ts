@@ -184,14 +184,13 @@ export function toLocalNaiveIso(utcIso: string, tzOffsetMinutes?: number): strin
   return new Date(localMs).toISOString().replace('Z', '')
 }
 
-export function buildActivityDescription(exercises: ExerciseLike[], notes: string | undefined): string {
-  const lines = exercises.map((e) => {
-    const sets = e.r.map((r, i) => {
-      const w = e.ws ? e.ws[i] : e.w
-      return w ? `${w}×${r}` : `${r}`
-    })
-    return `${e.n || e.k}: ${sets.join(', ')}`
-  })
-  if (notes) lines.push('', notes)
-  return lines.join('\n')
+// Deliberately notes-only, no per-exercise sets/reps/weight lines. For
+// weight-training sessions that data already renders natively as Strava's
+// structured Exercise cards via the separate JSON upload (buildStravaSets
+// below) — repeating it as text here was pure redundancy. For the plain-
+// activity fallback path (non-weight-training sport types) it'd be the only
+// place that data showed, but the owner wants the text description to
+// carry just their own notes either way, not a re-rendering of the lifts.
+export function buildActivityDescription(notes: string | undefined): string {
+  return notes || ''
 }

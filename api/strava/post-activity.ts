@@ -134,7 +134,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sportType = sportTypeForCode(code)
   const activityName = name || `Ledger: ${code}`
-  const description = buildActivityDescription(exercises, notes)
+  const description = buildActivityDescription(notes)
   const { startTimeIso, elapsedSeconds } = resolveTiming(date, exercises, startTime, endTime)
 
   // Weight-training sessions go through Strava's structured JSON upload so

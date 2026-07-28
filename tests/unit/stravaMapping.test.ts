@@ -133,24 +133,17 @@ describe('resolveTiming', () => {
 })
 
 describe('buildActivityDescription', () => {
-  it('formats each exercise as name: weight×reps, comma-separated', () => {
-    const desc = buildActivityDescription([{ k: 'SQ', n: 'Back Squat', r: [5, 6], ws: [100, 100] }], undefined)
-    expect(desc).toBe('Back Squat: 100×5, 100×6')
+  // Deliberately notes-only — the per-exercise sets/reps/weight text this
+  // used to build was dropped entirely (see stravaMapping.ts): for
+  // weight-training sessions it duplicated Strava's native Exercise cards,
+  // and the owner wants the text description to carry just their own
+  // notes either way.
+  it('returns just the notes, verbatim', () => {
+    expect(buildActivityDescription('Felt strong today')).toBe('Felt strong today')
   })
 
-  it('falls back to the code when no name is provided', () => {
-    const desc = buildActivityDescription([{ k: 'SQ', r: [5], ws: [100] }], undefined)
-    expect(desc).toBe('SQ: 100×5')
-  })
-
-  it('omits weight for bodyweight sets, shown as just the rep count', () => {
-    const desc = buildActivityDescription([{ k: 'HLR', n: 'Hanging Leg Raise', r: [10, 12], w: null }], undefined)
-    expect(desc).toBe('Hanging Leg Raise: 10, 12')
-  })
-
-  it('appends notes as a trailing blank-line-separated block', () => {
-    const desc = buildActivityDescription([{ k: 'SQ', n: 'Back Squat', r: [5], ws: [100] }], 'Felt strong today')
-    expect(desc).toBe('Back Squat: 100×5\n\nFelt strong today')
+  it('returns an empty string when there are no notes', () => {
+    expect(buildActivityDescription(undefined)).toBe('')
   })
 })
 

@@ -23,19 +23,22 @@ export interface ChartPadding {
 
 // Maps data points onto a width×height box and returns both the plotted
 // pixel positions (needed for value labels, dots, and tap hit-testing) and
-// an SVG path string for the line itself. The path is smoothed with a
-// simple midpoint-control-point bezier between each consecutive pair of
-// points — enough to soften the straight-segment look for the small point
-// counts most exercises actually produce (2-6 sessions in a trend window),
-// without pulling in a curve-fitting library just for this.
+// an SVG path string for the line itself.
+//
+// Plain straight segments between points, not a smoothed curve — a
+// midpoint-control-point bezier was tried first, but it forces a
+// horizontal tangent at every point, which reads fine for exactly 2 points
+// (the only case actually checked against the mockup) and produces a
+// visibly flat "shelf" around any middle point once a series has 3+
+// sessions, since real data. Confirmed against the real chosen mockup
+// screenshot, which used plain straight lines throughout.
 export function plotLine(pts: ChartPoint[], width: number, height: number, pad: ChartPadding): { plotted: PlottedPoint[]; path: string } {
   const ys = pts.map((p) => p.v)
   const y0 = Math.min(...ys)
   const y1 = Math.max(...ys)
   const span = y1 - y0 || 1
   // 30% headroom above/below the data range so the line never touches the
-  // very top/bottom edge — matters more now that point value labels sit
-  // just above each dot and need room to not clip.
+  // very top/bottom edge.
   const lo = y0 - span * 0.3
   const hi = y1 + span * 0.3
 
@@ -46,13 +49,7 @@ export function plotLine(pts: ChartPoint[], width: number, height: number, pad: 
 
   const plotted: PlottedPoint[] = pts.map((p, i) => ({ x: X(i), y: Y(p.v), v: p.v, l: p.l }))
 
-  let path = `M${plotted[0].x.toFixed(1)},${plotted[0].y.toFixed(1)}`
-  for (let i = 0; i < plotted.length - 1; i++) {
-    const a = plotted[i]
-    const b = plotted[i + 1]
-    const mx = ((a.x + b.x) / 2).toFixed(1)
-    path += `C${mx},${a.y.toFixed(1)} ${mx},${b.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`
-  }
+  const path = plotted.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('')
 
   return { plotted, path }
 }

@@ -224,7 +224,6 @@ export function TrendsTab() {
               <h3>{nameOf(k)}</h3>
               <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} lb</span>
             </div>
-            <div className={styles.chartSub}>{pts.length} sessions</div>
             <div className={styles.statNow}>
               <span className="mono">{pts[pts.length - 1].v}</span>
               <span className={styles.statUnit}>lb</span>

@@ -25,9 +25,10 @@ describe('plotLine', () => {
     expect(path.startsWith(`M${plotted[0].x.toFixed(1)},${plotted[0].y.toFixed(1)}`)).toBe(true)
   })
 
-  it('emits one cubic bezier segment per point-to-point gap', () => {
+  it('emits one straight lineto segment per point-to-point gap, no curve smoothing', () => {
     const { path } = plotLine([{ v: 10, l: 'a' }, { v: 20, l: 'b' }, { v: 15, l: 'c' }], 300, 100, { t: 10, r: 10, b: 10, l: 10 })
-    expect((path.match(/C/g) || []).length).toBe(2)
+    expect((path.match(/L/g) || []).length).toBe(2)
+    expect(path).not.toContain('C')
   })
 })
 

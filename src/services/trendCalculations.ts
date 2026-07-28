@@ -16,6 +16,21 @@ export function getMaxWeight(exercise: Exercise): number {
   return Math.max(...exercise.ws)
 }
 
+// Pairs each set's own weight with its own rep count ("55×6, 55×6, 60×7")
+// instead of two separate comma lists ("55,55,60 × 6,6,7") that have to be
+// mentally zipped together to read — used anywhere a "last performance"
+// summary is shown (ExerciseLogger's collapsed row and "Last:" line,
+// TodayTab's week-preview list).
+export function formatLastSets(e: Exercise, unit?: string): string {
+  return e.r
+    .map((r, i) => {
+      const w = e.ws ? e.ws[i] : e.w
+      if (typeof w !== 'number') return `${r}`
+      return `${w}${unit === '+lb' ? '+' : ''}×${r}`
+    })
+    .join(', ')
+}
+
 // Total lb volume for one session — sum(reps * weight) per set
 export function volume(s: Session): number {
   return (s.ex || []).reduce((t, e) => {

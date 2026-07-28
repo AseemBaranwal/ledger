@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSessionStore, useUIStore } from '@/store'
 import type { ProgramExercise } from '@/types'
-import { lastOf } from '@/services/trendCalculations'
+import { lastOf, formatLastSets } from '@/services/trendCalculations'
 import { ago } from '@/services/dateUtils'
 import { unlockAudioContext } from '@/services/audio'
 import { StarIcon, CloseIcon, SwapIcon, TrashIcon } from '@/components/icons/Icons'
@@ -104,7 +104,7 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
           {def.n.includes('★') ? def.n.replace('★', '') : def.n}
           {last && (
             <span className={`${styles.collapsedMeta} mono`}>
-              {last.ws ? last.ws.join(',') : last.w}{def.u === '+lb' ? ' extra' : ''} × {last.r.join(',')}
+              {formatLastSets(last, def.u)}
             </span>
           )}
         </span>
@@ -161,7 +161,7 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
 
       {last ? (
         <div className={`${styles.exLast} mono`}>
-          Last: <b>{last.ws ? last.ws.join(',') : last.w}{def.u === '+lb' ? ' extra' : ''} × {last.r.join(',')}</b> · {ago(last.d)}
+          Last: <b>{formatLastSets(last, def.u)}</b> · {ago(last.d)}
         </div>
       ) : (
         <div className={styles.exLast}>First time. Start at the target and see how it moves.</div>

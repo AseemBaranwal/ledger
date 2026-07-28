@@ -4,7 +4,7 @@ import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { applySubstitutions } from '@/services/exerciseCatalog'
 import { saveSubstitution } from '@/services/exerciseSubstitutionsApi'
 import { doneThisWeek, owedThisWeek, tgtStr } from '@/services/weekProgress'
-import { lastDialedWeight } from '@/services/trendCalculations'
+import { lastDialedWeight, formatLastSets } from '@/services/trendCalculations'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -349,7 +349,7 @@ export function TodayTab() {
                         {withSubstitutions(p.ex).map((e) => {
                           const last = [...sessions].reverse().flatMap((s) => (s.ex || []).map((x) => ({ ...x, d: s.d }))).find((x) => x.k === e.k && x.r.length)
                           const lastStr = last
-                            ? `Last ${last.ws ? last.ws.join(',') : last.w}${e.u === '+lb' ? '+' : ''}×${last.r.join(',')}`
+                            ? `Last ${formatLastSets(last, e.u)}`
                             : 'First time — start at target'
                           return (
                             <div key={e.k} className={styles.wdEx}>

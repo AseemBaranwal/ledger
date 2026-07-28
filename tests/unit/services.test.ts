@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { iso, dayName, weekNumber } from '@/services/dateUtils'
-import { calculateVolume, getMaxWeight, checkPRs, lastDialedWeight } from '@/services/trendCalculations'
+import { calculateVolume, getMaxWeight, checkPRs, lastDialedWeight, formatLastSets } from '@/services/trendCalculations'
 import type { Exercise, Session } from '@/types'
 
 describe('dateUtils', () => {
@@ -55,6 +55,24 @@ describe('trendCalculations', () => {
       ex: [{ k: 'SQ', r: [6], ws: [75, 75, 75] }],
     }
     expect(checkPRs(latest, [prior, latest])).toEqual(['SQ'])
+  })
+
+  describe('formatLastSets', () => {
+    it('pairs each set with its own weight rather than two separate lists', () => {
+      expect(formatLastSets({ k: 'SQ', r: [6, 6, 7, 8], ws: [55, 55, 55, 55] })).toBe('55×6, 55×6, 55×7, 55×8')
+    })
+
+    it('falls back to the single legacy weight field for every set', () => {
+      expect(formatLastSets({ k: 'SQ', r: [6, 6], w: 80 })).toBe('80×6, 80×6')
+    })
+
+    it('shows bare rep counts for a bodyweight exercise with no weight at all', () => {
+      expect(formatLastSets({ k: 'HLR', r: [10, 12] })).toBe('10, 12')
+    })
+
+    it('marks a "+lb" (extra load) unit per set, not once for the whole line', () => {
+      expect(formatLastSets({ k: 'SLC', r: [15, 15], ws: [175, 175] }, '+lb')).toBe('175+×15, 175+×15')
+    })
   })
 
   describe('lastDialedWeight', () => {

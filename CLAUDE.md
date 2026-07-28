@@ -101,6 +101,14 @@ Practical pattern established in `tests/unit/`:
 
 ## Vercel Edge Functions — hard-won gotchas
 
+- **`npm run dev` (plain `vite`) does not serve `/api/*.ts` at all.** Every
+  request to a Coach/Strava/chat endpoint 404s immediately when testing
+  against the local dev server — confirmed via the browser's network tab,
+  not a hang or a slow response. This cost real time once: the Coach tab
+  looked like it was silently doing nothing (no error, no reply) when the
+  actual cause was a 404 that never even reached the app's own error
+  handling. Use `npx vercel dev` instead when testing anything under
+  `api/` locally; the plain Vite dev server is fine for everything else.
 - **Every `/api/*.ts` handler must set `export const config = { runtime: 'edge' }`.**
   Without it, Vercel's default Node runtime invokes the handler with a
   legacy Node-style request object whose `.headers` is a plain object, not a

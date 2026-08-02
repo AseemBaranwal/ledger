@@ -6,6 +6,7 @@ import { useChatStore } from '@/store/chatStore'
 import { useUIStore } from '@/store'
 import { estimateCostUsd, formatTokenCount, formatCostUsd } from '@/services/chatCost'
 import type { ChatSuggestion, ExerciseChange } from '@/services/chat'
+import { ChevronIcon } from '@/components/icons/Icons'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
@@ -38,6 +39,7 @@ export function CoachTab() {
   const messages = useChatStore((s) => s.messages)
   const sending = useChatStore((s) => s.sending)
   const statusMessage = useChatStore((s) => s.statusMessage)
+  const thinkingText = useChatStore((s) => s.thinkingText)
   const lastUsage = useChatStore((s) => s.lastUsage)
   const error = useChatStore((s) => s.error)
   const sendMessage = useChatStore((s) => s.sendMessage)
@@ -51,6 +53,7 @@ export function CoachTab() {
 
   const [input, setInput] = useState('')
   const [revealedId, setRevealedId] = useState<string | null>(null)
+  const [thinkingOpen, setThinkingOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<number | null>(null)
 
@@ -74,7 +77,7 @@ export function CoachTab() {
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, sending, statusMessage])
+  }, [messages, sending, statusMessage, thinkingOpen, thinkingText])
 
   useEffect(() => {
     if (error) {
@@ -86,6 +89,7 @@ export function CoachTab() {
   const handleSend = (text?: string) => {
     const toSend = text ?? input
     if (!toSend.trim() || sending) return
+    setThinkingOpen(false) // collapsed by default for every new turn, not just the first
     sendMessage(toSend)
     setInput('')
   }
@@ -204,14 +208,52 @@ export function CoachTab() {
             <div
               style={{
                 borderRadius: 'var(--r)',
-                padding: '10px 13px',
-                fontSize: '13.5px',
                 background: 'var(--surface)',
                 border: '1px solid var(--line)',
-                color: 'var(--dim)',
+                maxWidth: '85%',
+                overflow: 'hidden',
               }}
             >
-              {statusMessage || 'Thinking…'}
+              <button
+                onClick={() => thinkingText && setThinkingOpen((o) => !o)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  width: '100%',
+                  padding: '10px 13px',
+                  fontSize: '13.5px',
+                  color: 'var(--dim)',
+                  cursor: thinkingText ? 'pointer' : 'default',
+                  background: 'none',
+                  border: 'none',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ flex: 1 }}>{statusMessage || 'Thinking…'}</span>
+                {/* Only clickable once there's actual thinking content to show —
+                    a call with nothing to reveal (thinking can come back empty)
+                    degrades gracefully to a plain, non-interactive status line. */}
+                {thinkingText && <ChevronIcon open={thinkingOpen} size="13px" />}
+              </button>
+              {thinkingOpen && thinkingText && (
+                <div
+                  style={{
+                    padding: '0 13px 12px',
+                    fontSize: '12px',
+                    lineHeight: 1.5,
+                    color: 'var(--dim)',
+                    whiteSpace: 'pre-wrap',
+                    maxHeight: '220px',
+                    overflowY: 'auto',
+                    borderTop: '1px solid var(--line)',
+                    marginTop: '-2px',
+                    paddingTop: '10px',
+                  }}
+                >
+                  {thinkingText}
+                </div>
+              )}
             </div>
           </div>
         )}

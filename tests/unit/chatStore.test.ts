@@ -28,7 +28,7 @@ const baseUsage = {
 
 describe('chatStore', () => {
   beforeEach(() => {
-    useChatStore.setState({ messages: [], sending: false, statusMessage: null, lastUsage: null, error: null })
+    useChatStore.setState({ messages: [], sending: false, statusMessage: null, thinkingText: '', lastUsage: null, error: null })
     useConfigStore.setState({ program: {}, substitutions: {} })
     vi.clearAllMocks()
     vi.mocked(chatService.updateSuggestionStatus).mockResolvedValue(undefined)
@@ -69,6 +69,38 @@ describe('chatStore', () => {
       const assistantMessage = useChatStore.getState().messages[1]
       expect(assistantMessage.suggestions).toHaveLength(1)
       expect(assistantMessage.suggestions![0].status).toBe('pending')
+    })
+
+    // The "generating" blob was previously just a static status label — the
+    // model's actual (summarized) reasoning was captured server-side for
+    // chat_logs but never reached the client at all. Each tool-loop
+    // iteration now streams its own thinking chunk, accumulated here so the
+    // Coach tab's collapsible disclosure can show it live.
+    it('accumulates streamed thinking chunks with a blank line between iterations, then clears them once the turn completes', async () => {
+      const seenValues: string[] = []
+      vi.mocked(chatService.sendChatMessage).mockImplementation(async (_history, _onStatus, onThinking) => {
+        onThinking?.('First iteration reasoning')
+        seenValues.push(useChatStore.getState().thinkingText)
+        onThinking?.('Second iteration reasoning')
+        seenValues.push(useChatStore.getState().thinkingText)
+        return { reply: 'Done.', suggestions: [], usage: baseUsage, userMessageId: 1, assistantMessageId: 2 }
+      })
+
+      await useChatStore.getState().sendMessage('How am I doing?')
+
+      expect(seenValues).toEqual(['First iteration reasoning', 'First iteration reasoning\n\nSecond iteration reasoning'])
+      expect(useChatStore.getState().thinkingText).toBe('')
+    })
+
+    it('clears thinkingText on failure too, not just on success', async () => {
+      vi.mocked(chatService.sendChatMessage).mockImplementation(async (_history, _onStatus, onThinking) => {
+        onThinking?.('Reasoning before the failure')
+        throw new Error('Daily message limit reached')
+      })
+
+      await useChatStore.getState().sendMessage('How am I doing?')
+
+      expect(useChatStore.getState().thinkingText).toBe('')
     })
 
     it('sets an error and clears sending on failure, without adding an assistant message', async () => {

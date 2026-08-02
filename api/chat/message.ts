@@ -226,7 +226,17 @@ export default async function handler(req: Request): Promise<Response> {
           .map((b) => b.thinking)
           .filter(Boolean)
           .join('\n')
-        if (thinkingText) thinkingChunks.push(`[iteration ${iteration}] ${thinkingText}`)
+        if (thinkingText) {
+          thinkingChunks.push(`[iteration ${iteration}] ${thinkingText}`)
+          // Was previously only ever captured for chat_logs (server-side
+          // debugging) — never sent to the client at all, so the "Thinking…"
+          // status pill was the only visible sign anything was happening.
+          // Streamed here per-iteration (not buffered to the end) since
+          // that's the real granularity available: the underlying Anthropic
+          // call itself isn't token-streamed, so this is delivered a whole
+          // iteration's reasoning at a time, not word-by-word.
+          send({ type: 'thinking', text: thinkingText })
+        }
 
         if (response.stop_reason !== 'tool_use') {
           finalStopReason = response.stop_reason

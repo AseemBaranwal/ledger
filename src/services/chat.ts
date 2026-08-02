@@ -96,7 +96,8 @@ export async function fetchChatHistory(): Promise<HistoryMessage[]> {
 // about progress can ignore it.
 export async function sendChatMessage(
   messages: ChatMessage[],
-  onStatus?: (message: string) => void
+  onStatus?: (message: string) => void,
+  onThinking?: (text: string) => void
 ): Promise<{ reply: string; suggestions: ChatSuggestion[]; usage: ChatUsage; userMessageId: number | null; assistantMessageId: number | null }> {
   const res = await authedFetch('/api/chat/message', { messages })
 
@@ -124,6 +125,7 @@ export async function sendChatMessage(
       let event: {
         type: string
         message?: string
+        text?: string
         error?: string
         reply?: string
         suggestions?: ChatSuggestion[]
@@ -139,6 +141,8 @@ export async function sendChatMessage(
 
       if (event.type === 'status') {
         if (event.message) onStatus?.(event.message)
+      } else if (event.type === 'thinking') {
+        if (event.text) onThinking?.(event.text)
       } else if (event.type === 'done') {
         return {
           reply: event.reply || '',

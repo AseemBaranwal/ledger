@@ -39,6 +39,11 @@ interface ChatStore {
   messages: DisplayMessage[]
   sending: boolean
   statusMessage: string | null
+  // Accumulated across the whole in-flight turn (each tool-loop iteration
+  // appends its own chunk) — cleared at the start of every sendMessage and
+  // once the turn finishes, since this is only ever shown live in the
+  // "generating" blob, not persisted alongside the message afterward.
+  thinkingText: string
   lastUsage: ChatUsage | null
   error: string | null
 
@@ -59,6 +64,7 @@ export const useChatStore = create<ChatStore>()(
       messages: [],
       sending: false,
       statusMessage: null,
+      thinkingText: '',
       lastUsage: null,
       error: null,
 
@@ -67,15 +73,23 @@ export const useChatStore = create<ChatStore>()(
         if (!trimmed || get().sending) return
 
         const userMessage: DisplayMessage = { id: makeId(), role: 'user', content: trimmed }
-        set((state) => ({ messages: [...state.messages, userMessage], sending: true, error: null, statusMessage: 'Thinking…' }))
+        set((state) => ({
+          messages: [...state.messages, userMessage],
+          sending: true,
+          error: null,
+          statusMessage: 'Thinking…',
+          thinkingText: '',
+        }))
 
         try {
           const history = get()
             .messages.slice(-MAX_MESSAGES_SENT)
             .map((m) => ({ role: m.role, content: m.content }))
 
-          const { reply, suggestions, usage, userMessageId, assistantMessageId } = await sendChatMessage(history, (status) =>
-            set({ statusMessage: status })
+          const { reply, suggestions, usage, userMessageId, assistantMessageId } = await sendChatMessage(
+            history,
+            (status) => set({ statusMessage: status }),
+            (chunk) => set((state) => ({ thinkingText: state.thinkingText ? `${state.thinkingText}\n\n${chunk}` : chunk }))
           )
 
           const assistantMessage: DisplayMessage = {
@@ -96,10 +110,11 @@ export const useChatStore = create<ChatStore>()(
             ],
             sending: false,
             statusMessage: null,
+            thinkingText: '',
             lastUsage: usage,
           }))
         } catch (e) {
-          set({ sending: false, statusMessage: null, error: e instanceof Error ? e.message : 'Could not reach the coach' })
+          set({ sending: false, statusMessage: null, thinkingText: '', error: e instanceof Error ? e.message : 'Could not reach the coach' })
         }
       },
 

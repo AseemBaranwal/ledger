@@ -9,3 +9,4 @@ coverage/
 .backup/
 .claude/settings.local.json
 scripts/.sheet-export-checkpoint.json
+.vercel

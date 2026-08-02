@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useSessionStore } from '@/store/sessionStore'
 import { useUIStore } from '@/store/uiStore'
 import { setCurrentUserId } from '@/services/userScope'
+import { insertSession } from '@/services/sessionsApi'
 import type { ProgramExercise } from '@/types'
+
+vi.mock('@/services/sessionsApi', () => ({
+  insertSession: vi.fn().mockResolvedValue(undefined),
+  fetchSessions: vi.fn().mockResolvedValue([]),
+}))
 
 const SQ_DEF: ProgramExercise = { k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }
 const LEG_PRESS_DEF: ProgramExercise = { k: 'LEG_PRESS', n: 'Leg Press', s: 3, r: 10, w: 0, u: 'lb', group: 'Legs', cue: '' }
@@ -16,6 +22,7 @@ describe('sessionStore', () => {
     setCurrentUserId(null)
     useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftDefs: null, draftItems: null })
     useUIStore.setState({ notifications: [] })
+    vi.mocked(insertSession).mockClear()
   })
 
   it('should start a PROGRAM session and populate draftEx', () => {
@@ -80,6 +87,32 @@ describe('sessionStore', () => {
     useSessionStore.getState().startRestSession(5, 'Full Rest', [{ n: 'Rest', d: 'all day' }])
     useSessionStore.getState().toggleRestItem(0)
     expect(useSessionStore.getState().draftItems![0].done).toBe(true)
+  })
+
+  it('syncs a PROGRAM session to Supabase on save', () => {
+    useSessionStore.getState().startSession('LA', [{ k: 'SQ', w: 75 }], 'RSL2')
+    useSessionStore.getState().logRep(0, 6)
+    useSessionStore.getState().saveDraft()
+
+    expect(insertSession).toHaveBeenCalledTimes(1)
+    expect(insertSession).toHaveBeenCalledWith(expect.objectContaining({ type: 'PROGRAM' }))
+  })
+
+  // Caught live: a logged rest day (Skating, Easy Run + Core, Full Rest —
+  // startRestSession's `type: 'REST'`) showed in History right after saving
+  // but vanished for good the next time local state got rebuilt from
+  // Supabase (a cleared cache, a new device, a PWA reinstall) — REST
+  // sessions were explicitly skipped here and never had a durable copy at
+  // all, unlike PROGRAM sessions. The `sessions` table already has real
+  // columns for type/t/items, so there's no reason a REST save shouldn't
+  // sync exactly like a PROGRAM one.
+  it('syncs a REST session to Supabase on save too, not just PROGRAM', () => {
+    useSessionStore.getState().startRestSession(5, 'Full Rest', [{ n: 'Rest', d: 'all day' }])
+    useSessionStore.getState().toggleRestItem(0)
+    useSessionStore.getState().saveDraft()
+
+    expect(insertSession).toHaveBeenCalledTimes(1)
+    expect(insertSession).toHaveBeenCalledWith(expect.objectContaining({ type: 'REST', g: 'Full Rest' }))
   })
 
   describe('exercise swap / add / remove', () => {

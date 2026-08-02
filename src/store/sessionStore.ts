@@ -247,41 +247,49 @@ export const useSessionStore = create<SessionStore>()(
 
         set({ sessions: newSessions, draft: null, draftEx: null, draftDefs: null, draftItems: null })
 
-        // Write PROGRAM sessions to Supabase (fire-and-forget, non-blocking —
+        // Write every session to Supabase (fire-and-forget, non-blocking —
         // local Zustand state, already updated above, is what the UI reads
         // immediately; pendingSync covers the case where this write fails).
-        // REST sessions are local-only, matching the original app's behavior.
-        if (!isRest) {
-          const markPending = (id: string) => {
-            set((s) => (s.pendingSync.includes(id) ? s : { pendingSync: [...s.pendingSync, id] }))
-            useUIStore.getState().showNotification('Could not save session — will retry', 'error')
-          }
-          const clearPending = (id: string) => {
-            set((s) => ({ pendingSync: s.pendingSync.filter((x) => x !== id) }))
-          }
-          syncSession(savedSession, markPending, clearPending)
+        // REST sessions used to be skipped here ("local-only, matching the
+        // original app's behavior" — a leftover from before Supabase was
+        // the source of truth) which meant a logged rest day only ever
+        // existed in this one browser's localStorage: a cleared cache, a
+        // new device, or a PWA reinstall silently erased it from History
+        // for good, while PROGRAM sessions never had that problem. The
+        // `sessions` table and insertSession()/fetchSessions() already
+        // fully support the type/t/items columns REST rows need — there
+        // was no structural reason for the gate, so every session type
+        // now syncs the same way.
+        const markPending = (id: string) => {
+          set((s) => (s.pendingSync.includes(id) ? s : { pendingSync: [...s.pendingSync, id] }))
+          useUIStore.getState().showNotification('Could not save session — will retry', 'error')
+        }
+        const clearPending = (id: string) => {
+          set((s) => ({ pendingSync: s.pendingSync.filter((x) => x !== id) }))
+        }
+        syncSession(savedSession, markPending, clearPending)
 
-          // Best-effort, non-blocking Strava post — never affects the local
-          // save or the Supabase write above, and silently no-ops if the
-          // user hasn't connected Strava.
-          if (savedSession.ex?.length && useStravaStore.getState().connected) {
-            const { program, colours } = useConfigStore.getState()
-            const programDef = savedSession.s ? program[savedSession.s] : undefined
-            const programName = programDef?.full || programDef?.name || savedSession.s || 'Workout'
-            // Covers swapped-in/added exercises too, not just the ones still
-            // in config.json — otherwise the Strava description would show
-            // a raw code (or worse, an unprettified STRAVA_TYPE constant)
-            // for anything logged via the exercise picker.
-            const customExercises = useCustomExerciseStore.getState().customExercises
-            const exerciseNames = Object.fromEntries(
-              (savedSession.ex || []).map((e) => [e.k, resolveExerciseDisplay(e.k, program, colours, customExercises).name])
-            )
-            postSessionToStrava(savedSession, programName, exerciseNames).then((result) => {
-              if (!result.ok && result.error) {
-                useUIStore.getState().showNotification(`Strava: ${result.error}`, 'error')
-              }
-            })
-          }
+        // Best-effort, non-blocking Strava post — never affects the local
+        // save or the Supabase write above, and silently no-ops if the
+        // user hasn't connected Strava. REST-day sessions have no `ex`, so
+        // this naturally never fires for them.
+        if (savedSession.ex?.length && useStravaStore.getState().connected) {
+          const { program, colours } = useConfigStore.getState()
+          const programDef = savedSession.s ? program[savedSession.s] : undefined
+          const programName = programDef?.full || programDef?.name || savedSession.s || 'Workout'
+          // Covers swapped-in/added exercises too, not just the ones still
+          // in config.json — otherwise the Strava description would show
+          // a raw code (or worse, an unprettified STRAVA_TYPE constant)
+          // for anything logged via the exercise picker.
+          const customExercises = useCustomExerciseStore.getState().customExercises
+          const exerciseNames = Object.fromEntries(
+            (savedSession.ex || []).map((e) => [e.k, resolveExerciseDisplay(e.k, program, colours, customExercises).name])
+          )
+          postSessionToStrava(savedSession, programName, exerciseNames).then((result) => {
+            if (!result.ok && result.error) {
+              useUIStore.getState().showNotification(`Strava: ${result.error}`, 'error')
+            }
+          })
         }
 
         return prCodes

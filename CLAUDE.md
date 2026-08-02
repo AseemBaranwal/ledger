@@ -109,6 +109,23 @@ Practical pattern established in `tests/unit/`:
   actual cause was a 404 that never even reached the app's own error
   handling. Use `npx vercel dev` instead when testing anything under
   `api/` locally; the plain Vite dev server is fine for everything else.
+- **`npx vercel dev`, run as a background process via Claude Code's own
+  browser-preview tooling (`preview_start`), reliably starts the underlying
+  `vite` dev server (port 5173) but never finishes bringing up its own
+  proxy on port 3000** — no "Ready! Available at" banner ever appears in
+  its logs even after a long wait, and requests to port 3000 (from either
+  a raw `curl` or the browser tool's own `navigate`) time out or get
+  refused rather than reaching `/api/*` at all. Reproduced 3 times in a
+  row in one session; root cause not found (plausibly some network call
+  `vercel dev`'s wrapper needs that's restricted in that sandbox). When
+  this happens, don't keep retrying — fall back to verifying the endpoint
+  a different way: run the exact Supabase queries the handler uses
+  directly via REST with the service-role key (proves the query/filter
+  shape is correct against real data) and rely on the type-checker plus
+  close adherence to an already-proven endpoint's structure for the rest.
+  This is a session/sandbox-level limitation, not a project config issue —
+  `vercel dev` may work fine for a human running it directly in their own
+  terminal outside this tool.
 - **Every `/api/*.ts` handler must set `export const config = { runtime: 'edge' }`.**
   Without it, Vercel's default Node runtime invokes the handler with a
   legacy Node-style request object whose `.headers` is a plain object, not a

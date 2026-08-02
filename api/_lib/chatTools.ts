@@ -168,13 +168,25 @@ export async function getTrainingData(
   const exerciseCode = args.exerciseCode
   const limit = args.limit && args.limit > 0 ? Math.min(args.limit, 30) : 12
 
+  // `limit` caps session ROWS, not occurrences of `exerciseCode` — and a
+  // single exercise only appears on one of the ~5-6 session codes in the
+  // weekly rotation (e.g. Chest Supported Row is Pull-day only), so the
+  // default 12 most-recent rows might contain just 2-3 real occurrences of
+  // the exercise actually being asked about, not enough to see a genuine
+  // trend. Widen the underlying fetch specifically for this case — the
+  // returned `rows` stay small regardless (only matching-exercise rows
+  // survive the per-session filter below), so this doesn't meaningfully
+  // raise token cost, it just reaches back far enough in time to find
+  // enough real data points for the exercise in question.
+  const sessionFetchLimit = exerciseCode ? Math.min(limit * 6, 60) : limit
+
   let query = supabaseAdmin()
     .from('sessions')
     .select('d, s, ex, n')
     .eq('user_id', ownerUserId)
     .eq('type', 'PROGRAM')
     .order('d', { ascending: false })
-    .limit(limit)
+    .limit(sessionFetchLimit)
   if (sinceDate) query = query.gte('d', sinceDate)
 
   const { data: sessionRows, error } = await query

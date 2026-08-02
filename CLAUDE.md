@@ -331,6 +331,21 @@ onboarding-removal migration)
   don't assume one instruction-based fix is sufficient for a tool-call-
   skipping failure mode — verify against `chat_logs.tool_calls` after the
   fix ships, not just that the wording looks right.
+- **`get_training_data`'s `limit` caps session ROWS fetched, not occurrences
+  of a filtered `exerciseCode`** — and a single exercise only appears on
+  ~1 of the ~5-6 session codes in the weekly rotation (e.g. Chest Supported
+  Row is Pull-day only), so the default `limit: 12` (mixed session types)
+  could contain just 2-3 real occurrences of the specific exercise being
+  asked about — not enough to see a genuine trend, especially with the
+  system prompt now explicitly asking the model to compare "the last 2-3
+  occurrences" before suggesting a change. Fixed by widening the
+  underlying fetch to `limit * 6` (capped at 60) specifically when
+  `exerciseCode` is set — the returned `rows` stay small regardless (only
+  matching-exercise rows survive the per-session filter), so this doesn't
+  meaningfully raise token cost, it just reaches back far enough in time.
+  Caught by reading real recent session data directly rather than just
+  reading the tool's code in isolation — the gap was invisible without
+  cross-checking against the actual weekly rotation shape.
 
 ## Strava gotchas
 

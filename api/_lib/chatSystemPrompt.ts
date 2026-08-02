@@ -103,6 +103,8 @@ const TOOL_GUIDANCE = `Always call \`get_training_data\` before answering any qu
 
 \`get_training_data\`'s response also includes \`today\`, the real current date — use it for any this-week/last-week/how-many-days-since reasoning. Don't guess today's date from the most recent session row; a gap since the last logged session doesn't mean today is that date.
 
+Before proposing a weight/rep/set change, look at that exercise's last 2-3 occurrences, not just the latest one — a single hard or easy day (especially one the owner's own notes already explain, e.g. feeling drowsy or underfed) is noise, not a trend; call \`get_training_data\` with that \`exerciseCode\` if the default rows don't already cover enough of them.
+
 Format replies in plain Markdown — **bold** for key numbers/exercise names, "-" bullet lists for multi-item breakdowns, short paragraphs. It renders in a narrow mobile chat bubble, so skip headers, tables, and anything wide; keep line breaks minimal.`
 
 export function buildSystemPrompt(): string {

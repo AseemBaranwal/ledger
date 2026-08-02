@@ -214,4 +214,40 @@ describe('getTrainingData', () => {
 
     expect(result).toEqual({ error: 'Could not read training data right now.' })
   })
+
+  // A single exercise only appears on ~1 of the ~5-6 session codes in the
+  // weekly rotation (e.g. a Pull-day-only exercise), so capping the
+  // underlying fetch at the same `limit` used for general "recent sessions"
+  // questions starved exercise-specific trend questions down to 2-3 real
+  // data points. Widening the fetch specifically when exerciseCode is set
+  // (without changing what a plain "how's my training going" call fetches)
+  // fixes that without the model needing to know this quirk exists.
+  it('widens the underlying session fetch when filtering to one exerciseCode', async () => {
+    const limitSpy = vi.fn(function (this: any) {
+      return this
+    })
+    vi.mocked(supabaseAdmin).mockReturnValue({
+      from: (table: string) => {
+        if (table === 'profiles') {
+          return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { exercise_substitutions: {} }, error: null }) }) }) }
+        }
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          gte: () => chain,
+          order: () => chain,
+          limit: limitSpy.mockImplementation(() => chain),
+          then: (resolve: (v: { data: unknown[]; error: null }) => void) => resolve({ data: [], error: null }),
+        }
+        return chain
+      },
+    } as any)
+
+    await getTrainingData('user-1', { exerciseCode: 'CSR' })
+    expect(limitSpy).toHaveBeenCalledWith(60) // default limit (12) * 6 = 72, capped at 60
+
+    limitSpy.mockClear()
+    await getTrainingData('user-1', {})
+    expect(limitSpy).toHaveBeenCalledWith(12) // unfiltered calls are unaffected
+  })
 })

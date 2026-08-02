@@ -466,6 +466,27 @@
   font-size: 13px;
 }
 
+.rep.custom {
+  color: var(--dim);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.repInput {
+  width: 64px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--raised);
+  border: 1px solid var(--amber);
+  font-family: 'JetBrains Mono';
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  outline: none;
+}
+
 /* ── sticky rest timer ───────────────────────────────────── */
 .restTimer {
   position: fixed;

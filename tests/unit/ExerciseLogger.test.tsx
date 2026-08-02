@@ -122,6 +122,33 @@ describe('ExerciseLogger — accordion', () => {
     expect(useSessionStore.getState().draftEx![0].ef).toEqual(['h'])
   })
 
+  it('the custom rep entry field is hidden until its toggle is tapped', async () => {
+    const user = userEvent.setup()
+    setupDraft()
+    render(<ExerciseLogger def={SQ_DEF} index={0} />)
+
+    await user.click(screen.getByText('Back Squat'))
+    await user.click(screen.getByText('Set 1'))
+
+    expect(screen.queryByPlaceholderText('Reps')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Enter a custom rep count' }))
+    expect(screen.getByPlaceholderText('Reps')).toBeTruthy()
+  })
+
+  it('logs a custom rep count outside the preset range via the keyboard field', async () => {
+    const user = userEvent.setup()
+    setupDraft()
+    render(<ExerciseLogger def={SQ_DEF} index={0} />)
+
+    await user.click(screen.getByText('Back Squat'))
+    await user.click(screen.getByText('Set 1'))
+    await user.click(screen.getByRole('button', { name: 'Enter a custom rep count' }))
+    await user.type(screen.getByPlaceholderText('Reps'), '25') // well outside target(6) ± 4
+    await user.click(screen.getByRole('button', { name: 'Log custom rep count' }))
+
+    expect(useSessionStore.getState().draftEx![0].r).toEqual([25])
+  })
+
   it('shows one progress pip per target set, with logged ones marked done', () => {
     setupDraft({ r: [6, 6] })
     render(<ExerciseLogger def={SQ_DEF} index={0} />)

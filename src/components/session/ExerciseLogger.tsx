@@ -4,7 +4,7 @@ import type { ProgramExercise } from '@/types'
 import { lastOf, formatLastSets } from '@/services/trendCalculations'
 import { ago } from '@/services/dateUtils'
 import { unlockAudioContext } from '@/services/audio'
-import { StarIcon, CloseIcon, SwapIcon, TrashIcon } from '@/components/icons/Icons'
+import { StarIcon, CloseIcon, SwapIcon, TrashIcon, CheckIcon } from '@/components/icons/Icons'
 import { EquipmentIcon } from '@/components/icons/EquipmentIcon'
 import { equipmentForCode } from '@/services/exerciseCatalog'
 import styles from '../../styles/components.module.css'
@@ -67,6 +67,13 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
   // never a need to track which slot opened it.
   const [pickerOpen, setPickerOpen] = useState(false)
 
+  // The button grid (repOpts: target ± 4) covers the vast majority of real
+  // sets, so a keyboard entry field for the rare custom count (a big AMRAP,
+  // or well off target) stays collapsed behind a toggle instead of adding
+  // permanent clutter to every open picker.
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customVal, setCustomVal] = useState('')
+
   if (!ex) return null
   const last = lastOf(sessions, def.k)
   const full = ex.r.length >= def.s
@@ -76,6 +83,8 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
     unlockAudioContext() // must happen inside this click handler, not later, or mobile browsers mute it
     logRep(index, v, pendingEffort)
     setPendingEffort(null)
+    setCustomOpen(false)
+    setCustomVal('')
     // Auto-continue for back-to-back sets on the same exercise (unchanged
     // from before); once fully done, collapse the whole card back into
     // the accordion instead of just closing the picker — the natural
@@ -87,6 +96,12 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
       setPickerOpen(true)
     }
     useUIStore.getState().setTimer(90, true)
+  }
+
+  const handleCustomSubmit = () => {
+    const n = parseInt(customVal, 10)
+    if (!Number.isFinite(n) || n <= 0) return
+    handleLogRep(n)
   }
 
   const setsDone = ex.r.length
@@ -250,16 +265,49 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
 
       {pickerOpen && (
         <div className={styles.reps}>
-          {repOpts(def.r).map((v) => (
-            <button
-              key={v}
-              className={`${styles.rep} ${v === def.r ? styles.tgt : ''}`}
-              onClick={() => handleLogRep(v)}
-            >
-              {v}
-            </button>
-          ))}
-          <button className={`${styles.rep} ${styles.x}`} onClick={() => setPickerOpen(false)} aria-label="Close rep picker">
+          {customOpen ? (
+            <>
+              <input
+                className={`${styles.repInput} mono`}
+                type="number"
+                inputMode="numeric"
+                autoFocus
+                value={customVal}
+                onChange={(e) => setCustomVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCustomSubmit()
+                }}
+                placeholder="Reps"
+              />
+              <button className={`${styles.rep} ${styles.tgt}`} onClick={handleCustomSubmit} aria-label="Log custom rep count">
+                <CheckIcon size="15px" />
+              </button>
+            </>
+          ) : (
+            <>
+              {repOpts(def.r).map((v) => (
+                <button
+                  key={v}
+                  className={`${styles.rep} ${v === def.r ? styles.tgt : ''}`}
+                  onClick={() => handleLogRep(v)}
+                >
+                  {v}
+                </button>
+              ))}
+              <button className={`${styles.rep} ${styles.custom}`} onClick={() => setCustomOpen(true)} aria-label="Enter a custom rep count">
+                #
+              </button>
+            </>
+          )}
+          <button
+            className={`${styles.rep} ${styles.x}`}
+            onClick={() => {
+              setPickerOpen(false)
+              setCustomOpen(false)
+              setCustomVal('')
+            }}
+            aria-label="Close rep picker"
+          >
             <CloseIcon size="15px" />
           </button>
         </div>

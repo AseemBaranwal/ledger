@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useSessionStore, useUIStore, useAuthStore, useStravaStore } from '@/store'
 import { stravaConfigured } from '@/services/strava'
+import { sheetSyncConfigured, syncSessionsToSheet } from '@/services/sheetSync'
 import { Avatar } from '@/components/layout'
 import type { Session } from '@/types'
 import appStyles from '../../styles/App.module.css'
@@ -27,6 +29,9 @@ export function SyncTab() {
   const user = useAuthStore((s) => s.user)
   const signOut = useAuthStore((s) => s.signOut)
 
+  const [sheetSectionOpen, setSheetSectionOpen] = useState(false)
+  const [sheetSyncing, setSheetSyncing] = useState(false)
+
   const stravaConnected = useStravaStore((s) => s.connected)
   const stravaAthleteName = useStravaStore((s) => s.athleteName)
   const stravaDisconnecting = useStravaStore((s) => s.disconnecting)
@@ -44,6 +49,25 @@ export function SyncTab() {
   // reality instead of only ever being accurate mid-way through the one
   // session that happened to save something.
   const lastActivityMs = lastSyncedAt ?? (sessions.length ? new Date(sessions[sessions.length - 1].d + 'T12:00').getTime() : null)
+
+  const handleSheetSync = async () => {
+    setSheetSyncing(true)
+    try {
+      const result = await syncSessionsToSheet()
+      if (!result.success) {
+        showNotification(result.error || 'Sheet sync failed', 'error')
+      } else if (result.exported === 0) {
+        showNotification('Sheet already up to date', 'info')
+      } else {
+        const suffix = result.failures ? ` (${result.failures} failed)` : ''
+        showNotification(`Synced ${result.exported} session${result.exported === 1 ? '' : 's'} to Sheet${suffix}`, result.failures ? 'error' : 'success')
+      }
+    } catch {
+      showNotification('Sheet sync failed', 'error')
+    } finally {
+      setSheetSyncing(false)
+    }
+  }
 
   const handleDisconnectStrava = async () => {
     try {
@@ -205,6 +229,36 @@ export function SyncTab() {
           e.target.value = ''
         }}
       />
+
+      {/* Only relevant to the owner's own Google Sheet integration — most
+          accounts never see this at all (sheetSyncConfigured is a build-time
+          flag, off unless VITE_SHEET_SYNC_ENABLED is set). Even when it
+          applies, this is a manual power-user override for a script that
+          otherwise runs from the terminal, so it stays collapsed behind a
+          toggle rather than a permanently visible button. */}
+      {sheetSyncConfigured && (
+        <>
+          <button
+            className={`${styles.btn} ${styles.quiet}`}
+            style={{ marginTop: '24px' }}
+            onClick={() => setSheetSectionOpen((o) => !o)}
+          >
+            {sheetSectionOpen ? 'Hide advanced' : 'Show advanced'}
+          </button>
+          {sheetSectionOpen && (
+            <>
+              <div className={styles.sec}>
+                <h2>Google Sheet</h2>
+                <div className={styles.rule} />
+              </div>
+              <div className={styles.note}>Push newly-logged sessions into your Ledger Log sheet.</div>
+              <button className={`${styles.btn} ${styles.ghost}`} onClick={handleSheetSync} disabled={sheetSyncing}>
+                {sheetSyncing ? 'Syncing…' : 'Sync to Sheet'}
+              </button>
+            </>
+          )}
+        </>
+      )}
 
       <div className={styles.note} style={{ marginTop: '24px' }}>
         💡 <b>Sync:</b> Sessions save to your account automatically when you finish logging — no setup needed. This

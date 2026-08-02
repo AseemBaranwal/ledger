@@ -57,9 +57,20 @@ export function HistoryTab() {
               </div>
             </div>
             {ss.map((s) => {
-              const p = program[s.s || ''] || { name: s.s || 'REST', colour: 'legs', full: '', gym: '', day: 0, ex: [] }
+              // REST sessions (Skating, Easy Run + Core, Full Rest — see
+              // sessionStore's startRestSession) aren't in `program` at all
+              // (that's PROGRAM-only), so the old single fallback name
+              // `s.s || 'REST'` rendered the raw internal code (e.g.
+              // "REST_5") as the title once these actually started showing
+              // up in History. The real title was there the whole time, on
+              // `s.g` (startRestSession stores it there, not on the `t`
+              // field the Session type suggests).
+              const isRest = s.type === 'REST'
+              const p = program[s.s || ''] || { name: s.g || 'Rest Day', colour: 'legs', full: '', gym: '', day: 0, ex: [] }
+              const title = isRest ? s.g || 'Rest Day' : p.name
               const id = s.d + s.s
               const sets = (s.ex || []).reduce((t, e) => t + e.r.length, 0)
+              const doneItems = (s.items || []).filter((it) => it.done).length
               const vol = volume(s)
               const isOpen = expandedRow === id
               return (
@@ -69,11 +80,13 @@ export function HistoryTab() {
                     onClick={() => toggleExpand(id)}
                     aria-expanded={isOpen}
                   >
-                    <div className={styles.bar} style={{ background: colours[p.colour] || 'var(--dim)' }} />
+                    <div className={styles.bar} style={{ background: isRest ? 'var(--dim)' : colours[p.colour] || 'var(--dim)' }} />
                     <div className={styles.m}>
-                      <div className={styles.t}>{p.name}</div>
+                      <div className={styles.t}>{title}</div>
                       <div className={`${styles.s} mono`}>
-                        {fmtD(s.d)} · {s.g || ''} · {sets} set{sets === 1 ? '' : 's'}
+                        {isRest
+                          ? `${fmtD(s.d)} · ${doneItems}/${(s.items || []).length} done`
+                          : `${fmtD(s.d)} · ${s.g || ''} · ${sets} set${sets === 1 ? '' : 's'}`}
                       </div>
                     </div>
                     {/* Sprint sessions log a "weight" field that's actually
@@ -84,34 +97,44 @@ export function HistoryTab() {
                         alone doesn't catch it. Gate on session type
                         instead of the number: real lb volume only exists
                         for actual weight-training colours. */}
-                    {p.colour !== 'sprint' && vol > 0 && (
+                    {!isRest && p.colour !== 'sprint' && vol > 0 && (
                       <div className={`${styles.v} mono`}>
                         <b>{(vol / 1000).toFixed(1)}k</b>lb vol
                       </div>
                     )}
                   </button>
                   <div className={`${styles.hdetail} ${isOpen ? styles.on : ''}`}>
-                    {(s.ex || []).map((e) => {
-                      const effortCls = (v: 'e' | 'o' | 'h') => (v === 'e' ? styles.easy : v === 'o' ? styles.ok : styles.hard)
-                      return (
-                        <div key={e.k} className={styles.ln}>
-                          <span className={styles.k}>{resolveExerciseDisplay(e.k, program, colours, customExercises).name}</span>
-                          <span>
-                            {e.r.map((r, i) => {
-                              const w = e.ws ? e.ws[i] : e.w
-                              const effort = e.ef?.[i]
-                              return (
-                                <span key={i}>
-                                  {i > 0 && ', '}
-                                  {w || 'BW'}×{r}
-                                  {effort && <span className={`${styles.effDotInline} ${effortCls(effort)}`} />}
-                                </span>
-                              )
-                            })}
-                          </span>
-                        </div>
-                      )
-                    })}
+                    {isRest
+                      ? (s.items || []).map((it, i) => (
+                          <div key={i} className={styles.ln}>
+                            <span className={styles.k}>
+                              {it.done ? '✓ ' : ''}
+                              {it.n}
+                            </span>
+                            <span>{it.d}</span>
+                          </div>
+                        ))
+                      : (s.ex || []).map((e) => {
+                          const effortCls = (v: 'e' | 'o' | 'h') => (v === 'e' ? styles.easy : v === 'o' ? styles.ok : styles.hard)
+                          return (
+                            <div key={e.k} className={styles.ln}>
+                              <span className={styles.k}>{resolveExerciseDisplay(e.k, program, colours, customExercises).name}</span>
+                              <span>
+                                {e.r.map((r, i) => {
+                                  const w = e.ws ? e.ws[i] : e.w
+                                  const effort = e.ef?.[i]
+                                  return (
+                                    <span key={i}>
+                                      {i > 0 && ', '}
+                                      {w || 'BW'}×{r}
+                                      {effort && <span className={`${styles.effDotInline} ${effortCls(effort)}`} />}
+                                    </span>
+                                  )
+                                })}
+                              </span>
+                            </div>
+                          )
+                        })}
                     {s.n && (
                       <div style={{ paddingTop: '8px', color: 'var(--dim)', fontFamily: 'Inter', fontSize: '12px' }}>
                         "{s.n}"

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { useSessionStore, useUIStore, useAuthStore, useStravaStore } from '@/store'
+import { useSessionStore, useUIStore, useAuthStore, useStravaStore, useUnitStore } from '@/store'
 import { stravaConfigured } from '@/services/strava'
 import { sheetSyncConfigured, syncSessionsToSheet } from '@/services/sheetSync'
 import { Avatar } from '@/components/layout'
+import type { UnitSystem } from '@/services/units'
 import type { Session } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -31,6 +32,9 @@ export function SyncTab() {
 
   const [sheetSectionOpen, setSheetSectionOpen] = useState(false)
   const [sheetSyncing, setSheetSyncing] = useState(false)
+
+  const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
+  const setUnitSystem = useUnitStore((s) => s.setUnitSystem)
 
   const stravaConnected = useStravaStore((s) => s.connected)
   const stravaAthleteName = useStravaStore((s) => s.athleteName)
@@ -229,6 +233,28 @@ export function SyncTab() {
           e.target.value = ''
         }}
       />
+
+      {/* Units — defaults from the browser's locale on first sign-in
+          (e.g. en-US -> lb, en-IN -> kg) but never overwrites an explicit
+          choice made here afterward, even if the device's own locale
+          changes later (e.g. traveling). Weight is still stored/computed
+          in lb everywhere internally; this only changes what's shown and
+          what the stepper accepts as input. */}
+      <div className={styles.sec}>
+        <h2>Units</h2>
+        <div className={styles.rule} />
+      </div>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+        {(['imperial', 'metric'] as UnitSystem[]).map((sys) => (
+          <button
+            key={sys}
+            className={`${styles.btn} ${unitSystem === sys ? styles.primary : styles.ghost}`}
+            onClick={() => setUnitSystem(sys)}
+          >
+            {sys === 'imperial' ? 'Pounds (lb)' : 'Kilograms (kg)'}
+          </button>
+        ))}
+      </div>
 
       {/* Only relevant to the owner's own Google Sheet integration — most
           accounts never see this at all (sheetSyncConfigured is a build-time

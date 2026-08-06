@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, type MouseEvent } from 'react'
-import { useSessionStore, useConfigStore, useUIStore } from '@/store'
+import { useSessionStore, useConfigStore, useUIStore, useUnitStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD, ago } from '@/services/dateUtils'
 import { streak } from '@/services/trendCalculations'
 import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
+import { displayWeight, unitLabel } from '@/services/units'
 import { plotLine, nearestPointIndex, type ChartPoint } from '@/services/chartGeometry'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -121,6 +122,8 @@ export function TrendsTab() {
   const customExercises = useCustomExerciseStore((s) => s.customExercises)
   const selectedGroup = useUIStore((s) => s.selectedTrendGroup)
   const setTrendGroup = useUIStore((s) => s.setTrendGroup)
+  const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
+  const isMetric = unitSystem === 'metric'
 
   if (sessions.length < 1) {
     return (
@@ -204,12 +207,17 @@ export function TrendsTab() {
       </select>
 
       {groupExercises.map((k) => {
+        // The exercise's own unit isn't in the session log itself, only
+        // its weight numbers — look it up from the current program def,
+        // same fallback-to-'lb' reasoning as HistoryTab.
+        const exUnit = Object.values(program).flatMap((p) => p.ex).find((x) => x.k === k)?.u || 'lb'
+        const convert = isMetric && (exUnit === 'lb' || exUnit === '+lb')
         const pts = sessions
           .filter((s) => (s.ex || []).some((e) => e.k === k))
           .map((s) => {
             const e = s.ex!.find((x) => x.k === k)!
             const w = e.ws ? Math.max(...e.ws) : e.w || 0
-            return { v: w, l: fmtD(s.d).replace(/^\w+, /, '') }
+            return { v: convert ? displayWeight(w, 'metric') : w, l: fmtD(s.d).replace(/^\w+, /, '') }
           })
         // A single logged session can't show a progression — there's
         // nothing to compare it to — so skip the whole card rather than
@@ -217,16 +225,17 @@ export function TrendsTab() {
         if (pts.length < 2) return null
         const dl = pts[pts.length - 1].v - pts[0].v
         const dcls = dl > 0 ? styles.up : dl < 0 ? styles.dn : styles.flat
+        const unit = convert ? unitLabel('metric').toLowerCase() : 'lb'
 
         return (
           <div key={k} className={styles.chartCard}>
             <div className={styles.chartHd}>
               <h3>{nameOf(k)}</h3>
-              <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} lb</span>
+              <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} {unit}</span>
             </div>
             <div className={styles.statNow}>
               <span className="mono">{pts[pts.length - 1].v}</span>
-              <span className={styles.statUnit}>lb</span>
+              <span className={styles.statUnit}>{unit}</span>
             </div>
             <LineChart pts={pts} colour={colOf(k)} />
           </div>

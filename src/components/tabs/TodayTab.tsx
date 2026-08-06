@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSessionStore, useConfigStore, useUIStore } from '@/store'
+import { useSessionStore, useConfigStore, useUIStore, useUnitStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { applySubstitutions, resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
@@ -41,6 +41,7 @@ export function TodayTab() {
   const openWeekDay = useUIStore((s) => s.openWeekDay)
   const toggleWeekDay = useUIStore((s) => s.toggleWeekDay)
   const setOpenExerciseIndex = useUIStore((s) => s.setOpenExerciseIndex)
+  const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
 
   const [today] = useState(new Date())
   const [picker, setPicker] = useState<{ mode: 'swap' | 'add'; index?: number } | null>(null)
@@ -363,7 +364,7 @@ export function TodayTab() {
                         {withSubstitutions(p.ex).map((e) => {
                           const last = [...sessions].reverse().flatMap((s) => (s.ex || []).map((x) => ({ ...x, d: s.d }))).find((x) => x.k === e.k && x.r.length)
                           const lastStr = last
-                            ? `Last ${formatLastSets(last, e.u)}`
+                            ? `Last ${formatLastSets(last, e.u, unitSystem)}`
                             : 'First time — start at target'
                           return (
                             <div key={e.k} className={styles.wdEx}>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSessionStore, useUIStore } from '@/store'
+import { useSessionStore, useUIStore, useUnitStore } from '@/store'
 import type { ProgramExercise } from '@/types'
 import { lastOf, formatLastSets } from '@/services/trendCalculations'
 import { ago } from '@/services/dateUtils'
@@ -7,6 +7,7 @@ import { unlockAudioContext } from '@/services/audio'
 import { StarIcon, CloseIcon, SwapIcon, TrashIcon, CheckIcon } from '@/components/icons/Icons'
 import { EquipmentIcon } from '@/components/icons/EquipmentIcon'
 import { equipmentForCode } from '@/services/exerciseCatalog'
+import { displayWeight, toStoredLb, isWeightUnit, unitLabel, INCREMENTS_BY_SYSTEM } from '@/services/units'
 import styles from '../../styles/components.module.css'
 
 interface ExerciseLoggerProps {
@@ -15,8 +16,6 @@ interface ExerciseLoggerProps {
   onRequestSwap?: (index: number) => void
   onRequestRemove?: (index: number) => void
 }
-
-const INCREMENTS = [2.5, 5, 10, 25]
 
 // Reuses the app's existing teal/amber/coral color language (already used
 // for over/on-target/under rep counts elsewhere on this card) rather than
@@ -51,6 +50,15 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
   const setWeightIncrement = useUIStore((s) => s.setWeightIncrement)
   const openExerciseIndex = useUIStore((s) => s.openExerciseIndex)
   const setOpenExerciseIndex = useUIStore((s) => s.setOpenExerciseIndex)
+
+  // Falls back to imperial (i.e. no conversion) if resolveDefault() hasn't
+  // run yet — App.tsx calls it synchronously right after sign-in, so in
+  // practice this only matters for one render before it resolves.
+  const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
+  // 'reps'/'in' exercises (bodyweight counts, box heights) aren't a weight
+  // at all — never converted regardless of the active unit system.
+  const convertsWeight = isWeightUnit(def.u) && unitSystem === 'metric'
+  const increments = INCREMENTS_BY_SYSTEM[unitSystem]
 
   // Purely optional tag for the set about to be logged — tapping a rep
   // count with nothing selected here logs exactly as before (zero added
@@ -119,7 +127,7 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
           {def.n.includes('★') ? def.n.replace('★', '') : def.n}
           {last && (
             <span className={`${styles.collapsedMeta} mono`}>
-              {formatLastSets(last, def.u)}
+              {formatLastSets(last, def.u, unitSystem)}
             </span>
           )}
         </span>
@@ -176,7 +184,7 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
 
       {last ? (
         <div className={`${styles.exLast} mono`}>
-          Last: <b>{formatLastSets(last, def.u)}</b> · {ago(last.d)}
+          Last: <b>{formatLastSets(last, def.u, unitSystem)}</b> · {ago(last.d)}
         </div>
       ) : (
         <div className={styles.exLast}>First time. Start at the target and see how it moves.</div>
@@ -185,7 +193,15 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
       <div className={styles.exCue}>{def.cue}</div>
 
       <div className={styles.stepper}>
-        <button className={styles.stepBtn} onClick={() => bumpWeight(index, -1, weightIncrement)}>
+        {/* bumpWeight/setWeight always operate on the lb value actually
+            stored (draftEx.w) — the increment picked in the current
+            display unit is converted to its lb-delta equivalent right
+            here, at the call site, rather than changing what gets stored
+            in useUIStore's shared weightIncrement. */}
+        <button
+          className={styles.stepBtn}
+          onClick={() => bumpWeight(index, -1, convertsWeight ? toStoredLb(weightIncrement, 'metric') : weightIncrement)}
+        >
           −
         </button>
         <div className={styles.stepVal}>
@@ -193,19 +209,27 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
             className="mono"
             type="number"
             inputMode="decimal"
-            value={ex.w}
-            onChange={(e) => setWeight(index, parseFloat(e.target.value) || 0)}
+            value={convertsWeight ? displayWeight(ex.w, 'metric') : ex.w}
+            onChange={(e) => {
+              const typed = parseFloat(e.target.value) || 0
+              setWeight(index, convertsWeight ? toStoredLb(typed, 'metric') : typed)
+            }}
             onFocus={(e) => e.target.select()}
           />
-          <span className={styles.unit}>{def.u === '+lb' ? 'EXTRA LB' : def.u.toUpperCase()}</span>
+          <span className={styles.unit}>
+            {convertsWeight ? (def.u === '+lb' ? `EXTRA ${unitLabel('metric')}` : unitLabel('metric')) : def.u === '+lb' ? 'EXTRA LB' : def.u.toUpperCase()}
+          </span>
         </div>
-        <button className={styles.stepBtn} onClick={() => bumpWeight(index, 1, weightIncrement)}>
+        <button
+          className={styles.stepBtn}
+          onClick={() => bumpWeight(index, 1, convertsWeight ? toStoredLb(weightIncrement, 'metric') : weightIncrement)}
+        >
           +
         </button>
       </div>
 
       <div className={styles.incSel}>
-        {INCREMENTS.map((v) => (
+        {increments.map((v) => (
           <button
             key={v}
             className={`${styles.inc} ${weightIncrement === v ? styles.on : ''}`}

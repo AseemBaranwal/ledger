@@ -1,8 +1,9 @@
-import { useSessionStore, useUIStore, useConfigStore } from '@/store'
+import { useSessionStore, useUIStore, useConfigStore, useUnitStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD } from '@/services/dateUtils'
 import { volume } from '@/services/trendCalculations'
 import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
+import { displayWeight, lbToKg, unitLabel } from '@/services/units'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
@@ -13,6 +14,8 @@ export function HistoryTab() {
   const customExercises = useCustomExerciseStore((s) => s.customExercises)
   const expandedRow = useUIStore((s) => s.expandedHistoryRow)
   const toggleExpand = useUIStore((s) => s.toggleExpandHistory)
+  const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
+  const isMetric = unitSystem === 'metric'
 
   if (!sessions.length) {
     return (
@@ -53,7 +56,7 @@ export function HistoryTab() {
               <h2>Week of {fmtD(wk).replace(/^\w+, /, '')}</h2>
               <div className={styles.rule} />
               <div className={`${styles.cnt} mono`}>
-                {ss.length} session{ss.length > 1 ? 's' : ''} · {Math.round(vol / 1000)}k lb
+                {ss.length} session{ss.length > 1 ? 's' : ''} · {Math.round((isMetric ? lbToKg(vol) : vol) / 1000)}k {unitLabel(unitSystem).toLowerCase()}
               </div>
             </div>
             {ss.map((s) => {
@@ -99,7 +102,7 @@ export function HistoryTab() {
                         for actual weight-training colours. */}
                     {!isRest && p.colour !== 'sprint' && vol > 0 && (
                       <div className={`${styles.v} mono`}>
-                        <b>{(vol / 1000).toFixed(1)}k</b>lb vol
+                        <b>{((isMetric ? lbToKg(vol) : vol) / 1000).toFixed(1)}k</b>{unitLabel(unitSystem).toLowerCase()} vol
                       </div>
                     )}
                   </button>
@@ -116,12 +119,22 @@ export function HistoryTab() {
                         ))
                       : (s.ex || []).map((e) => {
                           const effortCls = (v: 'e' | 'o' | 'h') => (v === 'e' ? styles.easy : v === 'o' ? styles.ok : styles.hard)
+                          // A logged exercise's own unit isn't stored per-row
+                          // (only the weight number is) — look it up from the
+                          // current program definition; a since-removed or
+                          // catalog-picked exercise falls back to 'lb', which
+                          // matches the overwhelming majority of real weights
+                          // logged here (bodyweight/'reps' exercises log 0,
+                          // which converts to the same 0 either way).
+                          const exUnit = Object.values(program).flatMap((p) => p.ex).find((x) => x.k === e.k)?.u || 'lb'
+                          const convert = isMetric && (exUnit === 'lb' || exUnit === '+lb')
                           return (
                             <div key={e.k} className={styles.ln}>
                               <span className={styles.k}>{resolveExerciseDisplay(e.k, program, colours, customExercises).name}</span>
                               <span>
                                 {e.r.map((r, i) => {
-                                  const w = e.ws ? e.ws[i] : e.w
+                                  const raw = e.ws ? e.ws[i] : e.w
+                                  const w = typeof raw === 'number' && convert ? displayWeight(raw, 'metric') : raw
                                   const effort = e.ef?.[i]
                                   return (
                                     <span key={i}>

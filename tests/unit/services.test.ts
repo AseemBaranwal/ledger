@@ -73,6 +73,19 @@ describe('trendCalculations', () => {
     it('marks a "+lb" (extra load) unit per set, not once for the whole line', () => {
       expect(formatLastSets({ k: 'SLC', r: [15, 15], ws: [175, 175] }, '+lb')).toBe('175+×15, 175+×15')
     })
+
+    it('converts to kg when the system is metric and the unit is a real weight', () => {
+      // 185 lb -> 84 kg (see units.test.ts's displayWeight coverage)
+      expect(formatLastSets({ k: 'SQ', r: [6], ws: [185] }, 'lb', 'metric')).toBe('84×6')
+    })
+
+    it('does not convert a bodyweight ("reps") exercise even when metric is active', () => {
+      expect(formatLastSets({ k: 'HLR', r: [10, 12] }, 'reps', 'metric')).toBe('10, 12')
+    })
+
+    it('does not convert when the unit is unknown (omitted), regardless of system', () => {
+      expect(formatLastSets({ k: 'SQ', r: [6], ws: [185] }, undefined, 'metric')).toBe('185×6')
+    })
   })
 
   describe('lastDialedWeight', () => {

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
-import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore } from '@/store'
+import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore, useUnitStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
 import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 
@@ -78,6 +78,7 @@ export default function App() {
     const userId = user.id
 
     loadSubstitutions(userId)
+    useUnitStore.getState().resolveDefault()
 
     const autoRestore = async () => {
       if (useSessionStore.getState().sessions.length > 0) return

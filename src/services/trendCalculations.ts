@@ -1,5 +1,6 @@
 import type { Session, Exercise } from '@/types'
 import { iso } from './dateUtils'
+import { displayWeight, isWeightUnit, type UnitSystem } from './units'
 
 export function calculateVolume(exercise: Exercise, totalReps: number): number {
   if (!exercise.ws || exercise.ws.length === 0) {
@@ -21,11 +22,18 @@ export function getMaxWeight(exercise: Exercise): number {
 // mentally zipped together to read — used anywhere a "last performance"
 // summary is shown (ExerciseLogger's collapsed row and "Last:" line,
 // TodayTab's week-preview list).
-export function formatLastSets(e: Exercise, unit?: string): string {
+// `system` only converts when `unit` is a real weight unit ('lb'/'+lb') —
+// bodyweight ('reps') and measurement ('in') exercises are never touched,
+// and callers that don't know the exercise's unit (unit omitted) always
+// get the raw stored number back, matching this function's original
+// behavior before unit-system support existed.
+export function formatLastSets(e: Exercise, unit?: string, system: UnitSystem = 'imperial'): string {
+  const convert = system === 'metric' && !!unit && isWeightUnit(unit)
   return e.r
     .map((r, i) => {
-      const w = e.ws ? e.ws[i] : e.w
-      if (typeof w !== 'number') return `${r}`
+      const raw = e.ws ? e.ws[i] : e.w
+      if (typeof raw !== 'number') return `${r}`
+      const w = convert ? displayWeight(raw, system) : raw
       return `${w}${unit === '+lb' ? '+' : ''}×${r}`
     })
     .join(', ')

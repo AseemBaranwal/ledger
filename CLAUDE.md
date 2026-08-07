@@ -441,6 +441,48 @@ onboarding-removal migration)
   (`r.length > 0`), so a stray call can't drop real data even if the button
   that's supposed to be hidden somehow fires anyway.
 
+## Weight units (`src/services/units.ts`, `src/store/unitStore.ts`)
+
+- **Weight is stored and computed in lb everywhere, always** — the
+  `sessions` table, Strava's own kg conversion in `stravaMapping.ts`, and
+  the Coach's `get_training_data`/`suggest_exercise_adjustment` tools all
+  still assume lb. `unitStore`'s `unitSystem` ('imperial' | 'metric') is a
+  **pure display/input preference**, converted at the UI boundary only —
+  there's no unit column on any Supabase table and no plan to add one.
+  This keeps the conversion surgical (a handful of display components)
+  instead of a schema migration.
+- **Defaulted via `navigator.language`, not GPS/IP geolocation** — e.g.
+  `en-US` → imperial, `en-IN` → metric. `detectUnitSystem()` in `units.ts`
+  only special-cases the three real-world imperial holdouts (US, Liberia,
+  Myanmar); everything else defaults to metric. Chosen over the Geolocation
+  API specifically to avoid a permission prompt and over IP lookups to
+  avoid a third-party network call, for what's ultimately a low-stakes
+  default the user can override in one tap. `unitStore.resolveDefault()`
+  only ever runs once per device (guarded on `unitSystem` already being
+  set) — it will never silently flip a preference the user (or an earlier
+  resolve) already chose, even if the device's own locale changes later
+  (e.g. traveling).
+- **The weight stepper's increment presets are unit-specific, not a
+  lb→kg conversion of the same numbers** — `INCREMENTS_BY_SYSTEM.metric`
+  is `[1, 2.5, 5, 10]`, not `[1.13, 2.27, 4.54, 11.34]` (the literal
+  conversion of the lb presets), since nobody steps a real plate/dumbbell
+  by a number like that. The actual bump math still happens in lb
+  (`toStoredLb(increment, 'metric')` converts the picked kg increment to
+  its lb delta right at the `bumpWeight()` call site) — `weightIncrement`
+  in `useUIStore` itself is never converted or re-scoped per unit system,
+  it just holds whatever raw number was tapped in the currently-visible
+  preset row.
+- **`isWeightUnit()` gates every conversion** — an exercise's own `u` field
+  ('lb', '+lb', 'reps', 'in') decides whether displayed numbers convert at
+  all. Bodyweight rep counts and measurements like box height are never
+  touched regardless of the active unit system; only 'lb'/'+lb' exercises
+  do. `HistoryTab`/`TrendsTab` don't have this unit readily available on a
+  logged session row (only the weight number was ever stored) — both look
+  it up from the current `program` definition by exercise code, falling
+  back to treating it as a real weight ('lb') when the exercise isn't in
+  the current program (e.g. since removed or swapped away), since that's
+  the overwhelmingly common case for anything actually logged here.
+
 ## General debugging approach that actually worked this session
 
 - **When something "works" (200 response) but produces no visible effect,

@@ -93,7 +93,11 @@ export function SyncTab() {
     const today = new Date().toISOString().split('T')[0]
     a.download = `ledger-backup-${today}.json`
     a.click()
-    URL.revokeObjectURL(a.href)
+    // Deferred, not revoked on the very next line — some browsers/PWA
+    // contexts (notably iOS Safari standalone) can race an immediate
+    // revoke against the download actually starting, producing an
+    // empty/failed file with no visible error.
+    setTimeout(() => URL.revokeObjectURL(a.href), 0)
     showNotification('Backup downloaded', 'success')
   }
 

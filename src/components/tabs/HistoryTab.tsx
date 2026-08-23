@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useSessionStore, useUIStore, useConfigStore, useUnitStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD } from '@/services/dateUtils'
@@ -17,6 +18,22 @@ export function HistoryTab() {
   const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
   const isMetric = unitSystem === 'metric'
 
+  // Grouping the full session history by week is real work that doesn't
+  // depend on unitSystem/expandedRow — memoized so toggling a row open/
+  // closed or flipping lb<->kg doesn't rebuild it from scratch on every
+  // render. Hook runs before the early return below (Rules of Hooks).
+  const byWeek = useMemo(() => {
+    const grouped: Record<string, typeof sessions> = {}
+    ;[...sessions].reverse().forEach((s) => {
+      const d = new Date(s.d + 'T12:00')
+      const m = new Date(d)
+      m.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+      const key = iso(m)
+      ;(grouped[key] = grouped[key] || []).push(s)
+    })
+    return grouped
+  }, [sessions])
+
   if (!sessions.length) {
     return (
       <div>
@@ -31,15 +48,6 @@ export function HistoryTab() {
       </div>
     )
   }
-
-  const byWeek: Record<string, typeof sessions> = {}
-  ;[...sessions].reverse().forEach((s) => {
-    const d = new Date(s.d + 'T12:00')
-    const m = new Date(d)
-    m.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-    const key = iso(m)
-    ;(byWeek[key] = byWeek[key] || []).push(s)
-  })
 
   return (
     <div>

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { supabase, type Profile } from '@/services/supabaseClient'
-import { setCurrentUserId } from '@/services/userScope'
+import { setCurrentUserId, getLastKnownUserId, setLastKnownUserId } from '@/services/userScope'
 import { useSessionStore } from './sessionStore'
 import { useBodyStore } from './bodyStore'
 import { useConfigStore } from './configStore'
@@ -43,33 +43,41 @@ interface AuthStore {
 // Re-points the local per-user caches (sessions, body scans) at the given
 // user's namespaced storage key and forces them to re-read from it.
 //
-// Two things matter here, both found while auditing for cross-user leaks:
-//  1. zustand's persist.rehydrate() does NOT reset state when the target
-//     storage key is empty — its default merge is `{...currentState,
-//     ...persisted}`, so with nothing persisted it's a no-op and whatever
-//     is already in memory just stays there.
-//  2. That means switching from user A to user B without an explicit
-//     SIGNED_OUT in between (e.g. a provider-level account switch) could
-//     leave user A's data on screen until user B's own storage — if any —
-//     happens to overwrite it.
-// So: explicitly blank the in-memory state FIRST, then rehydrate. If the
-// new user has real cached data, rehydrate fills it back in; if not, the
-// blank state is what's shown, never the previous user's.
+// `isAccountSwitch` controls whether state gets blanked FIRST, and it
+// matters a lot — this used to always blank unconditionally, which caused
+// a real data-loss bug (issue #58): zustand's persist.rehydrate() does NOT
+// reset state when the target storage key is empty (its default merge is
+// `{...currentState, ...persisted}`), so switching from user A to user B
+// without an explicit SIGNED_OUT in between (e.g. a provider-level account
+// switch) could leave A's data on screen until B's own storage happens to
+// overwrite it — blanking first was the fix for THAT. But the caller used
+// to treat every cold app open as a "switch" too (in-memory auth state
+// always starts null on a fresh page load, so comparing against it alone
+// can't tell "same user reopening the app" apart from a genuine switch),
+// and set() on a persisted store writes through to storage SYNCHRONOUSLY —
+// so on every single relaunch, the blank write completed and clobbered the
+// real draft in storage before the very next line's rehydrate() ever got a
+// chance to read it back. An in-progress workout was silently wiped by
+// nothing more than closing and reopening the app. `isAccountSwitch` is
+// computed by the caller against a value that actually survives a reload
+// (see userScope.ts's getLastKnownUserId), not in-memory state — so the
+// blank now only ever runs for a genuine different-user switch, and the
+// same user's own reload just rehydrates their real data straight through.
+//
 // Awaited by callers so the app doesn't briefly render with blanked-out
 // state before the real (correctly-scoped) data has finished loading back
 // in — rehydrate() is async, and skipping the await here would show a flash
 // of "0 sessions" on every fresh page load before self-correcting.
-async function rehydrateUserScopedStores(userId: string | null) {
+async function rehydrateUserScopedStores(userId: string | null, isAccountSwitch: boolean) {
   setCurrentUserId(userId)
-  useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftItems: null, pendingSync: [], lastSyncedAt: null })
-  useBodyStore.setState({ scans: [] })
-  // No pre-blank for chat: unlike sessions/body scans, chat is gated to the
-  // single app owner (see App.tsx's showCoach check) — there's never a
-  // "different user's" stale data to guard against, so it can skip straight
-  // to rehydrate(). Blanking first would be actively wrong here: set() on a
-  // persisted store writes through to storage synchronously, so blanking
-  // then rehydrating races and clobbers the real cached history with an
-  // empty array before rehydrate() ever gets to read it back.
+  if (isAccountSwitch) {
+    useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftItems: null, pendingSync: [], lastSyncedAt: null })
+    useBodyStore.setState({ scans: [] })
+  }
+  // No pre-blank for chat regardless: unlike sessions/body scans, chat is
+  // gated to the single app owner (see App.tsx's showCoach check) — there's
+  // never a "different user's" stale data to guard against, so it can skip
+  // straight to rehydrate() even on a genuine switch.
   await Promise.all([useSessionStore.persist.rehydrate(), useBodyStore.persist.rehydrate(), useChatStore.persist.rehydrate()])
 }
 
@@ -89,11 +97,12 @@ async function applyUser(
   set: (partial: Partial<AuthStore>) => void,
   get: () => AuthStore,
   user: AuthUser,
-  isNewUser: boolean
+  isNewUser: boolean,
+  isAccountSwitch: boolean
 ) {
   let rehydratePromise: Promise<void> = Promise.resolve()
   if (isNewUser) {
-    rehydratePromise = rehydrateUserScopedStores(user.id)
+    rehydratePromise = rehydrateUserScopedStores(user.id, isAccountSwitch)
     useConfigStore.getState().resetProgram() // never show a previous user's program while the new one's profile is loading
   }
   const [{ profile, error }] = await Promise.all([loadProfile(user.id), rehydratePromise])
@@ -124,7 +133,16 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     // gym wifi this app is meant to tolerate.
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
-        await rehydrateUserScopedStores(null)
+        // Always blank on an explicit sign-out — there's no "avoid racing
+        // the real draft" concern here since setCurrentUserId(null) points
+        // at the 'anon' key, never the signed-out user's own key, so this
+        // can't clobber their real data. Deliberately does NOT clear
+        // getLastKnownUserId(): if they sign back in as themselves shortly
+        // after, that's what lets isAccountSwitch correctly stay false for
+        // them (their real draft, untouched under their own key this whole
+        // time, rehydrates straight back in) while still correctly
+        // triggering a blank if a DIFFERENT user signs in next.
+        await rehydrateUserScopedStores(null, true)
         useConfigStore.getState().resetProgram()
         set({ user: null, profile: null, profileError: null, loading: false })
         return
@@ -138,7 +156,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
       const user = toAuthUser(sessionUser)
       const isNewUser = get().user?.id !== user.id
-      await applyUser(set, get, user, isNewUser)
+      // Compared against a value that survives a reload (unlike the
+      // in-memory check above, which is always true on a fresh page load)
+      // — see rehydrateUserScopedStores's comment for why this distinction
+      // is what fixes issue #58's data loss.
+      const isAccountSwitch = getLastKnownUserId() !== user.id
+      setLastKnownUserId(user.id)
+      await applyUser(set, get, user, isNewUser, isAccountSwitch)
     })
 
     return () => listener.subscription.unsubscribe()
@@ -153,7 +177,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signOut: async () => {
     await supabase.auth.signOut()
-    await rehydrateUserScopedStores(null)
+    await rehydrateUserScopedStores(null, true)
     useConfigStore.getState().resetProgram()
     set({ user: null, profile: null, profileError: null })
   },
@@ -162,6 +186,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     const user = get().user
     if (!user) return
     set({ loading: true })
-    await applyUser(set, get, user, false)
+    await applyUser(set, get, user, false, false)
   },
 }))

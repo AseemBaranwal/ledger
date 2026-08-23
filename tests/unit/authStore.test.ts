@@ -5,7 +5,7 @@ import { useBodyStore } from '@/store/bodyStore'
 import { useConfigStore } from '@/store/configStore'
 import { useChatStore } from '@/store/chatStore'
 import { supabase } from '@/services/supabaseClient'
-import { getCurrentUserId } from '@/services/userScope'
+import { getCurrentUserId, setCurrentUserId, getLastKnownUserId, setLastKnownUserId } from '@/services/userScope'
 import type { Session } from '@/types'
 
 vi.mock('@/services/supabaseClient', () => ({
@@ -97,6 +97,37 @@ describe('authStore', () => {
       expect(getCurrentUserId()).toBe('user-b')
     })
 
+    // Issue #58: this used to always blank sessionStore before rehydrating,
+    // because isNewUser was computed against in-memory auth state — which
+    // always starts null on a fresh page load, so it couldn't tell a
+    // genuine account switch apart from the SAME user just reopening the
+    // app. Since a persisted store's set() writes through to localStorage
+    // synchronously, that blank clobbered the real draft before the very
+    // next line's rehydrate() ever read it back — an in-progress workout
+    // was silently wiped by nothing more than closing and reopening the
+    // app. Fixed by comparing against getLastKnownUserId() instead, which
+    // (unlike in-memory state) actually survives the reload.
+    it('keeps an in-progress draft when the SAME user reopens the app (not a real account switch)', async () => {
+      setCurrentUserId('user-a')
+      useSessionStore.getState().startSession('LA', [{ k: 'SQ', w: 100 }], 'Gym')
+      useSessionStore.getState().logRep(0, 5)
+      expect(useSessionStore.getState().draft).not.toBeNull()
+      setLastKnownUserId('user-a') // this device already knew user-a before this "reload"
+
+      vi.mocked(supabase.from).mockReturnValue(
+        profilesChain({ data: { id: 'user-a', routine_config: REAL_CONFIG }, error: null })
+      )
+
+      // Simulates a fresh cold start: in-memory auth state resets (done in
+      // beforeEach), but getLastKnownUserId() persisted through.
+      useAuthStore.getState().init()
+      await authChangeCallback('INITIAL_SESSION', { user: USER_A })
+
+      const draft = useSessionStore.getState().draft
+      expect(draft).not.toBeNull()
+      expect(useSessionStore.getState().draftEx?.[0].r).toEqual([5])
+    })
+
     it('sets profile to null (not a stale value) when a brand-new session fails to load its profile', async () => {
       vi.mocked(supabase.from).mockReturnValue(
         profilesChain({ data: null, error: { message: 'network error' } })
@@ -139,6 +170,30 @@ describe('authStore', () => {
       expect(useAuthStore.getState().profileError).toBeNull()
       expect(useSessionStore.getState().sessions).toEqual([])
       expect(getCurrentUserId()).toBeNull()
+    })
+
+    // SIGNED_OUT deliberately does not clear getLastKnownUserId() — this
+    // is what lets the same user's real draft (sitting untouched under
+    // their own scoped key the whole time; sign-out only touches the
+    // 'anon' key) resurface correctly if they sign back in shortly after,
+    // while a genuinely different user signing in next is still correctly
+    // treated as a switch.
+    it('preserves a signed-out draft on disk and restores it if the same user signs back in', async () => {
+      setCurrentUserId('user-a')
+      useSessionStore.getState().startSession('LA', [{ k: 'SQ', w: 100 }], 'Gym')
+      setLastKnownUserId('user-a')
+      useAuthStore.getState().init()
+
+      await authChangeCallback('SIGNED_OUT', null)
+      expect(useSessionStore.getState().draft).toBeNull() // in-memory view is blanked...
+      expect(getLastKnownUserId()).toBe('user-a') // ...but this device still remembers user-a
+
+      vi.mocked(supabase.from).mockReturnValue(
+        profilesChain({ data: { id: 'user-a', routine_config: REAL_CONFIG }, error: null })
+      )
+      await authChangeCallback('SIGNED_IN', { user: USER_A })
+
+      expect(useSessionStore.getState().draft).not.toBeNull() // ...and it comes back
     })
 
     it('does not re-blank sessions when the same user fires a redundant auth event', async () => {

@@ -27,3 +27,24 @@ export const scopedStorage = {
   setItem: (name: string, value: string) => localStorage.setItem(scopedKey(name), value),
   removeItem: (name: string) => localStorage.removeItem(scopedKey(name)),
 }
+
+// Deliberately a PLAIN (unscoped) localStorage key, not one of the
+// per-user ones above — it has to survive a page reload on its own before
+// any user id is known yet, which is exactly what it's for: distinguishing
+// "the same user reopening the app" (in-memory auth state always starts
+// null on a fresh load, so comparing against that alone can't tell this
+// apart from a genuine account switch) from an actual different-user
+// switch. See authStore.ts's isAccountSwitch — this is what fixes the
+// cold-start draft-wipe bug (issue #58): only a genuine switch should
+// blank local state before rehydrating; the same user's own reload
+// shouldn't, since that blank writes through to storage synchronously and
+// was racing ahead of (and clobbering) the read rehydrate() was about to do.
+const LAST_USER_KEY = 'ledger.lastUserId'
+
+export function getLastKnownUserId(): string | null {
+  return localStorage.getItem(LAST_USER_KEY)
+}
+
+export function setLastKnownUserId(id: string): void {
+  localStorage.setItem(LAST_USER_KEY, id)
+}

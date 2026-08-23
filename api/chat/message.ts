@@ -9,6 +9,13 @@ import { saveChatTurn } from '../_lib/chatHistory.js'
 export const config = { runtime: 'edge' }
 
 const MAX_MESSAGE_CHARS = 4000
+// The client only ever sends the last MAX_MESSAGES_SENT (24, see
+// chatStore.ts) messages per turn — this is a server-side backstop, not the
+// primary control, so a stale/buggy client can't bill an ever-growing,
+// uncached history against this endpoint regardless of what the client-side
+// slice is supposed to enforce. Set well above 24 so a legitimate client is
+// never rejected by its own normal behavior.
+const MAX_INBOUND_MESSAGES = 40
 const MAX_TOOL_ITERATIONS = 4
 const DEFAULT_DAILY_LIMIT = 60
 const DEFAULT_WINDOW_LIMIT = 10
@@ -335,24 +342,33 @@ export default async function handler(req: Request): Promise<Response> {
 
     const latencyMs = Date.now() - startedAt
 
-    await logChatCall({
-      user_id: user.id,
-      input_tokens: totalInputTokens,
-      output_tokens: totalOutputTokens,
-      cache_read_tokens: totalCacheReadTokens,
-      cache_creation_tokens: totalCacheCreationTokens,
-      tool_calls: toolCallNames,
-      latency_ms: latencyMs,
-      stop_reason: finalStopReason,
-      reply,
-      thinking: thinkingChunks.join('\n\n'),
-      error: callError,
-    })
+    // chat_logs (metrics) and chat_messages (conversation content, via
+    // saveChatTurn) are different tables written by independent, best-effort
+    // calls — neither depends on the other's result, so running them
+    // concurrently instead of two sequential awaits shaves a full Supabase
+    // round-trip off the tail latency of every reply the client receives.
+    // fetchDailyTokenTotals still runs after: it reads back rows including
+    // the one logChatCall just wrote, so it does have a real dependency.
+    const [, savedIds] = await Promise.all([
+      logChatCall({
+        user_id: user.id,
+        input_tokens: totalInputTokens,
+        output_tokens: totalOutputTokens,
+        cache_read_tokens: totalCacheReadTokens,
+        cache_creation_tokens: totalCacheCreationTokens,
+        tool_calls: toolCallNames,
+        latency_ms: latencyMs,
+        stop_reason: finalStopReason,
+        reply,
+        thinking: thinkingChunks.join('\n\n'),
+        error: callError,
+      }),
+      callError ? Promise.resolve(null) : saveChatTurn(user.id, lastText, reply, suggestions, thinkingChunks.length ? thinkingChunks.join('\n\n') : null),
+    ])
 
     if (callError) {
       send({ type: 'error', error: callError })
     } else {
-      const savedIds = await saveChatTurn(user.id, lastText, reply, suggestions, thinkingChunks.length ? thinkingChunks.join('\n\n') : null)
       // logChatCall() above already wrote this call's own token counts into
       // chat_logs, so this total is already inclusive of the current call —
       // don't add totalInputTokens/totalOutputTokens again on top of it.

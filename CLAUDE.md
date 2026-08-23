@@ -106,6 +106,27 @@ Practical pattern established in `tests/unit/`:
   — which also bypasses keystroke handling. Do not trust a "type" action
   against this editor for anything beyond a single short line without
   verifying the resulting content length/preview first.
+- **The Development environment's Vercel env vars are NOT a mirror of
+  Preview/Production — things get added to one and silently never to the
+  other.** Confirmed twice: `VITE_STRAVA_CLIENT_ID` and
+  `SUPABASE_SERVICE_ROLE_KEY` both existed for Preview/Production but not
+  Development, the second one hard-blocking every `supabaseAdmin()` call
+  (`google_health_connections` writes, chat logs, error logging, ...)
+  during local `vercel dev` testing until noticed. This almost certainly
+  went unnoticed for a long time because `vercel dev`'s `/api/*` layer
+  itself was separately broken (see the port/proxy gotchas below) — nobody
+  could exercise these code paths locally at all until that got fixed, so
+  the missing-secret gap under it was never surfaced either. If a local
+  `vercel dev` endpoint throws something env-var-shaped
+  (`"X / Y not configured on the server"`), check `npx vercel env ls |
+  grep <name>` for which environments actually have it before assuming
+  the code is wrong. A **Sensitive**-visibility var (`SUPABASE_SERVICE_ROLE_KEY`
+  on Preview/Production) can never be read back via `vercel env pull` —
+  it downloads as the literal placeholder string `"[SENSITIVE]"`, not the
+  real value, even for the project's own linked CLI — so a value missing
+  from Development has to be re-entered from its original source (the
+  Supabase dashboard, in this case), never copied from another environment
+  programmatically.
 
 ## Vercel Edge Functions — hard-won gotchas
 
@@ -117,23 +138,53 @@ Practical pattern established in `tests/unit/`:
   actual cause was a 404 that never even reached the app's own error
   handling. Use `npx vercel dev` instead when testing anything under
   `api/` locally; the plain Vite dev server is fine for everything else.
-- **`npx vercel dev`, run as a background process via Claude Code's own
-  browser-preview tooling (`preview_start`), reliably starts the underlying
-  `vite` dev server (port 5173) but never finishes bringing up its own
-  proxy on port 3000** — no "Ready! Available at" banner ever appears in
-  its logs even after a long wait, and requests to port 3000 (from either
-  a raw `curl` or the browser tool's own `navigate`) time out or get
-  refused rather than reaching `/api/*` at all. Reproduced 3 times in a
-  row in one session; root cause not found (plausibly some network call
-  `vercel dev`'s wrapper needs that's restricted in that sandbox). When
-  this happens, don't keep retrying — fall back to verifying the endpoint
-  a different way: run the exact Supabase queries the handler uses
-  directly via REST with the service-role key (proves the query/filter
-  shape is correct against real data) and rely on the type-checker plus
-  close adherence to an already-proven endpoint's structure for the rest.
-  This is a session/sandbox-level limitation, not a project config issue —
-  `vercel dev` may work fine for a human running it directly in their own
-  terminal outside this tool.
+- **`npx vercel dev` hanging/never printing "Ready! Available at" on port
+  3000 is a real, root-caused project bug, not a sandbox limitation** (an
+  earlier version of this note wrongly assumed the latter — corrected
+  2026-08-23 after actually tracing it with `--debug`). Root cause:
+  `vercel.json`'s `devCommand: "npm run dev"` makes `vercel dev` spawn
+  plain Vite and assign it a port via the `$PORT` env var, expecting Vite
+  to bind there so `vercel dev`'s own proxy can forward to it — but
+  `vite.config.ts` had no `server.port` reading `process.env.PORT`, so
+  Vite always fell back to its hardcoded default (5173) regardless of what
+  `$PORT` actually was. The proxy then forwarded every request to whatever
+  port it *asked for* (sometimes 3000 itself, sometimes a random port like
+  63377), where nothing was listening — hence the silent hang. **Fixed**:
+  `vite.config.ts` now sets `server.port` from `process.env.PORT` when
+  present. Confirmed via `--debug` logs
+  (`"Starting dev command with parameters: {...,\"port\":63377}"` followed
+  by Vite's own banner printing a *different* port) — don't re-diagnose
+  this from scratch if it resurfaces; check whether the two ports actually
+  match first.
+- **Even with that fixed, driving the frontend through `vercel dev`'s own
+  proxy (port 3000) is still unreliable — use it only as the `/api/*`
+  backend, not for loading the app itself.** `vercel.json`'s SPA rewrite
+  (`"source": "/((?!api/).*)", "destination": "/index.html"` — needed for
+  production client-side routing) also intercepts Vite's own dev-only
+  module paths under `vercel dev` (`/src/main.tsx`, `/@vite/client`,
+  `/@react-refresh`, ...), silently swapping them for `index.html` instead
+  of the real transformed JS. The browser tries to execute HTML as a
+  module script and the app renders a permanently blank page with **no
+  console error at all** — confirmed by fetching `/src/main.tsx` directly
+  and finding it `startsWith('<!DOCTYPE')`. **Working local setup**: run
+  `npx vercel dev --listen 3000` for the `/api/*` backend only, and
+  separately run plain `npm run dev` (Vite alone, on 5173) for the actual
+  browser session — `vite.config.ts`'s `server.proxy` forwards `/api/*`
+  from 5173 to `localhost:3000` for you. **The proxy rule has one required
+  exception**: `/api/_lib/*` isn't a real endpoint —
+  `src/services/exerciseCatalog.ts` cross-imports
+  `api/_lib/stravaExerciseCatalog.ts` and `stravaMapping.ts` directly as
+  plain source files (see the cross-import note further down) — so the
+  proxy's `bypass()` must let `/api/_lib/*` fall through to Vite's own file
+  server instead of forwarding it to `vercel dev`, which 503s on it (no
+  function lives at that path). Skipping this exception breaks the *entire*
+  module graph, not just that one import, since one failed transitive
+  import aborts the whole `<script type="module">` load with the same
+  silent-blank-page symptom as the rewrite-collision bug above.
+  OAuth redirect URIs must be registered for whichever port the browser is
+  actually on (`localhost:5173`, not `:3000`, in this setup) — Google's
+  exact-match rule (see below) doesn't care which port serves `/api/*`
+  behind the scenes, only which origin issued the redirect.
 - **Every `/api/*.ts` handler must set `export const config = { runtime: 'edge' }`.**
   Without it, Vercel's default Node runtime invokes the handler with a
   legacy Node-style request object whose `.headers` is a plain object, not a
@@ -369,26 +420,71 @@ onboarding-removal migration)
   Cloud Console listing — it's free at any plausible personal scale (limits
   are 86.4M req/day per project, 300 req/min per user). Easy and expensive
   mistake to conflate them by name when searching.
-- **Requests use civil dates (`{year, month, day}`), not unix timestamps** —
-  a real difference from Strava's API and a quiet source of off-by-a-day
-  bugs if a `Date`'s UTC and local parts get mixed. `toCivilDate()` /
-  `civilDateToIso()` in `googleHealth.ts` are the only sanctioned
-  conversions; don't hand-roll another.
-- **Verified shapes** (don't re-derive):
-  `POST /v4/users/me/dataTypes/{type}/dataPoints:dailyRollUp` with body
-  `{range:{start:{y,m,d},end:{y,m,d}}, windowSizeDays, pageSize}` →
-  `{rollupDataPoints:[{civilStartTime, civilEndTime, ...typeFields}]}`.
-  Type ids: `daily-resting-heart-rate`, `heart-rate-variability`, `sleep`.
-  Range caps: **14 days** for heart-rate-family types, 90 for others —
-  exceeding is a 400, so clamp before requesting.
-- **Google does not publicly document the per-data-type field names inside
-  a rollup point.** Whether resting HR arrives as `bpm`, `bpm_avg`, `value`
-  or something else is genuinely unknown until a real connection returns
-  data. `extractNumber(source, preferredKeys)` exists for exactly this: it
-  probes plausible keys, then any key *containing* one, then a shallow
-  numeric leaf, and returns `null` rather than throwing. **Never "fix" this
-  by hardcoding one field name** — when the real names are confirmed, add
-  them to the `preferredKeys` arrays and leave the fallback in place.
+- **`dailyRollUp` is NOT a supported action for `daily-resting-heart-rate`,
+  `daily-heart-rate-variability`, or `sleep` — at all.** This was the
+  original implementation's entire fetch mechanism, and it 400s
+  unconditionally: `"DailyRollup is not supported for data type X, but the
+  following actions are supported: list, reconcile"`. Never discovered
+  until the first real OAuth connection was tested end-to-end (see the
+  `2026-08-23` session in git history) — the original code shipped, passed
+  every unit test, and had a 100% failure rate against a live account
+  because nothing had ever actually called it. **The real fetch is `GET
+  users/me/dataTypes/{type}/dataPoints?filter=...`** (AIP-160 filter query
+  param), not a POST body — see `recoveryData.ts`'s `listDataPoints()`.
+  Lesson: a defensively-coded fallback for *unknown field names* is not a
+  substitute for testing the *endpoint* against a live connection at least
+  once — those are different failure modes and one doesn't protect against
+  the other.
+- **Confirmed request/response shapes** — pulled directly from the live
+  discovery doc (`https://health.googleapis.com/$discovery/rest?version=v4`,
+  a public, unauthenticated, machine-readable schema — fetch it directly
+  rather than re-guessing from prose docs if anything here needs re-checking):
+  - `daily-resting-heart-rate`: filter `daily_resting_heart_rate.date >= "Y-M-D" AND ... < "Y-M-D"`.
+    Response: `dataPoints[].dailyRestingHeartRate = {beatsPerMinute, date: {year,month,day}}`.
+  - `daily-heart-rate-variability` (**not** `heart-rate-variability` — that
+    id exists too, but is a different raw per-sample type with no daily
+    aggregate; using it silently returns per-sample noise, not a usable
+    daily number): filter `daily_heart_rate_variability.date >= ... AND < ...`.
+    Response: `dataPoints[].dailyHeartRateVariability =
+    {averageHeartRateVariabilityMilliseconds, date}`.
+  - `sleep`: a **session** type, filtered differently from the two daily
+    summaries above — `sleep.interval.civil_end_time >= "Y-M-D" AND ... <
+    "Y-M-D"`. Response: `dataPoints[].sleep = {interval, summary:
+    {minutesAsleep, minutesAwake, ...}, stages: [...]}`. There is **no
+    "sleep score" anywhere in this API's schema** — that's a Fitbit-app-UI
+    concept, not part of Google Health's data model. Don't add a field for
+    it; there is nothing to fill it with.
+  - `range.start`/`range.end` (where they DO apply, e.g. to `rollUp` for a
+    data type that actually supports it) take a `CivilDateTime {date:
+    {year,month,day}}`, **not** a bare `{year,month,day}` — the extra
+    `date` wrapper level is required, confirmed via a live 400: `"Unknown
+    name \"year\" at 'range.start': Cannot find field."`. `toCivilDateTime()`
+    in `googleHealth.ts` produces the correctly-wrapped shape; `toCivilDate()`
+    alone is one level too shallow for anything that takes a range.
+  - **int64-typed fields serialize as JSON strings**, not numbers —
+    `beatsPerMinute` and `minutesAsleep` both arrive as e.g. `"72"`, a real
+    googleapis wire convention (avoids JS number-precision loss on large
+    int64s), not a parsing bug. `Number(x)` before using either.
+  - **A live sleep point never actually carries `interval.civilStartTime`/
+    `civilEndTime`**, despite the discovery doc documenting both as
+    available "Output only" fields — confirmed empirically, absent on every
+    point returned by a real connection. Only `interval.startTime`/`endTime`
+    (RFC3339 UTC) and `startUtcOffset`/`endUtcOffset` (a signed
+    `"<seconds>s"` `google-duration` string, e.g. `"-25200s"`) are actually
+    present. `localDateFromUtc()` in `recoveryData.ts` derives the local
+    wake-up date from those instead — same category of fix as Strava's own
+    `utc_offset` handling elsewhere in this codebase (see the Strava
+    gotchas section below): shift the UTC instant by the offset, then read
+    the date with UTC getters so the runtime's own timezone can't
+    reinterpret it a second time.
+- **Before trusting any Google Health request/response shape you haven't
+  personally seen a real response for, fetch the live discovery doc and
+  check the schema directly** — it's public, unauthenticated, and
+  authoritative, and it caught three separate wrong assumptions in the
+  original implementation (unsupported endpoint, wrong HRV type id, wrong
+  civil-date nesting) in about ten minutes once actually consulted. Prose
+  documentation and a model's training-data assumptions are not a
+  substitute for this when a live discovery doc exists.
 - **A 7-day disconnect is EXPECTED behavior, not a bug.** While the Google
   OAuth consent screen is in "Testing" publishing status (the only
   realistic option for a 3-user personal app — full verification wants a

@@ -399,6 +399,14 @@ onboarding-removal migration)
   forget to handle it), `google_health_connections.refresh_failed_at`
   records it, and the Sync tab shows a routine-maintenance reconnect
   prompt rather than error styling. Don't "fix" it as a failure path.
+- **Google's authorized redirect URIs are exact-match — NO wildcards**,
+  unlike Supabase's Redirect URL allowlist (which this project relies on a
+  wildcard for, see the Supabase section above). Scheme, host, port, path
+  and trailing slash must match byte-for-byte or Google 400s with
+  `redirect_uri_mismatch`. Practical consequence: **Vercel preview
+  deployments cannot use Google OAuth** without registering each preview
+  URL by hand (and they change every push). Test the Google Health connect
+  flow on `localhost:5173` or on production, not on a preview URL.
 - **`access_type=offline` + `prompt=consent` are both mandatory** on the
   authorize URL. Without them Google may omit `refresh_token` entirely
   (it does this when the user already granted the scopes), and the

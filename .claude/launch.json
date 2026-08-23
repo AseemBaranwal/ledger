@@ -10,9 +10,7 @@
     },
     {
       "name": "ledger-vercel-dev",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["vercel", "dev", "--yes"],
-      "port": 3000
+      "url": "http://localhost:3000"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useSessionStore, useUIStore, useAuthStore, useStravaStore, useUnitStore } from '@/store'
+import { useSessionStore, useUIStore, useAuthStore, useStravaStore, useGoogleHealthStore, useUnitStore } from '@/store'
 import { stravaConfigured } from '@/services/strava'
+import { googleHealthConfigured } from '@/services/googleHealth'
 import { sheetSyncConfigured, syncSessionsToSheet } from '@/services/sheetSync'
 import { Avatar } from '@/components/layout'
 import type { UnitSystem } from '@/services/units'
@@ -42,6 +43,13 @@ export function SyncTab() {
   const connectStrava = useStravaStore((s) => s.connect)
   const disconnectStravaAction = useStravaStore((s) => s.disconnect)
 
+  const googleHealthConnected = useGoogleHealthStore((s) => s.connected)
+  const googleHealthNeedsReconnect = useGoogleHealthStore((s) => s.needsReconnect)
+  const googleHealthDisconnecting = useGoogleHealthStore((s) => s.disconnecting)
+  const connectGoogleHealth = useGoogleHealthStore((s) => s.connect)
+  const disconnectGoogleHealthAction = useGoogleHealthStore((s) => s.disconnect)
+  const googleHealthConnectedAt = useGoogleHealthStore((s) => s.connectedAt)
+
   const dedupKey = (s: Session) => `${s.d}|${s.s}`
 
   // lastSyncedAt only ever gets set by a successful save from THIS device
@@ -79,6 +87,15 @@ export function SyncTab() {
       showNotification('Strava disconnected', 'success')
     } catch (error) {
       showNotification('Failed to disconnect Strava', 'error')
+    }
+  }
+
+  const handleDisconnectGoogleHealth = async () => {
+    try {
+      await disconnectGoogleHealthAction()
+      showNotification('Google Health disconnected', 'success')
+    } catch (error) {
+      showNotification('Failed to disconnect Google Health', 'error')
     }
   }
 
@@ -205,6 +222,77 @@ export function SyncTab() {
         </>
       )}
 
+      {/* Google Health — three states, not two. While this app's Google
+          consent screen sits in "Testing" status, Google force-expires the
+          refresh token every 7 days, so "connected but needs reauthorizing"
+          is a routine state the connection passes through weekly, not a
+          failure. It gets its own visible-but-calm prompt (amber, matching
+          the app's own accent) rather than styles.warn, which is red and
+          reads as something broke. */}
+      <div className={styles.sec}>
+        <h2>Google Health</h2>
+        <div className={styles.rule} />
+      </div>
+      {googleHealthConnected ? (
+        <>
+          {googleHealthNeedsReconnect ? (
+            <div
+              style={{
+                background: 'rgba(255, 176, 32, 0.08)',
+                border: '1px solid var(--amber-dim)',
+                borderRadius: '10px',
+                padding: '11px 13px',
+                fontSize: '12.5px',
+                lineHeight: 1.5,
+                color: 'var(--muted)',
+                marginBottom: '12px',
+              }}
+            >
+              <b style={{ color: 'var(--amber)', fontWeight: 600 }}>Time to reconnect.</b> Google expires this app's
+              access every 7 days while its consent screen is in testing. Reconnect to keep resting heart rate, HRV,
+              and sleep reaching the Coach.
+            </div>
+          ) : (
+            <div className={styles.note}>
+              Connected {timeAgo(googleHealthConnectedAt ? Date.parse(googleHealthConnectedAt) : null)}. The Coach
+              reads your resting heart rate, HRV, and sleep to factor recovery into its advice.
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {googleHealthNeedsReconnect && (
+              <button
+                className={`${styles.btn} ${styles.primary}`}
+                onClick={connectGoogleHealth}
+                disabled={!googleHealthConfigured}
+              >
+                Reconnect
+              </button>
+            )}
+            <button
+              className={`${styles.btn} ${styles.ghost}`}
+              onClick={handleDisconnectGoogleHealth}
+              disabled={googleHealthDisconnecting}
+            >
+              {googleHealthDisconnecting ? 'Disconnecting…' : 'Disconnect Google Health'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className={styles.note}>
+            Share resting heart rate, HRV, and sleep from your watch so the Coach factors recovery into its advice.
+          </div>
+          <button
+            className={`${styles.btn} ${styles.ghost}`}
+            onClick={connectGoogleHealth}
+            disabled={!googleHealthConfigured}
+          >
+            Connect Google Health
+          </button>
+          {!googleHealthConfigured && <div className={styles.warn}>Google Health isn't configured yet.</div>}
+        </>
+      )}
+
       {/* Local backup */}
       <div className={styles.sec}>
         <h2>Local backup</h2>
@@ -288,7 +376,7 @@ export function SyncTab() {
 
       <div className={styles.note} style={{ marginTop: '24px' }}>
         💡 <b>Sync:</b> Sessions save to your account automatically when you finish logging — no setup needed. This
-        tab is for Strava and local backups.
+        tab is for connected services and local backups.
       </div>
       <div style={{ height: '20px' }} />
     </div>

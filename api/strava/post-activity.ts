@@ -58,7 +58,10 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 // made it impossible to tell whether Strava ever actually finished the job.
 async function pollUploadUntilDone(uploadId: number, accessToken: string): Promise<{ activityId?: number; error?: string }> {
   for (let attempt = 1; attempt <= 15; attempt++) {
-    await sleep(1000)
+    // Only sleep BETWEEN attempts, not before the first one — Strava's own
+    // docs put mean processing time under 2s, so the common case (already
+    // done) shouldn't pay a flat ~1s tax before ever checking.
+    if (attempt > 1) await sleep(1000)
     const res = await fetch(`https://www.strava.com/api/v3/uploads/${uploadId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })

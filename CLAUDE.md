@@ -355,6 +355,57 @@ onboarding-removal migration)
   reading the tool's code in isolation — the gap was invisible without
   cross-checking against the actual weekly rotation shape.
 
+## Google Health API (`api/_lib/googleHealth.ts`) — recovery data
+
+- **This replaced Fitbit before it was ever built against.** The legacy
+  Fitbit Web API is decommissioned **September 2026**; Google's guidance was
+  to not start new Fitbit integrations after ~May 2026. The Google Health
+  API (`https://health.googleapis.com/v4`) is its official successor and
+  reads from both Fitbit devices and Pixel Watches. If you find yourself
+  looking at Fitbit Web API docs, you're in the wrong place.
+- **It is NOT the same product as Google's "Cloud Healthcare API."** That
+  one is an enterprise FHIR/EHR product that bills per request. The Google
+  Health API has no pricing page on its docs, its rate-limits page, or its
+  Cloud Console listing — it's free at any plausible personal scale (limits
+  are 86.4M req/day per project, 300 req/min per user). Easy and expensive
+  mistake to conflate them by name when searching.
+- **Requests use civil dates (`{year, month, day}`), not unix timestamps** —
+  a real difference from Strava's API and a quiet source of off-by-a-day
+  bugs if a `Date`'s UTC and local parts get mixed. `toCivilDate()` /
+  `civilDateToIso()` in `googleHealth.ts` are the only sanctioned
+  conversions; don't hand-roll another.
+- **Verified shapes** (don't re-derive):
+  `POST /v4/users/me/dataTypes/{type}/dataPoints:dailyRollUp` with body
+  `{range:{start:{y,m,d},end:{y,m,d}}, windowSizeDays, pageSize}` →
+  `{rollupDataPoints:[{civilStartTime, civilEndTime, ...typeFields}]}`.
+  Type ids: `daily-resting-heart-rate`, `heart-rate-variability`, `sleep`.
+  Range caps: **14 days** for heart-rate-family types, 90 for others —
+  exceeding is a 400, so clamp before requesting.
+- **Google does not publicly document the per-data-type field names inside
+  a rollup point.** Whether resting HR arrives as `bpm`, `bpm_avg`, `value`
+  or something else is genuinely unknown until a real connection returns
+  data. `extractNumber(source, preferredKeys)` exists for exactly this: it
+  probes plausible keys, then any key *containing* one, then a shallow
+  numeric leaf, and returns `null` rather than throwing. **Never "fix" this
+  by hardcoding one field name** — when the real names are confirmed, add
+  them to the `preferredKeys` arrays and leave the fallback in place.
+- **A 7-day disconnect is EXPECTED behavior, not a bug.** While the Google
+  OAuth consent screen is in "Testing" publishing status (the only
+  realistic option for a 3-user personal app — full verification wants a
+  privacy policy, demo video and security review), Google force-expires
+  refresh tokens after 7 days and returns `invalid_grant` on refresh. This
+  is modeled deliberately end to end: `getValidAccessToken()` returns a
+  `needs_reconnect` variant (a discriminated union, so a caller can't
+  forget to handle it), `google_health_connections.refresh_failed_at`
+  records it, and the Sync tab shows a routine-maintenance reconnect
+  prompt rather than error styling. Don't "fix" it as a failure path.
+- **`access_type=offline` + `prompt=consent` are both mandatory** on the
+  authorize URL. Without them Google may omit `refresh_token` entirely
+  (it does this when the user already granted the scopes), and the
+  connection then dies silently at the first access-token expiry ~1h
+  later. `exchangeCodeForTokens()` hard-fails on a missing refresh token
+  rather than storing a connection that's quietly broken an hour on.
+
 ## Strava gotchas
 
 - **A new Strava API app starts hard-capped at 1 connected athlete

@@ -66,13 +66,12 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
   // carries over and mislabels the next set.
   const [pendingEffort, setPendingEffort] = useState<'e' | 'o' | 'h' | null>(null)
 
-  // openExerciseIndex now means "this card is expanded" (the accordion
-  // state — only one card expanded at a time, reusing the exact state
-  // that used to gate just the rep picker). Whether the rep picker itself
-  // is showing is a separate, narrower flag scoped to this one card: every
-  // empty set slot logs to the same "next set" regardless of which slot
-  // was tapped (logRep always appends), so one boolean is enough — there's
-  // never a need to track which slot opened it.
+  // openExerciseIndex means "this card is expanded" (accordion state, one
+  // card at a time). Whether the rep picker itself is showing is a
+  // separate, narrower flag scoped to this one card: every empty set slot
+  // logs to the same "next set" regardless of which slot was tapped
+  // (logRep always appends), so one boolean is enough — there's never a
+  // need to track which slot opened it.
   const [pickerOpen, setPickerOpen] = useState(false)
 
   // The button grid (repOpts: target ± 4) covers the vast majority of real

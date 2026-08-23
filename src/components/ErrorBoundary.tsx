@@ -16,13 +16,12 @@ interface ErrorBoundaryState {
 }
 
 // React only supports catching render-phase errors via a class component —
-// there's no hook equivalent. This was previously missing entirely (issue
-// #58): any uncaught render exception anywhere — a malformed session
-// shape, a lazy-chunk load failure, any component throwing — blanked the
-// ENTIRE app to a white screen with zero recovery path except a hard
-// reload, which is itself what could trigger the cold-start draft-wipe bug
-// fixed alongside this. A visible, recoverable error screen is strictly
-// better than a silent blank one either way.
+// there's no hook equivalent. Without this, any uncaught render exception
+// anywhere — a malformed session shape, a lazy-chunk load failure, any
+// component throwing — blanks the ENTIRE app to a white screen with zero
+// recovery path except a hard reload, which risks retriggering the
+// cold-start draft-wipe bug guarded against in authStore.ts. A visible,
+// recoverable error screen is strictly better than a silent blank one.
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null }
 

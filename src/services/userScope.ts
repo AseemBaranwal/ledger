@@ -37,16 +37,13 @@ export function onStorageError(listener: StorageErrorListener) {
   storageErrorListener = listener
 }
 
-// Every localStorage call in this module goes through this — previously
-// none of them did (issue #58), so a QuotaExceededError or Safari Private
-// Browsing's synchronous throw on setItem propagated straight up through
-// zustand's persist middleware into whatever store action triggered it
-// (logRep, saveDraft, ...), uncaught. Combined with there being no error
-// boundary at the time, that was a real path to a hard crash with no
-// visible cause. Now it's caught here, surfaced once via the listener
-// above, and the write itself is treated as a no-op — data just doesn't
-// persist for that action, which is a real limitation but a survivable
-// one, unlike a crash.
+// Every localStorage call in this module goes through this — a
+// QuotaExceededError or Safari Private Browsing's synchronous throw on
+// setItem would otherwise propagate straight up through zustand's persist
+// middleware into whatever store action triggered it (logRep, saveDraft,
+// ...), uncaught. Caught here and surfaced once via the listener above;
+// the write becomes a no-op instead — data just doesn't persist for that
+// action, a real limitation but survivable, unlike a crash.
 function safeStorageCall<T>(fn: () => T, fallback: T): T {
   try {
     return fn()
@@ -71,11 +68,10 @@ export const scopedStorage = {
 // "the same user reopening the app" (in-memory auth state always starts
 // null on a fresh load, so comparing against that alone can't tell this
 // apart from a genuine account switch) from an actual different-user
-// switch. See authStore.ts's isAccountSwitch — this is what fixes the
-// cold-start draft-wipe bug (issue #58): only a genuine switch should
-// blank local state before rehydrating; the same user's own reload
-// shouldn't, since that blank writes through to storage synchronously and
-// was racing ahead of (and clobbering) the read rehydrate() was about to do.
+// switch. See authStore.ts's isAccountSwitch, which uses this to decide
+// whether to blank local state before rehydrating — only a genuine switch
+// should, since blanking writes through to storage synchronously and would
+// otherwise race ahead of (and clobber) the read rehydrate() is about to do.
 const LAST_USER_KEY = 'ledger.lastUserId'
 
 export function getLastKnownUserId(): string | null {

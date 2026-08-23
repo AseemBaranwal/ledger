@@ -53,10 +53,9 @@ export function TodayTab() {
 
   const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] => applySubstitutions(exList, substitutions)
 
-  // saveDraft() already computed which exercises hit a new PR this session
-  // (via the previously-orphaned checkPRs()) but nothing ever surfaced it —
-  // there was no in-app moment marking a PR at all. A toast is the smallest
-  // change that actually closes the loop from "detected" to "seen."
+  // saveDraft() already computes which exercises hit a new PR this session
+  // via checkPRs(), but nothing surfaces it in-app — a toast is the
+  // smallest change that closes the loop from "detected" to "seen."
   const handleSaveDraft = () => {
     const prCodes = saveDraft()
     if (!prCodes.length) return

@@ -34,8 +34,17 @@ create table if not exists public.google_health_connections (
 
 alter table public.google_health_connections enable row level security;
 
+-- auth.uid() wrapped as a scalar subquery, not called bare — Postgres can
+-- only cache it as a per-query InitPlan (evaluated once) in that form;
+-- the bare form re-evaluates once per row scanned. Same fix applied to
+-- every other table's RLS policies in supabase/rls_auth_uid_initplan_fix.sql
+-- (see that file for the full reasoning). drop-if-exists + create makes
+-- this statement itself safe to re-run, unlike the rest of this file's
+-- create-table-if-not-exists style, since a plain `create policy` errors
+-- on a name that already exists.
+drop policy if exists "google_health_select_own" on public.google_health_connections;
 create policy "google_health_select_own" on public.google_health_connections
-  for select using (auth.uid() = user_id);
+  for select using ((select auth.uid()) = user_id);
 
 -- No insert/update/delete policies for anon/authenticated on purpose —
 -- only the service_role key can write here. Disconnecting also goes

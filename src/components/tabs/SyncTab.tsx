@@ -31,7 +31,10 @@ export function SyncTab() {
   const user = useAuthStore((s) => s.user)
   const signOut = useAuthStore((s) => s.signOut)
 
-  const [sheetSectionOpen, setSheetSectionOpen] = useState(false)
+  // Gates Local Backup and (when enabled) the Google Sheet power-user
+  // override — both are low-frequency actions that don't need permanent
+  // top-level real estate (issue #61).
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [sheetSyncing, setSheetSyncing] = useState(false)
 
   const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
@@ -191,10 +194,16 @@ export function SyncTab() {
         )}
       </div>
 
-      {/* Strava */}
+      {/* Connections — one section for every linked third-party account
+          (issue #61: these used to render as separate top-level sections,
+          which stopped reading as "one group of connections" the moment a
+          second provider — Google Health — existed). */}
       <div className={styles.sec}>
-        <h2>Strava</h2>
+        <h2>Connections</h2>
         <div className={styles.rule} />
+      </div>
+      <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        Strava
       </div>
       {stravaConnected ? (
         <>
@@ -229,9 +238,8 @@ export function SyncTab() {
           failure. It gets its own visible-but-calm prompt (amber, matching
           the app's own accent) rather than styles.warn, which is red and
           reads as something broke. */}
-      <div className={styles.sec}>
-        <h2>Google Health</h2>
-        <div className={styles.rule} />
+      <div style={{ marginTop: '20px', marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        Google Health
       </div>
       {googleHealthConnected ? (
         <>
@@ -293,35 +301,6 @@ export function SyncTab() {
         </>
       )}
 
-      {/* Local backup */}
-      <div className={styles.sec}>
-        <h2>Local backup</h2>
-        <div className={styles.rule} />
-      </div>
-      <div className={styles.note}>Download a copy of everything on this device, or restore from a file.</div>
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-        <button className={`${styles.btn} ${styles.ghost}`} onClick={handleDownloadBackup}>
-          Download
-        </button>
-        <button
-          className={`${styles.btn} ${styles.ghost}`}
-          onClick={() => document.getElementById('backup-file-input')?.click()}
-        >
-          Restore from file
-        </button>
-      </div>
-      <input
-        id="backup-file-input"
-        type="file"
-        accept="application/json"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) handleRestoreFile(file)
-          e.target.value = ''
-        }}
-      />
-
       {/* Units — defaults from the browser's locale on first sign-in
           (e.g. en-US -> lb, en-IN -> kg) but never overwrites an explicit
           choice made here afterward, even if the device's own locale
@@ -344,22 +323,50 @@ export function SyncTab() {
         ))}
       </div>
 
-      {/* Only relevant to the owner's own Google Sheet integration — most
-          accounts never see this at all (sheetSyncConfigured is a build-time
-          flag, off unless VITE_SHEET_SYNC_ENABLED is set). Even when it
-          applies, this is a manual power-user override for a script that
-          otherwise runs from the terminal, so it stays collapsed behind a
-          toggle rather than a permanently visible button. */}
-      {sheetSyncConfigured && (
+      {/* Advanced — low-frequency actions that don't need permanent
+          top-level space: local backup/restore always lives here, and the
+          owner's own Google Sheet power-user override (a manual trigger
+          for a script that otherwise runs from the terminal; most accounts
+          never see it at all — sheetSyncConfigured is a build-time flag,
+          off unless VITE_SHEET_SYNC_ENABLED is set) joins it when enabled. */}
+      <button
+        className={`${styles.btn} ${styles.quiet}`}
+        style={{ marginTop: '24px' }}
+        onClick={() => setAdvancedOpen((o) => !o)}
+      >
+        {advancedOpen ? 'Hide advanced' : 'Show advanced'}
+      </button>
+      {advancedOpen && (
         <>
-          <button
-            className={`${styles.btn} ${styles.quiet}`}
-            style={{ marginTop: '24px' }}
-            onClick={() => setSheetSectionOpen((o) => !o)}
-          >
-            {sheetSectionOpen ? 'Hide advanced' : 'Show advanced'}
-          </button>
-          {sheetSectionOpen && (
+          <div className={styles.sec}>
+            <h2>Local backup</h2>
+            <div className={styles.rule} />
+          </div>
+          <div className={styles.note}>Download a copy of everything on this device, or restore from a file.</div>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+            <button className={`${styles.btn} ${styles.ghost}`} onClick={handleDownloadBackup}>
+              Download
+            </button>
+            <button
+              className={`${styles.btn} ${styles.ghost}`}
+              onClick={() => document.getElementById('backup-file-input')?.click()}
+            >
+              Restore from file
+            </button>
+          </div>
+          <input
+            id="backup-file-input"
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handleRestoreFile(file)
+              e.target.value = ''
+            }}
+          />
+
+          {sheetSyncConfigured && (
             <>
               <div className={styles.sec}>
                 <h2>Google Sheet</h2>
@@ -376,7 +383,7 @@ export function SyncTab() {
 
       <div className={styles.note} style={{ marginTop: '24px' }}>
         💡 <b>Sync:</b> Sessions save to your account automatically when you finish logging — no setup needed. This
-        tab is for connected services and local backups.
+        tab is for connections and advanced/backup options.
       </div>
       <div style={{ height: '20px' }} />
     </div>

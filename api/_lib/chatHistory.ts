@@ -14,6 +14,12 @@ export interface StoredMessage {
   role: 'user' | 'assistant'
   content: string
   suggestions: unknown | null
+  // The model's intermediate reasoning for this turn, null for user rows
+  // and for any assistant row saved before this column existed. Persisted
+  // (not just held in the client's zustand state) so the Coach tab's
+  // thinking block survives a reload — loadHistory() re-fetches from this
+  // table on every mount, discarding whatever was in memory.
+  thinking: string | null
 }
 
 // Best-effort — a storage hiccup must never fail the chat response the user
@@ -26,15 +32,22 @@ export async function saveChatTurn(
   userId: string,
   userText: string,
   assistantReply: string,
-  suggestions: unknown[]
+  suggestions: unknown[],
+  thinking: string | null
 ): Promise<{ userMessageId: number; assistantMessageId: number } | null> {
   try {
     // See exchange.ts for why this cast is needed — no generated Database
     // type, so supabase-js can't infer chat_messages' row shape.
     const { data, error } = await (supabaseAdmin().from('chat_messages') as any)
       .insert([
-        { user_id: userId, role: 'user', content: userText, suggestions: null },
-        { user_id: userId, role: 'assistant', content: assistantReply, suggestions: suggestions.length ? suggestions : null },
+        { user_id: userId, role: 'user', content: userText, suggestions: null, thinking: null },
+        {
+          user_id: userId,
+          role: 'assistant',
+          content: assistantReply,
+          suggestions: suggestions.length ? suggestions : null,
+          thinking: thinking || null,
+        },
       ])
       .select('id')
     if (error || !data || data.length !== 2) return null
@@ -59,7 +72,7 @@ export async function deleteChatMessages(userId: string, ids: number[]): Promise
 export async function fetchChatHistory(userId: string, limit: number): Promise<StoredMessage[]> {
   const { data, error } = await supabaseAdmin()
     .from('chat_messages')
-    .select('id, role, content, suggestions')
+    .select('id, role, content, suggestions, thinking')
     .eq('user_id', userId)
     .order('id', { ascending: false })
     .limit(limit)

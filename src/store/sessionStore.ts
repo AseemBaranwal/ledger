@@ -51,16 +51,12 @@ interface SessionStore {
   markSynced: () => void
 }
 
-// NOTE: this used to auto-import from the pre-auth vanilla app's unscoped
-// 'ledger.v1' localStorage key at store creation. Removed: that key isn't
-// tied to any signed-in user, so on a device that had it set, a *different*
-// Google account signing in for the first time (empty scoped storage) would
-// inherit that stale data — zustand's persist.rehydrate() merges onto
-// whatever's already in memory rather than resetting it when the target
-// storage key is empty, so the leftover initial state would stick. The
-// user's Supabase `sessions` table is the durable source of truth now;
-// auto-restore-on-empty in App.tsx repopulates real per-user data safely
-// instead.
+// Deliberately does NOT auto-import from any unscoped localStorage key at
+// creation — zustand's persist.rehydrate() merges onto whatever's already
+// in memory instead of resetting on an empty target key, so a stale
+// unscoped value would leak into a different user's first sign-in. The
+// Supabase `sessions` table is the durable source of truth; App.tsx's
+// auto-restore-on-empty repopulates real per-user data instead.
 
 // Write the session to Supabase and update the pending-sync queue based on
 // the outcome. A thrown error (offline, RLS denial, constraint violation —
@@ -238,11 +234,9 @@ export const useSessionStore = create<SessionStore>()(
         const newSessions = [...state.sessions, savedSession]
         newSessions.sort((a, b) => a.d.localeCompare(b.d))
 
-        // checkPRs() already existed as a tested pure function but was never
-        // actually wired to anything — this inline block used to duplicate
-        // its exact logic just to get a bare count. Reuse it directly
-        // instead, which also gives callers the actual exercise codes (for
-        // a real "new PR: Back Squat" notification) rather than just a number.
+        // Reuses the existing tested checkPRs() rather than reimplementing PR
+        // detection inline — also exposes the actual exercise codes, not
+        // just a count, for a real "new PR: Back Squat" notification.
         const prCodes = isRest ? [] : checkPRs(sessionToSave, state.sessions)
 
         set({ sessions: newSessions, draft: null, draftEx: null, draftDefs: null, draftItems: null })
@@ -250,16 +244,10 @@ export const useSessionStore = create<SessionStore>()(
         // Write every session to Supabase (fire-and-forget, non-blocking —
         // local Zustand state, already updated above, is what the UI reads
         // immediately; pendingSync covers the case where this write fails).
-        // REST sessions used to be skipped here ("local-only, matching the
-        // original app's behavior" — a leftover from before Supabase was
-        // the source of truth) which meant a logged rest day only ever
-        // existed in this one browser's localStorage: a cleared cache, a
-        // new device, or a PWA reinstall silently erased it from History
-        // for good, while PROGRAM sessions never had that problem. The
-        // `sessions` table and insertSession()/fetchSessions() already
-        // fully support the type/t/items columns REST rows need — there
-        // was no structural reason for the gate, so every session type
-        // now syncs the same way.
+        // Every session type syncs the same way, including REST — one that
+        // only ever lived in localStorage would silently vanish on a
+        // cleared cache or new device, and the schema doesn't require
+        // REST to be local-only.
         const markPending = (id: string) => {
           set((s) => (s.pendingSync.includes(id) ? s : { pendingSync: [...s.pendingSync, id] }))
           useUIStore.getState().showNotification('Could not save session — will retry', 'error')

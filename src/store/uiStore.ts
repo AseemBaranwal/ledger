@@ -63,12 +63,11 @@ export const useUIStore = create<UIStore>((set) => ({
 
   // Deliberately doesn't touch timerActive when the count reaches 0 — that's
   // RestTimer's own expiry effect's job (play the chime, THEN call
-  // setTimer(0, false)). Flipping it here too used to race that effect: both
-  // changes landed in the same tick, so timerSeconds hit 0 in the exact
-  // update where timerActive already went false, and the effect's
-  // `timerActive && timerSeconds <= 0` guard could never see both true at
-  // once — the chime call was unreachable. Clamped at 0 so a stray extra
-  // tick before the effect's cleanup runs can't drift into negative time.
+  // setTimer(0, false)). Setting it here too would race that effect: both
+  // changes landing in the same tick means the effect's `timerActive &&
+  // timerSeconds <= 0` guard could never see both true at once, so the
+  // chime would never fire. Clamped at 0 so a stray extra tick before the
+  // effect's cleanup runs can't drift into negative time.
   tickTimer: () => set((state) => {
     if (!state.timerActive) return state
     return { timerSeconds: Math.max(0, state.timerSeconds - 1) }

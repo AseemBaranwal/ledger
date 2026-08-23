@@ -42,10 +42,10 @@ export default function App() {
 
     // Fires at most once per page load (see safeStorageCall's dedup) — a
     // local-storage write failure (device storage full, Safari Private
-    // Browsing) previously just threw uncaught with no visible cause;
-    // this at least tells the person something didn't save, rather than
-    // leaving them to discover it later when a set they thought was
-    // logged turns out not to have been.
+    // Browsing) would otherwise throw uncaught with no visible cause; this
+    // at least tells the person something didn't save, rather than leaving
+    // them to discover it later when a set they thought was logged turns
+    // out not to have been.
     onStorageError(() => {
       useUIStore.getState().showNotification(
         "Couldn't save locally — your device storage may be full. Recently logged sets might not persist.",
@@ -101,11 +101,10 @@ export default function App() {
         const restored = await fetchSessions(userId)
         if (restored.length) useSessionStore.setState({ sessions: restored })
       } catch (e) {
-        // A real fetch failure here used to look identical to a genuine
-        // brand-new account with no history — both rendered the same empty
-        // state. Surfacing it distinctly, even though local cache (if any)
-        // still shows and pendingSync/next reload will pick up anything
-        // missing.
+        // A real fetch failure here would otherwise look identical to a
+        // genuine brand-new account with no history — both render the same
+        // empty state. Surfaced distinctly instead; local cache (if any)
+        // still shows, and pendingSync/next reload picks up anything missing.
         useUIStore.getState().showNotification('Could not load your history — check your connection and reload', 'error')
       }
     }
@@ -154,9 +153,8 @@ export default function App() {
   // /api/chat/* request is checked against.
   const showCoach = Boolean(user?.email && user.email === import.meta.env.VITE_CHAT_OWNER_EMAIL)
 
-  // A bare empty div here used to be the first thing every cold start
-  // showed — same branding as SignInScreen (minus the button) so there's
-  // at least a visible, intentional-looking moment instead of a blank flash.
+  // Same branding as SignInScreen (minus the button), so a cold start shows
+  // a visible, intentional-looking moment instead of a blank flash.
   if (authLoading) {
     return (
       <div className={styles.root} style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

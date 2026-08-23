@@ -32,7 +32,7 @@ export function SyncTab() {
 
   // Gates Local Backup and (when enabled) the Google Sheet power-user
   // override — both are low-frequency actions that don't need permanent
-  // top-level real estate (issue #61).
+  // top-level real estate.
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [sheetSyncing, setSheetSyncing] = useState(false)
 
@@ -179,9 +179,9 @@ export function SyncTab() {
 
       {/* Connections — one section for every linked third-party account.
           Strava is the only one on main today; Google Health joins here
-          too once feature/google-health merges (issue #61: these used to
-          render as separate top-level sections, which stopped reading as
-          "one group of connections" the moment a second provider existed). */}
+          too once feature/google-health merges. Kept as one group rather
+          than separate top-level sections per provider, which stops
+          reading as "one group of connections" once there's more than one. */}
       <div className={styles.sec}>
         <h2>Connections</h2>
         <div className={styles.rule} />

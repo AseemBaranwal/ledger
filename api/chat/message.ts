@@ -228,13 +228,10 @@ export default async function handler(req: Request): Promise<Response> {
           .join('\n')
         if (thinkingText) {
           thinkingChunks.push(`[iteration ${iteration}] ${thinkingText}`)
-          // Was previously only ever captured for chat_logs (server-side
-          // debugging) — never sent to the client at all, so the "Thinking…"
-          // status pill was the only visible sign anything was happening.
-          // Streamed here per-iteration (not buffered to the end) since
-          // that's the real granularity available: the underlying Anthropic
-          // call itself isn't token-streamed, so this is delivered a whole
-          // iteration's reasoning at a time, not word-by-word.
+          // Streamed to the client per-iteration (not buffered to the end)
+          // since that's the real granularity available: the underlying
+          // Anthropic call itself isn't token-streamed, so this arrives a
+          // whole iteration's reasoning at a time, not word-by-word.
           send({ type: 'thinking', text: thinkingText })
         }
 
@@ -329,10 +326,9 @@ export default async function handler(req: Request): Promise<Response> {
 
     // A call can "succeed" (nothing thrown) yet still carry no usable text —
     // e.g. hitting max_tokens while still in extended thinking, before any
-    // text block was ever emitted. This used to save and send that empty
-    // reply as if it were a normal successful turn, with chat_logs.error
-    // staying null the whole time — indistinguishable from a real success
-    // without the stop_reason, which wasn't logged anywhere either.
+    // text block was ever emitted. Treated as its own error case rather
+    // than a normal successful turn, so chat_logs.error and the
+    // stop_reason both make an empty reply distinguishable from a real one.
     if (!callError && !reply) {
       callError = `Coach didn't return any reply text (stop_reason: ${finalStopReason ?? 'unknown'}) — try again, maybe with a shorter or more focused question.`
     }

@@ -11,6 +11,52 @@ Full architecture is in [README.md](README.md). This file is a debugging
 playbook — things that cost real time to figure out once and will cost it
 again if forgotten.
 
+## Contents
+
+Each entry names its section heading verbatim (search/grep for it) and
+summarizes what's in it, so you can jump straight to what's relevant
+instead of reading the whole file.
+
+- **Testing convention** — write unit tests alongside new logic, not after;
+  where pure-function and store tests live and how each is structured.
+- **Workflow: issues first, isolated changes** — every fix/feature starts
+  as a GitHub issue; commits stay one logical change each, never bundled.
+- **Infra references** — Vercel/Supabase project ids, the linked Supabase
+  CLI, the Vercel CLI, and the Supabase SQL editor's Monaco-corruption trap.
+- **Vercel Edge Functions — hard-won gotchas** — `vercel dev` vs plain
+  `vite` for testing `api/*`, the required `runtime: 'edge'` config, `.js`
+  extensions on relative imports, the 25s time-to-first-byte limit,
+  untyped-`supabase-js` casts, and the `api/` typecheck recipe.
+- **Supabase gotchas** — preview-URL OAuth redirect allowlisting, the two
+  RLS patterns this app uses (service-role-write-only vs. direct
+  `auth.uid()` client writes) and when to pick each, and `requireUser()`'s
+  REST-vs-SDK quirk.
+- **Workout data lives in Supabase, not a Google Sheet** — `sessions` +
+  `profiles.routine_config` as the real source of truth, the
+  `supabase-js`-doesn't-throw-on-error gotcha, and the still-live opt-in
+  Sheet-sync feature (`api/sheets/sync.ts`).
+- **Claude API integration** (`api/_lib/anthropic.ts`) — model id, the
+  `effort`/`thinking` request shape, prompt-caching setup, and why the
+  tool-use loop has to be hand-rolled under Edge Runtime.
+- **Coach chat tools** (`api/_lib/chatTools.ts`, `api/chat/message.ts`) —
+  the three proposal types the Coach can make, the dual-write
+  (program-config + live-draft) pattern, why suggestion accept/dismiss
+  status must persist server-side, and the tool-call-hallucination gotcha.
+- **Strava gotchas** — the single-athlete API cap, the `external_id`
+  reuse/silent-delete trap, structured-upload requirements, and the
+  `utc_offset` sign-convention bug.
+- **Exercise swap / add / custom** (`src/services/exerciseCatalog.ts`) —
+  how exercise codes work, `resolveExerciseDisplay()` as the single source
+  of truth for what to show, `draftDefs` vs. the static program, and the
+  removal-guard invariant.
+- **Weight units** (`src/services/units.ts`, `src/store/unitStore.ts`) —
+  the lb-everywhere storage model, locale-based default detection,
+  unit-specific increment presets, and the `isWeightUnit()` gate.
+- **General debugging approach that actually worked this session** — check
+  server/deployment logs before trusting a 200 response, verify fixes
+  against the live/deployed environment, test the real data path
+  end-to-end.
+
 ## Testing convention
 
 **Write tests for new logic as you write it, not as a follow-up.** This
@@ -204,8 +250,7 @@ Practical pattern established in `tests/unit/`:
   unexpired token — never fully root-caused, not worth chasing further
   given the direct REST call works and is simpler anyway.
 
-## Workout data lives in Supabase, not a Google Sheet (as of the
-onboarding-removal migration)
+## Workout data lives in Supabase, not a Google Sheet
 
 - **`sessions` table is now the source of truth for logged workouts**,
   written directly by the client (`src/services/sessionsApi.ts`) via RLS —
@@ -227,26 +272,37 @@ onboarding-removal migration)
   failure (e.g. an RLS policy denial) as a successful sync. Caught during
   the migration's own Plan review, not in production — worth remembering
   as a category of bug whenever porting code off a `no-cors` fetch pattern.
-- **`apps-script.gs` still exists in the repo but is inert** — nothing in
-  the running app calls it anymore. Kept only as scaffolding in case a
-  "export your data to a Google Sheet" feature gets built later (a
-  one-way export is a different shape of feature than "Sheet as required
-  source of truth," so it'd likely be rewritten fresh rather than
-  reactivating this file as-is). The gotchas below only apply if that
-  happens — Monaco's auto-bracket-closing in the Apps Script web editor
-  corrupts programmatically-typed code (paste manually, or drive it via a
-  temporary API hook + curl); `curl` needs `-L` since `/exec` always
-  302-redirects; "New deployment" mints a fresh URL and orphans the old
-  one, unlike "Manage deployments → edit existing"; Sheets auto-converts
-  number-like strings (e.g. `"100,100,100,100"` → `100100100100`) unless
-  the column is force-formatted as text.
+- **There is no `apps-script.gs` file in this repo — but Sheet sync is a
+  live, opt-in feature, not a retired one.** The main app never writes to
+  Sheets directly (that path was removed in the onboarding-removal
+  migration above), but a separate, still-deployed Apps Script Web App
+  (URL in the server-only `LEDGER_SHEET_SCRIPT_URL` env var) accepts the
+  same `type: 'session'` POST shape the old client used to send. Two
+  things call it today: `api/sheets/sync.ts` (owner-only endpoint, gated
+  server-side the same way as the Coach tools, triggered from the "Sync to
+  Sheet" button in `SyncTab.tsx`'s Advanced section — only rendered when
+  the client-side `VITE_SHEET_SYNC_ENABLED` flag is set, itself not a
+  security boundary) and `scripts/exportSessionsToSheet.mjs`/
+  `exportTargetsToSheet.mjs` (ad-hoc `node scripts/...` runs using the
+  service-role key, intended weekly cadence). The Apps Script source
+  itself is not checked into this repo (it's edited directly in Google's
+  online editor if it ever needs changing) — the Monaco-auto-bracket-
+  closing gotcha for that editor, `curl -L` being required since `/exec`
+  always 302-redirects, "New deployment" minting a fresh URL and orphaning
+  the old one, and Sheets auto-converting number-like strings (e.g.
+  `"100,100,100,100"` → `100100100100`) unless the column is
+  force-formatted as text, all still apply whenever that happens.
 
 ## Claude API integration (`api/_lib/anthropic.ts`)
 
-- Model id: `claude-sonnet-5`. Reasoning effort is a **top-level `effort`**
-  field on the Messages API request body (`"low" | "medium" | "high" | "max"`,
-  default `"high"`) — not the older `thinking: { budget_tokens }` shape,
-  which 400s on this model.
+- Model id: `claude-sonnet-5`. Reasoning effort is `effort` nested inside a
+  top-level **`output_config`** object (`"low" | "medium" | "high" | "max"`,
+  default `"high"`) — it coexists with a separate top-level `thinking: {
+  type: 'adaptive', display: 'summarized' }` field, not the older
+  `thinking: { budget_tokens }` shape, which 400s on this model. Verify the
+  exact request shape against platform.claude.com/docs/en/api/messages
+  before changing it — `api/_lib/anthropic.ts` has been wrong about this
+  before.
 - No `@anthropic-ai/sdk` in this project (wouldn't run under Edge Runtime
   anyway) — raw `fetch` against `https://api.anthropic.com/v1/messages`,
   same pattern as the Strava REST calls.

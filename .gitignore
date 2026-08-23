@@ -12,3 +12,5 @@ scripts/.sheet-export-checkpoint.json
 .vercel
 # Supabase CLI local state (linked-project ref, pooler URL w/ credentials)
 supabase/.temp/
+# Downloaded OAuth credential files — must never be committed
+*client_secret*.json

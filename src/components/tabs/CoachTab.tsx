@@ -54,6 +54,7 @@ export function CoachTab() {
   const [input, setInput] = useState('')
   const [revealedId, setRevealedId] = useState<string | null>(null)
   const [thinkingOpen, setThinkingOpen] = useState(false)
+  const [openThinkingIds, setOpenThinkingIds] = useState<Set<string>>(new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<number | null>(null)
 
@@ -85,6 +86,15 @@ export function CoachTab() {
       clearError()
     }
   }, [error, showNotification, clearError])
+
+  const toggleThinking = (id: string) => {
+    setOpenThinkingIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const handleSend = (text?: string) => {
     const toSend = text ?? input
@@ -157,103 +167,70 @@ export function CoachTab() {
                 ×
               </button>
             )}
-            <div
-              onTouchStart={() => message.role === 'user' && startLongPress(message.id)}
-              onTouchEnd={cancelLongPress}
-              onTouchMove={cancelLongPress}
-              onClick={() => {
-                if (message.role === 'user' && revealedId === message.id) setRevealedId(null)
-              }}
-              style={{
-                maxWidth: '85%',
-                minWidth: 0,
-                borderRadius: 'var(--r)',
-                padding: '10px 13px',
-                fontSize: '13.5px',
-                lineHeight: 1.5,
-                whiteSpace: message.role === 'user' ? 'pre-wrap' : 'normal',
-                background: message.role === 'user' ? 'var(--amber)' : 'var(--surface)',
-                color: message.role === 'user' ? '#14181D' : 'var(--text)',
-                border: message.role === 'user' ? 'none' : '1px solid var(--line)',
-              }}
-            >
-              {message.role === 'assistant' ? (
-                <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
-              ) : (
-                message.content
+            <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', minWidth: 0, gap: '2px' }}>
+              {message.role === 'assistant' && message.thinking && (
+                <ThinkingBlock
+                  label="Thought process"
+                  text={message.thinking}
+                  open={openThinkingIds.has(message.id)}
+                  onToggle={() => toggleThinking(message.id)}
+                />
               )}
-
-              {message.suggestions?.map((suggestion, i) =>
-                (suggestion.kind ?? 'adjustment') === 'swap' ? (
-                  <SwapSuggestionCard
-                    key={i}
-                    suggestion={suggestion}
-                    onAccept={() => acceptSwap(message.id, i)}
-                    onDismiss={() => dismissSuggestion(message.id, i)}
-                  />
+              <div
+                onTouchStart={() => message.role === 'user' && startLongPress(message.id)}
+                onTouchEnd={cancelLongPress}
+                onTouchMove={cancelLongPress}
+                onClick={() => {
+                  if (message.role === 'user' && revealedId === message.id) setRevealedId(null)
+                }}
+                style={{
+                  minWidth: 0,
+                  borderRadius: 'var(--r)',
+                  padding: '10px 13px',
+                  fontSize: '13.5px',
+                  lineHeight: 1.5,
+                  whiteSpace: message.role === 'user' ? 'pre-wrap' : 'normal',
+                  background: message.role === 'user' ? 'var(--amber)' : 'var(--surface)',
+                  color: message.role === 'user' ? '#14181D' : 'var(--text)',
+                  border: message.role === 'user' ? 'none' : '1px solid var(--line)',
+                }}
+              >
+                {message.role === 'assistant' ? (
+                  <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
                 ) : (
-                  <AdjustmentSuggestionCard
-                    key={i}
-                    suggestion={suggestion}
-                    onAccept={(changes) => acceptSuggestion(message.id, i, changes)}
-                    onDismiss={() => dismissSuggestion(message.id, i)}
-                  />
-                )
-              )}
+                  message.content
+                )}
+
+                {message.suggestions?.map((suggestion, i) =>
+                  (suggestion.kind ?? 'adjustment') === 'swap' ? (
+                    <SwapSuggestionCard
+                      key={i}
+                      suggestion={suggestion}
+                      onAccept={() => acceptSwap(message.id, i)}
+                      onDismiss={() => dismissSuggestion(message.id, i)}
+                    />
+                  ) : (
+                    <AdjustmentSuggestionCard
+                      key={i}
+                      suggestion={suggestion}
+                      onAccept={(changes) => acceptSuggestion(message.id, i, changes)}
+                      onDismiss={() => dismissSuggestion(message.id, i)}
+                    />
+                  )
+                )}
+              </div>
             </div>
           </div>
         ))}
         {sending && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div
-              style={{
-                borderRadius: 'var(--r)',
-                background: 'var(--surface)',
-                border: '1px solid var(--line)',
-                maxWidth: '85%',
-                overflow: 'hidden',
-              }}
-            >
-              <button
-                onClick={() => thinkingText && setThinkingOpen((o) => !o)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  width: '100%',
-                  padding: '10px 13px',
-                  fontSize: '13.5px',
-                  color: 'var(--dim)',
-                  cursor: thinkingText ? 'pointer' : 'default',
-                  background: 'none',
-                  border: 'none',
-                  textAlign: 'left',
-                }}
-              >
-                <span style={{ flex: 1 }}>{statusMessage || 'Thinking…'}</span>
-                {/* Only clickable once there's actual thinking content to show —
-                    a call with nothing to reveal (thinking can come back empty)
-                    degrades gracefully to a plain, non-interactive status line. */}
-                {thinkingText && <ChevronIcon open={thinkingOpen} size="13px" />}
-              </button>
-              {thinkingOpen && thinkingText && (
-                <div
-                  style={{
-                    padding: '0 13px 12px',
-                    fontSize: '12px',
-                    lineHeight: 1.5,
-                    color: 'var(--dim)',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '220px',
-                    overflowY: 'auto',
-                    borderTop: '1px solid var(--line)',
-                    marginTop: '-2px',
-                    paddingTop: '10px',
-                  }}
-                >
-                  {thinkingText}
-                </div>
-              )}
+            <div style={{ maxWidth: '85%', minWidth: 0 }}>
+              <ThinkingBlock
+                label={statusMessage || 'Thinking…'}
+                text={thinkingText || null}
+                open={thinkingOpen}
+                onToggle={() => setThinkingOpen((o) => !o)}
+              />
             </div>
           </div>
         )}
@@ -277,6 +254,75 @@ export function CoachTab() {
           Send
         </button>
       </div>
+    </div>
+  )
+}
+
+// Deliberately NOT styled like a message bubble (no card background, no
+// border box, no shared border-radius with the answer) — thinking is meta
+// commentary about how the reply was produced, not a message from the
+// Coach, and rendering it identically to one (as the original
+// implementation did — same background/border/font-size as the answer
+// bubble) made it read as a second, near-duplicate reply rather than
+// something clearly secondary. Smaller italic muted text plus a left
+// accent border on the expanded panel, matching how Claude.ai and similar
+// chat UIs distinguish a reasoning trace from the actual response: a
+// collapsible section, labeled honestly, visually subordinate to the
+// answer it precedes. Collapsed by default; expand state is per-message
+// so scrolling past an old expanded one doesn't collapse a different one.
+function ThinkingBlock({
+  label,
+  text,
+  open,
+  onToggle,
+}: {
+  label: string
+  text: string | null
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <button
+        onClick={() => text && onToggle()}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          padding: '2px 0',
+          fontSize: '11.5px',
+          fontStyle: 'italic',
+          color: 'var(--dim)',
+          cursor: text ? 'pointer' : 'default',
+          background: 'none',
+          border: 'none',
+          textAlign: 'left',
+        }}
+      >
+        <span>{label}</span>
+        {/* Only clickable once there's actual thinking content to show —
+            a call with nothing to reveal (thinking can come back empty)
+            degrades gracefully to a plain, non-interactive status line. */}
+        {text && <ChevronIcon open={open} size="10px" />}
+      </button>
+      {open && text && (
+        <div
+          style={{
+            margin: '2px 0 4px',
+            padding: '1px 0 1px 10px',
+            borderLeft: '2px solid var(--line)',
+            fontSize: '11.5px',
+            fontStyle: 'italic',
+            lineHeight: 1.5,
+            color: 'var(--dim)',
+            whiteSpace: 'pre-wrap',
+            maxHeight: '220px',
+            overflowY: 'auto',
+          }}
+        >
+          {text}
+        </div>
+      )}
     </div>
   )
 }

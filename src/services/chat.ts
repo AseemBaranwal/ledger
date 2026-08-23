@@ -71,6 +71,9 @@ export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
   suggestions: ChatSuggestion[] | null
+  // The model's reasoning for this turn, if any was captured — null for
+  // user rows and for assistant rows saved before this column existed.
+  thinking: string | null
 }
 
 // Called once when the Coach tab mounts — the durable copy of the

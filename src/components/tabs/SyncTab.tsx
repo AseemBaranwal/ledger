@@ -41,6 +41,7 @@ export function SyncTab() {
 
   const stravaConnected = useStravaStore((s) => s.connected)
   const stravaAthleteName = useStravaStore((s) => s.athleteName)
+  const stravaChecking = useStravaStore((s) => s.checking)
   const stravaDisconnecting = useStravaStore((s) => s.disconnecting)
   const connectStrava = useStravaStore((s) => s.connect)
   const disconnectStravaAction = useStravaStore((s) => s.disconnect)
@@ -193,7 +194,9 @@ export function SyncTab() {
       <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
         Strava
       </div>
-      {stravaConnected ? (
+      {stravaChecking ? (
+        <div className={styles.note}>Checking connection…</div>
+      ) : stravaConnected ? (
         <>
           <div className={styles.note}>
             Connected as {stravaAthleteName || 'your Strava account'}. New weight-training sessions post there

@@ -28,6 +28,11 @@ export interface DisplayMessage extends ChatMessage {
   id: string
   serverId?: number
   suggestions?: (ChatSuggestion & { status: 'pending' | 'accepted' | 'dismissed' })[]
+  // The model's reasoning for this turn (assistant messages only) — kept
+  // attached to the message itself, not wiped once the turn completes, so
+  // the Coach tab can still show/collapse it afterward. Persisted
+  // server-side too (chat_messages.thinking) so it survives a reload.
+  thinking?: string
 }
 
 // The API is stateless — every call resends history. Sending the FULL
@@ -40,9 +45,11 @@ interface ChatStore {
   sending: boolean
   statusMessage: string | null
   // Accumulated across the whole in-flight turn (each tool-loop iteration
-  // appends its own chunk) — cleared at the start of every sendMessage and
-  // once the turn finishes, since this is only ever shown live in the
-  // "generating" blob, not persisted alongside the message afterward.
+  // appends its own chunk) — cleared at the start of every sendMessage.
+  // Once the turn finishes this gets copied onto the new assistant
+  // message's own `thinking` field (see sendMessage) rather than just
+  // discarded, so it stays visible/collapsible afterward instead of
+  // vanishing the moment the reply arrives.
   thinkingText: string
   lastUsage: ChatUsage | null
   error: string | null
@@ -98,6 +105,11 @@ export const useChatStore = create<ChatStore>()(
             role: 'assistant',
             content: reply,
             suggestions: suggestions.length ? suggestions.map((s) => ({ ...s, status: 'pending' as const })) : undefined,
+            // Carries the live-accumulated thinkingText onto the finished
+            // message instead of letting it get wiped below — the server
+            // independently persisted the same text to chat_messages.thinking,
+            // so a future loadHistory() will produce an equivalent value.
+            thinking: get().thinkingText || undefined,
           }
           set((state) => ({
             // Now that the turn has round-tripped, attach the real server id
@@ -139,6 +151,7 @@ export const useChatStore = create<ChatStore>()(
             // update-suggestion-status.ts) — only default to 'pending' for
             // suggestions saved before that existed, or genuinely untouched.
             suggestions: m.suggestions?.length ? m.suggestions.map((s) => ({ ...s, status: s.status ?? 'pending' })) : undefined,
+            thinking: m.thinking ?? undefined,
           }))
           set({ messages: mapped })
         } catch {

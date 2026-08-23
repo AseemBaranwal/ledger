@@ -92,6 +92,38 @@ describe('chatStore', () => {
       expect(useChatStore.getState().thinkingText).toBe('')
     })
 
+    // The live thinkingText accumulator resetting to '' (asserted above) is
+    // correct — it's scratch space for the NEXT turn. What must NOT happen
+    // is that content being lost entirely: it has to land on the finished
+    // assistant message's own `thinking` field first, so the Coach tab can
+    // still show/collapse it after the turn is done instead of it vanishing
+    // the moment the reply arrives (the bug this was built to fix).
+    it('carries the accumulated thinking text onto the finished assistant message', async () => {
+      vi.mocked(chatService.sendChatMessage).mockImplementation(async (_history, _onStatus, onThinking) => {
+        onThinking?.('Reasoning about the squat trend')
+        return { reply: 'Looking solid.', suggestions: [], usage: baseUsage, userMessageId: 1, assistantMessageId: 2 }
+      })
+
+      await useChatStore.getState().sendMessage('How am I doing?')
+
+      const assistantMessage = useChatStore.getState().messages[1]
+      expect(assistantMessage.thinking).toBe('Reasoning about the squat trend')
+    })
+
+    it('leaves `thinking` unset on a turn with no thinking content at all', async () => {
+      vi.mocked(chatService.sendChatMessage).mockResolvedValue({
+        reply: 'Looking solid.',
+        suggestions: [],
+        usage: baseUsage,
+        userMessageId: 1,
+        assistantMessageId: 2,
+      })
+
+      await useChatStore.getState().sendMessage('How am I doing?')
+
+      expect(useChatStore.getState().messages[1].thinking).toBeUndefined()
+    })
+
     it('clears thinkingText on failure too, not just on success', async () => {
       vi.mocked(chatService.sendChatMessage).mockImplementation(async (_history, _onStatus, onThinking) => {
         onThinking?.('Reasoning before the failure')
@@ -170,6 +202,31 @@ describe('chatStore', () => {
       useChatStore.setState({ sending: true })
       await useChatStore.getState().loadHistory()
       expect(chatService.fetchChatHistory).not.toHaveBeenCalled()
+    })
+
+    // The thinking block only survives a reload if it's actually persisted
+    // server-side (see chat_messages_add_thinking_column.sql) and mapped
+    // back in here — this is what makes loadHistory() (which runs on every
+    // Coach tab mount, replacing whatever was in memory) not silently
+    // erase it again.
+    it('maps a persisted `thinking` value onto the loaded message', async () => {
+      vi.mocked(chatService.fetchChatHistory).mockResolvedValue([
+        { id: 8, role: 'assistant', content: 'Looking solid.', suggestions: null, thinking: 'Reasoning captured last time' },
+      ])
+
+      await useChatStore.getState().loadHistory()
+
+      expect(useChatStore.getState().messages[0].thinking).toBe('Reasoning captured last time')
+    })
+
+    it('leaves `thinking` unset for a row saved before that column existed (null from the server)', async () => {
+      vi.mocked(chatService.fetchChatHistory).mockResolvedValue([
+        { id: 9, role: 'assistant', content: 'Old reply', suggestions: null, thinking: null },
+      ])
+
+      await useChatStore.getState().loadHistory()
+
+      expect(useChatStore.getState().messages[0].thinking).toBeUndefined()
     })
   })
 

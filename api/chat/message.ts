@@ -356,7 +356,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (callError) {
       send({ type: 'error', error: callError })
     } else {
-      const savedIds = await saveChatTurn(user.id, lastText, reply, suggestions)
+      const savedIds = await saveChatTurn(user.id, lastText, reply, suggestions, thinkingChunks.length ? thinkingChunks.join('\n\n') : null)
       // logChatCall() above already wrote this call's own token counts into
       // chat_logs, so this total is already inclusive of the current call —
       // don't add totalInputTokens/totalOutputTokens again on top of it.

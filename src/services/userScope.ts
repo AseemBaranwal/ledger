@@ -22,10 +22,47 @@ function scopedKey(name: string): string {
   return `${name}.${currentUserId || 'anon'}`
 }
 
+// Services in this codebase don't depend on stores (App.tsx is the layer
+// that wires this callback to an actual useUIStore notification) — a
+// plain listener keeps this module able to stay a pure, storeless service.
+type StorageErrorListener = (error: Error) => void
+let storageErrorListener: StorageErrorListener | null = null
+// A device with storage genuinely exhausted (QuotaExceededError) or in a
+// mode that blocks it entirely (Safari Private Browsing throws on every
+// setItem) fails on basically every write from then on — without this,
+// the listener would fire on every single set/rep logged instead of once.
+let hasNotifiedStorageError = false
+
+export function onStorageError(listener: StorageErrorListener) {
+  storageErrorListener = listener
+}
+
+// Every localStorage call in this module goes through this — previously
+// none of them did (issue #58), so a QuotaExceededError or Safari Private
+// Browsing's synchronous throw on setItem propagated straight up through
+// zustand's persist middleware into whatever store action triggered it
+// (logRep, saveDraft, ...), uncaught. Combined with there being no error
+// boundary at the time, that was a real path to a hard crash with no
+// visible cause. Now it's caught here, surfaced once via the listener
+// above, and the write itself is treated as a no-op — data just doesn't
+// persist for that action, which is a real limitation but a survivable
+// one, unlike a crash.
+function safeStorageCall<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn()
+  } catch (e) {
+    if (!hasNotifiedStorageError) {
+      hasNotifiedStorageError = true
+      storageErrorListener?.(e instanceof Error ? e : new Error(String(e)))
+    }
+    return fallback
+  }
+}
+
 export const scopedStorage = {
-  getItem: (name: string) => localStorage.getItem(scopedKey(name)),
-  setItem: (name: string, value: string) => localStorage.setItem(scopedKey(name), value),
-  removeItem: (name: string) => localStorage.removeItem(scopedKey(name)),
+  getItem: (name: string) => safeStorageCall(() => localStorage.getItem(scopedKey(name)), null),
+  setItem: (name: string, value: string) => safeStorageCall(() => localStorage.setItem(scopedKey(name), value), undefined),
+  removeItem: (name: string) => safeStorageCall(() => localStorage.removeItem(scopedKey(name)), undefined),
 }
 
 // Deliberately a PLAIN (unscoped) localStorage key, not one of the
@@ -42,9 +79,12 @@ export const scopedStorage = {
 const LAST_USER_KEY = 'ledger.lastUserId'
 
 export function getLastKnownUserId(): string | null {
-  return localStorage.getItem(LAST_USER_KEY)
+  return safeStorageCall(() => localStorage.getItem(LAST_USER_KEY), null)
 }
 
 export function setLastKnownUserId(id: string): void {
-  localStorage.setItem(LAST_USER_KEY, id)
+  // A failed write here just means the next cold start can't tell itself
+  // apart from a genuine account switch and falls back to the old
+  // always-blank behavior — safe (no cross-user leak), just not the fix.
+  safeStorageCall(() => localStorage.setItem(LAST_USER_KEY, id), undefined)
 }

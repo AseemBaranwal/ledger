@@ -13,6 +13,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { streak } from '@/services/trendCalculations'
 import { fetchSessions } from '@/services/sessionsApi'
 import { unlockAudioContext } from '@/services/audio'
+import { onStorageError } from '@/services/userScope'
 import { STRAVA_CALLBACK_PATH, exchangeStravaCode } from '@/services/strava'
 import { registerSW } from 'virtual:pwa-register'
 import { useActiveSessionBackGuard } from '@/hooks/useActiveSessionBackGuard'
@@ -38,6 +39,19 @@ export default function App() {
   // once auth resolves, via authStore.applyUser -> configStore.loadOrSeedProgram.)
   useEffect(() => {
     const unsubscribeAuth = authInit()
+
+    // Fires at most once per page load (see safeStorageCall's dedup) — a
+    // local-storage write failure (device storage full, Safari Private
+    // Browsing) previously just threw uncaught with no visible cause;
+    // this at least tells the person something didn't save, rather than
+    // leaving them to discover it later when a set they thought was
+    // logged turns out not to have been.
+    onStorageError(() => {
+      useUIStore.getState().showNotification(
+        "Couldn't save locally — your device storage may be full. Recently logged sets might not persist.",
+        'error'
+      )
+    })
 
     const unlock = () => {
       unlockAudioContext()

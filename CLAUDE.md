@@ -227,26 +227,37 @@ onboarding-removal migration)
   failure (e.g. an RLS policy denial) as a successful sync. Caught during
   the migration's own Plan review, not in production — worth remembering
   as a category of bug whenever porting code off a `no-cors` fetch pattern.
-- **`apps-script.gs` still exists in the repo but is inert** — nothing in
-  the running app calls it anymore. Kept only as scaffolding in case a
-  "export your data to a Google Sheet" feature gets built later (a
-  one-way export is a different shape of feature than "Sheet as required
-  source of truth," so it'd likely be rewritten fresh rather than
-  reactivating this file as-is). The gotchas below only apply if that
-  happens — Monaco's auto-bracket-closing in the Apps Script web editor
-  corrupts programmatically-typed code (paste manually, or drive it via a
-  temporary API hook + curl); `curl` needs `-L` since `/exec` always
-  302-redirects; "New deployment" mints a fresh URL and orphans the old
-  one, unlike "Manage deployments → edit existing"; Sheets auto-converts
-  number-like strings (e.g. `"100,100,100,100"` → `100100100100`) unless
-  the column is force-formatted as text.
+- **There is no `apps-script.gs` file in this repo — but Sheet sync is a
+  live, opt-in feature, not a retired one.** The main app never writes to
+  Sheets directly (that path was removed in the onboarding-removal
+  migration above), but a separate, still-deployed Apps Script Web App
+  (URL in the server-only `LEDGER_SHEET_SCRIPT_URL` env var) accepts the
+  same `type: 'session'` POST shape the old client used to send. Two
+  things call it today: `api/sheets/sync.ts` (owner-only endpoint, gated
+  server-side the same way as the Coach tools, triggered from the "Sync to
+  Sheet" button in `SyncTab.tsx`'s Advanced section — only rendered when
+  the client-side `VITE_SHEET_SYNC_ENABLED` flag is set, itself not a
+  security boundary) and `scripts/exportSessionsToSheet.mjs`/
+  `exportTargetsToSheet.mjs` (ad-hoc `node scripts/...` runs using the
+  service-role key, intended weekly cadence). The Apps Script source
+  itself is not checked into this repo (it's edited directly in Google's
+  online editor if it ever needs changing) — the Monaco-auto-bracket-
+  closing gotcha for that editor, `curl -L` being required since `/exec`
+  always 302-redirects, "New deployment" minting a fresh URL and orphaning
+  the old one, and Sheets auto-converting number-like strings (e.g.
+  `"100,100,100,100"` → `100100100100`) unless the column is
+  force-formatted as text, all still apply whenever that happens.
 
 ## Claude API integration (`api/_lib/anthropic.ts`)
 
-- Model id: `claude-sonnet-5`. Reasoning effort is a **top-level `effort`**
-  field on the Messages API request body (`"low" | "medium" | "high" | "max"`,
-  default `"high"`) — not the older `thinking: { budget_tokens }` shape,
-  which 400s on this model.
+- Model id: `claude-sonnet-5`. Reasoning effort is `effort` nested inside a
+  top-level **`output_config`** object (`"low" | "medium" | "high" | "max"`,
+  default `"high"`) — it coexists with a separate top-level `thinking: {
+  type: 'adaptive', display: 'summarized' }` field, not the older
+  `thinking: { budget_tokens }` shape, which 400s on this model. Verify the
+  exact request shape against platform.claude.com/docs/en/api/messages
+  before changing it — `api/_lib/anthropic.ts` has been wrong about this
+  before.
 - No `@anthropic-ai/sdk` in this project (wouldn't run under Edge Runtime
   anyway) — raw `fetch` against `https://api.anthropic.com/v1/messages`,
   same pattern as the Strava REST calls.

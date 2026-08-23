@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import { useChatStore } from '@/store/chatStore'
+import type { DisplayMessage } from '@/store/chatStore'
 import { useUIStore } from '@/store'
 import { estimateCostUsd, formatTokenCount, formatCostUsd } from '@/services/chatCost'
 import type { ChatSuggestion, ExerciseChange } from '@/services/chat'
@@ -58,15 +59,18 @@ export function CoachTab() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<number | null>(null)
 
-  const startLongPress = (id: string) => {
+  // Stabilized with useCallback (not recreated inline) so MessageList's
+  // React.memo below actually holds across a composer keystroke — see that
+  // component's own comment.
+  const startLongPress = useCallback((id: string) => {
     longPressTimer.current = window.setTimeout(() => setRevealedId(id), 450)
-  }
-  const cancelLongPress = () => {
+  }, [])
+  const cancelLongPress = useCallback(() => {
     if (longPressTimer.current !== null) {
       window.clearTimeout(longPressTimer.current)
       longPressTimer.current = null
     }
-  }
+  }, [])
 
   // Refresh from the server's durable copy every time the tab opens, so a
   // reload or a different device shows the real conversation, not just
@@ -87,14 +91,16 @@ export function CoachTab() {
     }
   }, [error, showNotification, clearError])
 
-  const toggleThinking = (id: string) => {
+  const toggleThinking = useCallback((id: string) => {
     setOpenThinkingIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
-  }
+  }, [])
+
+  const toggleSendingThinking = useCallback(() => setThinkingOpen((o) => !o), [])
 
   const handleSend = (text?: string) => {
     const toSend = text ?? input
@@ -148,94 +154,25 @@ export function CoachTab() {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={styles.msgRow}
-            style={{ justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start' }}
-          >
-            {message.role === 'user' && (
-              <button
-                onClick={() => {
-                  deleteExchange(message.id)
-                  setRevealedId(null)
-                }}
-                title="Delete this exchange — it won't be sent as context again"
-                className={`${styles.deleteBtn} ${revealedId === message.id ? styles.revealed : ''}`}
-              >
-                ×
-              </button>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', minWidth: 0, gap: '2px' }}>
-              {message.role === 'assistant' && message.thinking && (
-                <ThinkingBlock
-                  label="Thought process"
-                  text={message.thinking}
-                  open={openThinkingIds.has(message.id)}
-                  onToggle={() => toggleThinking(message.id)}
-                />
-              )}
-              <div
-                onTouchStart={() => message.role === 'user' && startLongPress(message.id)}
-                onTouchEnd={cancelLongPress}
-                onTouchMove={cancelLongPress}
-                onClick={() => {
-                  if (message.role === 'user' && revealedId === message.id) setRevealedId(null)
-                }}
-                style={{
-                  minWidth: 0,
-                  borderRadius: 'var(--r)',
-                  padding: '10px 13px',
-                  fontSize: '13.5px',
-                  lineHeight: 1.5,
-                  whiteSpace: message.role === 'user' ? 'pre-wrap' : 'normal',
-                  background: message.role === 'user' ? 'var(--amber)' : 'var(--surface)',
-                  color: message.role === 'user' ? '#14181D' : 'var(--text)',
-                  border: message.role === 'user' ? 'none' : '1px solid var(--line)',
-                }}
-              >
-                {message.role === 'assistant' ? (
-                  <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
-                ) : (
-                  message.content
-                )}
-
-                {message.suggestions?.map((suggestion, i) =>
-                  (suggestion.kind ?? 'adjustment') === 'swap' ? (
-                    <SwapSuggestionCard
-                      key={i}
-                      suggestion={suggestion}
-                      onAccept={() => acceptSwap(message.id, i)}
-                      onDismiss={() => dismissSuggestion(message.id, i)}
-                    />
-                  ) : (
-                    <AdjustmentSuggestionCard
-                      key={i}
-                      suggestion={suggestion}
-                      onAccept={(changes) => acceptSuggestion(message.id, i, changes)}
-                      onDismiss={() => dismissSuggestion(message.id, i)}
-                    />
-                  )
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-        {sending && (
-          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div style={{ maxWidth: '85%', minWidth: 0 }}>
-              <ThinkingBlock
-                label={statusMessage || 'Thinking…'}
-                text={thinkingText || null}
-                open={thinkingOpen}
-                onToggle={() => setThinkingOpen((o) => !o)}
-              />
-            </div>
-          </div>
-        )}
-        <div ref={scrollRef} />
-      </div>
+      <MessageList
+        messages={messages}
+        sending={sending}
+        statusMessage={statusMessage}
+        thinkingText={thinkingText}
+        thinkingOpen={thinkingOpen}
+        onToggleSendingThinking={toggleSendingThinking}
+        openThinkingIds={openThinkingIds}
+        onToggleThinking={toggleThinking}
+        revealedId={revealedId}
+        onStartLongPress={startLongPress}
+        onCancelLongPress={cancelLongPress}
+        onSetRevealedId={setRevealedId}
+        deleteExchange={deleteExchange}
+        acceptSuggestion={acceptSuggestion}
+        acceptSwap={acceptSwap}
+        dismissSuggestion={dismissSuggestion}
+        scrollRef={scrollRef}
+      />
 
       <div style={{ display: 'flex', gap: '8px' }}>
         <textarea
@@ -257,6 +194,144 @@ export function CoachTab() {
     </div>
   )
 }
+
+interface MessageListProps {
+  messages: DisplayMessage[]
+  sending: boolean
+  statusMessage: string | null
+  thinkingText: string
+  thinkingOpen: boolean
+  onToggleSendingThinking: () => void
+  openThinkingIds: Set<string>
+  onToggleThinking: (id: string) => void
+  revealedId: string | null
+  onStartLongPress: (id: string) => void
+  onCancelLongPress: () => void
+  onSetRevealedId: (id: string | null) => void
+  deleteExchange: (messageId: string) => Promise<void>
+  acceptSuggestion: (messageId: string, suggestionIndex: number, changes: ExerciseChange) => Promise<void>
+  acceptSwap: (messageId: string, suggestionIndex: number) => Promise<void>
+  dismissSuggestion: (messageId: string, suggestionIndex: number) => void
+  scrollRef: RefObject<HTMLDivElement>
+}
+
+// Memoized because CoachTab re-renders on every composer keystroke (`input`
+// lives in the same component), which would otherwise re-render this whole
+// list — including re-parsing markdown via ReactMarkdown for every past
+// assistant message — on every character typed. Only re-renders when the
+// conversation itself, or the handful of narrow interaction-state pieces it
+// actually reads, changes; all callback props are stabilized with
+// useCallback/useState setters in CoachTab so they don't defeat this.
+const MessageList = memo(function MessageList({
+  messages,
+  sending,
+  statusMessage,
+  thinkingText,
+  thinkingOpen,
+  onToggleSendingThinking,
+  openThinkingIds,
+  onToggleThinking,
+  revealedId,
+  onStartLongPress,
+  onCancelLongPress,
+  onSetRevealedId,
+  deleteExchange,
+  acceptSuggestion,
+  acceptSwap,
+  dismissSuggestion,
+  scrollRef,
+}: MessageListProps) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+      {messages.map((message) => (
+        <div
+          key={message.id}
+          className={styles.msgRow}
+          style={{ justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start' }}
+        >
+          {message.role === 'user' && (
+            <button
+              onClick={() => {
+                deleteExchange(message.id)
+                onSetRevealedId(null)
+              }}
+              title="Delete this exchange — it won't be sent as context again"
+              className={`${styles.deleteBtn} ${revealedId === message.id ? styles.revealed : ''}`}
+            >
+              ×
+            </button>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', minWidth: 0, gap: '2px' }}>
+            {message.role === 'assistant' && message.thinking && (
+              <ThinkingBlock
+                label="Thought process"
+                text={message.thinking}
+                open={openThinkingIds.has(message.id)}
+                onToggle={() => onToggleThinking(message.id)}
+              />
+            )}
+            <div
+              onTouchStart={() => message.role === 'user' && onStartLongPress(message.id)}
+              onTouchEnd={onCancelLongPress}
+              onTouchMove={onCancelLongPress}
+              onClick={() => {
+                if (message.role === 'user' && revealedId === message.id) onSetRevealedId(null)
+              }}
+              style={{
+                minWidth: 0,
+                borderRadius: 'var(--r)',
+                padding: '10px 13px',
+                fontSize: '13.5px',
+                lineHeight: 1.5,
+                whiteSpace: message.role === 'user' ? 'pre-wrap' : 'normal',
+                background: message.role === 'user' ? 'var(--amber)' : 'var(--surface)',
+                color: message.role === 'user' ? '#14181D' : 'var(--text)',
+                border: message.role === 'user' ? 'none' : '1px solid var(--line)',
+              }}
+            >
+              {message.role === 'assistant' ? (
+                <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
+              ) : (
+                message.content
+              )}
+
+              {message.suggestions?.map((suggestion, i) =>
+                (suggestion.kind ?? 'adjustment') === 'swap' ? (
+                  <SwapSuggestionCard
+                    key={i}
+                    suggestion={suggestion}
+                    onAccept={() => acceptSwap(message.id, i)}
+                    onDismiss={() => dismissSuggestion(message.id, i)}
+                  />
+                ) : (
+                  <AdjustmentSuggestionCard
+                    key={i}
+                    suggestion={suggestion}
+                    onAccept={(changes) => acceptSuggestion(message.id, i, changes)}
+                    onDismiss={() => dismissSuggestion(message.id, i)}
+                  />
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+      {sending && (
+        <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+          <div style={{ maxWidth: '85%', minWidth: 0 }}>
+            <ThinkingBlock
+              label={statusMessage || 'Thinking…'}
+              text={thinkingText || null}
+              open={thinkingOpen}
+              onToggle={onToggleSendingThinking}
+            />
+          </div>
+        </div>
+      )}
+      <div ref={scrollRef} />
+    </div>
+  )
+})
 
 // Deliberately NOT styled like a message bubble (no card background, no
 // border box, no shared border-radius with the answer) — thinking is meta

@@ -137,6 +137,9 @@ export default async function handler(req: Request): Promise<Response> {
   if (!inbound.length) {
     return new Response(JSON.stringify({ error: 'No messages provided' }), { status: 400 })
   }
+  if (inbound.length > MAX_INBOUND_MESSAGES) {
+    return new Response(JSON.stringify({ error: `Too much history sent (max ${MAX_INBOUND_MESSAGES} messages)` }), { status: 400 })
+  }
   const lastMessage = inbound[inbound.length - 1]
   const lastText = typeof lastMessage.content === 'string' ? lastMessage.content : ''
   if (lastText.length > MAX_MESSAGE_CHARS) {

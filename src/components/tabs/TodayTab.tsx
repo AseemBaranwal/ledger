@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSessionStore, useConfigStore, useUIStore, useUnitStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { applySubstitutions, resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { saveSubstitution } from '@/services/exerciseSubstitutionsApi'
 import { doneThisWeek, owedThisWeek, tgtStr } from '@/services/weekProgress'
-import { lastDialedWeight, formatLastSets } from '@/services/trendCalculations'
+import { lastDialedWeight, formatLastSets, lastOf } from '@/services/trendCalculations'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -45,6 +45,14 @@ export function TodayTab() {
 
   const [today] = useState(new Date())
   const [picker, setPicker] = useState<{ mode: 'swap' | 'add'; index?: number } | null>(null)
+
+  // Stable across re-renders (not recreated inline at the JSX call site) so
+  // ExerciseLogger's React.memo actually holds — see that component's own
+  // comment. Every set logged/weight bumped mid-session re-renders TodayTab
+  // (draftEx/draft replace by reference), and an inline arrow prop would
+  // defeat the memo on every single one of those.
+  const handleRequestSwap = useCallback((i: number) => setPicker({ mode: 'swap', index: i }), [])
+  const handleRequestRemove = useCallback((i: number) => removeExercise(i), [removeExercise])
   const dayOfWeek = today.getDay()
   const weekDays = schedule.weekDays.length ? schedule.weekDays : [1, 2, 3, 4, 5, 6, 0]
   const priority = schedule.priority
@@ -203,8 +211,8 @@ export function TodayTab() {
                 key={index}
                 def={def}
                 index={index}
-                onRequestSwap={(i) => setPicker({ mode: 'swap', index: i })}
-                onRequestRemove={(i) => removeExercise(i)}
+                onRequestSwap={handleRequestSwap}
+                onRequestRemove={handleRequestRemove}
               />
             )
           })}

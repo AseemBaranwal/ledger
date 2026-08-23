@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { useSessionStore, useUIStore, useUnitStore } from '@/store'
 import type { ProgramExercise } from '@/types'
 import { lastOf, formatLastSets } from '@/services/trendCalculations'
@@ -33,7 +33,16 @@ function repOpts(target: number): number[] {
   return [...o]
 }
 
-export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: ExerciseLoggerProps) {
+// Memoized because TodayTab re-renders on every single set logged, weight
+// bumped, or notes keystroke (draftEx/draft replace by reference on any
+// change) — without this, every OTHER mounted card re-rendered too on each
+// of those, not just the one that actually changed, each re-run redoing
+// lastOf()'s full session-history scan. def/index are referentially stable
+// across unrelated re-renders (draftDefs/p.ex don't change unless an actual
+// swap/add/remove happens), so a shallow-prop memo is enough — it just also
+// requires the two callback props to be stable, which TodayTab now provides
+// via useCallback.
+export const ExerciseLogger = memo(function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: ExerciseLoggerProps) {
   // Narrowed to this card's own entry, not the whole draftEx array — every
   // set-logging action replaces the array via [...state.draftEx] with only
   // one index actually patched, so subscribing to the full array here made
@@ -337,4 +346,4 @@ export function ExerciseLogger({ def, index, onRequestSwap, onRequestRemove }: E
       )}
     </div>
   )
-}
+})

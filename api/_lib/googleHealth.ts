@@ -20,17 +20,15 @@ export const GOOGLE_HEALTH_SCOPES = [
 ] as const
 
 // Canonical data type identifiers, as they appear in
-// `users/me/dataTypes/{id}`. Verified against Google's data-types reference.
+// `users/me/dataTypes/{id}`. Confirmed against the live v4 discovery doc —
+// `daily-heart-rate-variability` (NOT the bare `heart-rate-variability`,
+// which is a different, raw per-sample type with no daily aggregate) is the
+// one whose DataPoint field is `dailyHeartRateVariability`.
 export const DATA_TYPE = {
   restingHeartRate: 'daily-resting-heart-rate',
-  hrv: 'heart-rate-variability',
+  hrv: 'daily-heart-rate-variability',
   sleep: 'sleep',
 } as const
-
-// Google caps dailyRollUp ranges at 14 days for heart-rate-family data
-// types and 90 days for everything else. Requesting more is a 400, so
-// callers clamp against these rather than discovering it at runtime.
-export const MAX_RANGE_DAYS = { heartRate: 14, other: 90 } as const
 
 interface StoredConnection {
   access_token: string
@@ -209,6 +207,15 @@ export async function getValidAccessToken(userId: string): Promise<TokenResult> 
 // The API takes civil dates ({year, month, day}), NOT unix timestamps —
 // a genuine difference from Strava's API and an easy source of silent
 // off-by-a-day bugs if a Date's UTC vs local parts get mixed.
+//
+// CONFIRMED against the live v4 discovery doc (health.googleapis.com/$discovery/rest?version=v4):
+// a bare {year,month,day} is NOT what `range.start`/`range.end` take — that
+// 400s with "Unknown name \"year\": Cannot find field." The wire type is
+// `CivilTimeInterval { start: CivilDateTime, end: CivilDateTime }` where
+// `CivilDateTime { date: Date, time?: TimeOfDay }` — the plain {year,month,day}
+// object has to be wrapped one level deeper under `date`. Response points
+// carry the same CivilDateTime shape on `civilStartTime`/`civilEndTime`, so
+// reading those back needs the same unwrap.
 
 export interface CivilDate {
   year: number
@@ -216,8 +223,16 @@ export interface CivilDate {
   day: number
 }
 
+export interface CivilDateTime {
+  date: CivilDate
+}
+
 export function toCivilDate(d: Date): CivilDate {
   return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() }
+}
+
+export function toCivilDateTime(d: Date): CivilDateTime {
+  return { date: toCivilDate(d) }
 }
 
 export function civilDateToIso(c: CivilDate | undefined | null): string | null {
@@ -225,39 +240,8 @@ export function civilDateToIso(c: CivilDate | undefined | null): string | null {
   return `${c.year}-${String(c.month).padStart(2, '0')}-${String(c.day).padStart(2, '0')}`
 }
 
-// ── defensive value extraction ───────────────────────────────────
-// Google's public docs do NOT enumerate the per-data-type field names
-// inside a rollup point (issue #59's "known unknown"). Rather than guess
-// one name and crash when it's wrong, walk the object for the first
-// plausible numeric value. This is deliberately permissive: a missing
-// metric must degrade to null, never throw.
-export function extractNumber(source: unknown, preferredKeys: string[]): number | null {
-  if (source == null) return null
-  if (typeof source === 'number') return Number.isFinite(source) ? source : null
-
-  if (typeof source === 'object') {
-    const obj = source as Record<string, unknown>
-
-    // Exact preferred keys first, then any key containing one of them
-    // (covers bpm vs bpm_avg vs avgBpm without hardcoding a guess).
-    for (const key of preferredKeys) {
-      const direct = obj[key]
-      if (typeof direct === 'number' && Number.isFinite(direct)) return direct
-    }
-    for (const key of preferredKeys) {
-      for (const actual of Object.keys(obj)) {
-        if (actual.toLowerCase().includes(key.toLowerCase())) {
-          const nested = extractNumber(obj[actual], preferredKeys)
-          if (nested != null) return nested
-        }
-      }
-    }
-    // Last resort: a single numeric leaf anywhere shallow in the object.
-    for (const value of Object.values(obj)) {
-      if (typeof value === 'number' && Number.isFinite(value)) return value
-    }
-  }
-  return null
+export function civilDateTimeToIso(c: CivilDateTime | undefined | null): string | null {
+  return civilDateToIso(c?.date)
 }
 
 // Low-level authed call against the Google Health API. Returns parsed JSON,

@@ -1,48 +1,56 @@
 import {
   DATA_TYPE,
-  MAX_RANGE_DAYS,
   civilDateToIso,
-  extractNumber,
+  civilDateTimeToIso,
   getValidAccessToken,
   googleHealthRequest,
   toCivilDate,
   type CivilDate,
+  type CivilDateTime,
 } from './googleHealth.js'
 
 // Recovery/readiness data for the Coach — resting heart rate, HRV and sleep,
 // pulled from Google Health (see issue #59) and flattened into one small
 // per-day array plus baselines.
 //
-// Two constraints shape everything here:
+// This payload goes into an LLM context on every call that uses it, so it
+// stays deliberately tiny: one row per day, three numbers, rounded. No raw
+// data points, no per-sample arrays.
 //
-// 1. This payload goes into an LLM context on every call that uses it, so it
-//    stays deliberately tiny: one row per day, four numbers, rounded. No raw
-//    rollup points, no per-sample arrays.
-// 2. Google does not document the per-data-type field names inside a rollup
-//    point ("known unknown" in issue #59). Nothing here assumes a single
-//    field name — every metric goes through a preferred-keys probe and
-//    degrades to null when absent. When the real names are discovered
-//    against a live connection, only the *_KEYS arrays below need to change.
-
-// Probe orders, most-specific first. extractNumber() tries exact matches,
-// then any key *containing* one of these, then a single numeric leaf — so
-// e.g. bpm / bpmAvg / avg_bpm are all covered by 'bpm' alone.
-const RESTING_HR_KEYS = ['restingHeartRate', 'bpm', 'beatsPerMinute', 'heartRate', 'value']
-const HRV_KEYS = ['rmssd', 'hrv', 'heartRateVariability', 'variability', 'value']
-// Sleep duration is the one metric with a genuinely ambiguous *scale* (a
-// number could be minutes, seconds, or millis), so it gets a stricter probe
-// per scale before falling back — see sleepMinutesOf().
-const SLEEP_MINUTE_KEYS = ['sleepMinutes', 'durationMinutes', 'totalSleepMinutes', 'asleepMinutes', 'minutes']
-const SLEEP_SECOND_KEYS = ['durationSeconds', 'sleepSeconds', 'totalSleepSeconds', 'seconds', 'duration']
-const SLEEP_MILLI_KEYS = ['durationMillis', 'durationMs', 'millis']
-const SLEEP_SCORE_KEYS = ['sleepScore', 'score']
+// Every field name and request shape below is CONFIRMED against the live
+// v4 discovery doc (health.googleapis.com/$discovery/rest?version=v4) and a
+// real connected account, not docs-only research — issue #59's original
+// implementation used `dailyRollUp` with a bare {year,month,day} range and
+// permissive field-name probing, both of which turned out to be wrong the
+// first time this was ever run against a live connection:
+//   - `dailyRollUp` is not a supported action for any of these three data
+//     types at all (Google 400s: "DailyRollup is not supported for data
+//     type X, but the following actions are supported: list, reconcile").
+//     The real fetch is `GET .../dataPoints` with an AIP-160 `filter` query
+//     param, not a POST body.
+//   - `range.start`/`range.end` (where they DO apply, e.g. to `rollUp`) take
+//     a `CivilDateTime { date: {year,month,day} }`, not a bare
+//     {year,month,day} — see toCivilDate's own note in googleHealth.ts.
+//   - The HRV data type id is `daily-heart-rate-variability`, not
+//     `heart-rate-variability` (that id exists too, but is a different, raw
+//     per-sample type with no daily aggregate).
+//   - Response field names are exact, not guessable: `dailyRestingHeartRate
+//     .beatsPerMinute`, `dailyHeartRateVariability
+//     .averageHeartRateVariabilityMilliseconds`, `sleep.summary
+//     .minutesAsleep` — all confirmed via the discovery doc's schemas.
+//   - There is no "sleep score" anywhere in this API's data model — that's
+//     a Fitbit-app-UI concept, not part of Google Health's schema. Dropped
+//     entirely rather than always returning null for a field that can never
+//     be filled in.
+//   - Several numeric fields (`beatsPerMinute`, `minutesAsleep`) are typed
+//     `int64` on the wire, which googleapis JSON serializes as a STRING to
+//     avoid JS number-precision loss — `asNumber()` below handles both.
 
 export interface RecoveryDay {
   date: string
   restingHeartRate: number | null
   hrvMs: number | null
   sleepMinutes: number | null
-  sleepScore: number | null
 }
 
 export interface RecoveryBaselines {
@@ -58,12 +66,10 @@ export type RecoveryResult =
   | { status: 'error'; error: string }
 
 const DEFAULT_DAYS = 14
-
-interface RollupPoint {
-  civilStartTime?: CivilDate
-  civilEndTime?: CivilDate
-  [key: string]: unknown
-}
+// The list endpoint's filter docs don't state a hard day-count cap the way
+// dailyRollUp's did — this is just a sane ceiling so a large `days` request
+// can't build an unbounded filter/page size.
+const MAX_DAYS = 90
 
 function daysAgo(n: number): Date {
   const d = new Date()
@@ -71,57 +77,106 @@ function daysAgo(n: number): Date {
   return d
 }
 
-// The civil-time fields are structural, not metrics — strip them before any
-// numeric probe so extractNumber()'s deliberately permissive last-resort
-// leaf scan can't return a year or an hour as if it were a bpm.
-function metricFields(point: RollupPoint): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(point)) {
-    if (/^civil/i.test(key) || /Time$/.test(key) || key === 'startTime' || key === 'endTime') continue
-    out[key] = value
-  }
-  return out
+function isoDate(d: Date): string {
+  return civilDateToIso(toCivilDate(d)) as string
 }
 
-// Strict probe (exact key, then key-contains) with no numeric-leaf fallback —
-// used where picking the *wrong* number would be worse than picking none,
-// i.e. sleep duration, where minutes/seconds/millis are indistinguishable
-// once you're just grabbing whatever number is lying around.
-function probeStrict(fields: Record<string, unknown>, keys: string[]): number | null {
-  for (const key of keys) {
-    const direct = fields[key]
-    if (typeof direct === 'number' && Number.isFinite(direct)) return direct
+// AIP-160 filter grammar for a "daily summary" data type, confirmed from the
+// dataPoints.list method's own filter parameter docs: `{field}.date >= "X"
+// AND {field}.date < "Y"`, where `field` is the *underscored* conceptual
+// type name (e.g. `daily_heart_rate_variability`), not the hyphenated path
+// segment used in the URL.
+function dailySummaryFilter(fieldPrefix: string, start: Date, end: Date): string {
+  return `${fieldPrefix}.date >= "${isoDate(start)}" AND ${fieldPrefix}.date < "${isoDate(end)}"`
+}
+
+// Sleep is a session-type data type, filtered by its interval's civil end
+// time rather than a `.date` field — also confirmed from the filter docs
+// (sleep gets its own documented filter pattern, distinct from daily
+// summaries: `sleep.interval.civil_end_time >= "X" AND ... < "Y"`).
+function sleepFilter(start: Date, end: Date): string {
+  return `sleep.interval.civil_end_time >= "${isoDate(start)}" AND sleep.interval.civil_end_time < "${isoDate(end)}"`
+}
+
+interface ListFetch<T> {
+  points: T[]
+  error: string | null
+}
+
+async function listDataPoints<T>(accessToken: string, dataType: string, filter: string): Promise<ListFetch<T>> {
+  try {
+    const qs = new URLSearchParams({ filter, pageSize: '200' })
+    const res = await googleHealthRequest(accessToken, `users/me/dataTypes/${dataType}/dataPoints?${qs.toString()}`)
+    const points = Array.isArray(res?.dataPoints) ? (res.dataPoints as T[]) : []
+    return { points, error: null }
+  } catch (e) {
+    // One data type failing must not take the other two down with it —
+    // partial recovery data is far more useful to the Coach than an error,
+    // and "this watch never recorded HRV" is a normal, permanent state for
+    // some devices rather than an outage.
+    return { points: [], error: e instanceof Error ? e.message : `Could not read ${dataType}` }
   }
-  for (const key of keys) {
-    for (const actual of Object.keys(fields)) {
-      if (actual.toLowerCase().includes(key.toLowerCase())) {
-        const value = fields[actual]
-        if (typeof value === 'number' && Number.isFinite(value)) return value
-      }
+}
+
+// int64-typed fields on this API serialize as JSON strings — a confirmed
+// googleapis wire convention, not a defensive guess. Number(undefined/'')
+// is NaN, so this still degrades to null cleanly for an absent field.
+function asNumber(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  if (typeof v === 'string') {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+interface DailyRestingHeartRatePoint {
+  dailyRestingHeartRate?: { beatsPerMinute?: string | number; date?: CivilDate }
+}
+interface DailyHrvPoint {
+  dailyHeartRateVariability?: { averageHeartRateVariabilityMilliseconds?: number; date?: CivilDate }
+}
+interface SleepPoint {
+  sleep?: {
+    interval?: {
+      civilEndTime?: CivilDateTime
+      civilStartTime?: CivilDateTime
+      endTime?: string
+      endUtcOffset?: string
+      startTime?: string
+      startUtcOffset?: string
     }
+    summary?: { minutesAsleep?: string | number }
   }
-  return null
 }
 
-export function sleepMinutesOf(point: RollupPoint): number | null {
-  const fields = metricFields(point)
-  const minutes = probeStrict(fields, SLEEP_MINUTE_KEYS)
-  if (minutes != null) return minutes
-  // Millis before seconds, deliberately: SLEEP_SECOND_KEYS includes the bare
-  // 'duration', which substring-matches `durationMillis` too and would read
-  // 8 hours as 480,000 minutes. Most specific scale first.
-  const millis = probeStrict(fields, SLEEP_MILLI_KEYS)
-  if (millis != null) return millis / 60000
-  const seconds = probeStrict(fields, SLEEP_SECOND_KEYS)
-  if (seconds != null) return seconds / 60
-  // Last resort: whatever single number the point carries, read as minutes.
-  // A plausible night's sleep in minutes (60–1000) is a very different
-  // magnitude from the same night in seconds, so a wildly out-of-range value
-  // is more likely a misread field than a real number — drop it rather than
-  // feed the Coach a "you slept 28,800 minutes" line.
-  const fallback = extractNumber(fields, SLEEP_MINUTE_KEYS)
-  if (fallback != null && fallback > 0 && fallback < 1000) return fallback
-  return null
+// `google-duration` wire format: a signed number of seconds followed by a
+// literal "s", e.g. "-25200s" for UTC-7. Same sign convention as a real UTC
+// offset (negative = behind UTC) — unlike JS's own getTimezoneOffset(),
+// which this app's Strava mapping (api/_lib/stravaMapping.ts) already has
+// to invert for that exact reason.
+function parseGoogleDurationSeconds(v: string | undefined): number {
+  if (!v) return 0
+  const n = Number(v.replace(/s$/, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+// A live connection's sleep points carry startTime/endTime (RFC3339 UTC)
+// and start/endUtcOffset, but NOT the civilStartTime/civilEndTime the
+// discovery doc documents them as having — confirmed empirically against a
+// real connection, where every single point omitted both fields. Derive the
+// local calendar date ourselves: shift the UTC instant by the offset, then
+// read the date off the shifted instant with UTC getters so the runtime's
+// own local timezone can't reinterpret it a second time.
+function localDateFromUtc(isoUtc: string | undefined, utcOffsetDuration: string | undefined): string | null {
+  if (!isoUtc) return null
+  const utcMs = Date.parse(isoUtc)
+  if (!Number.isFinite(utcMs)) return null
+  const shifted = new Date(utcMs + parseGoogleDurationSeconds(utcOffsetDuration) * 1000)
+  const year = shifted.getUTCFullYear()
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(shifted.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function median(values: number[]): number | null {
@@ -137,48 +192,6 @@ function round(value: number | null, decimals = 0): number | null {
   return Math.round(value * factor) / factor
 }
 
-interface RollupFetch {
-  points: RollupPoint[]
-  error: string | null
-}
-
-async function fetchRollup(
-  accessToken: string,
-  dataType: string,
-  start: Date,
-  end: Date
-): Promise<RollupFetch> {
-  try {
-    const body = {
-      range: { start: toCivilDate(start), end: toCivilDate(end) },
-      windowSizeDays: 1,
-      pageSize: 1440,
-    }
-    const res = await googleHealthRequest(accessToken, `users/me/dataTypes/${dataType}/dataPoints:dailyRollUp`, {
-      method: 'POST',
-      body,
-    })
-    const points = Array.isArray(res?.rollupDataPoints) ? (res.rollupDataPoints as RollupPoint[]) : []
-    return { points, error: null }
-  } catch (e) {
-    // One data type failing must not take the other two down with it —
-    // partial recovery data is far more useful to the Coach than an error,
-    // and "this watch never recorded HRV" is a normal, permanent state for
-    // some devices rather than an outage.
-    return { points: [], error: e instanceof Error ? e.message : `Could not read ${dataType}` }
-  }
-}
-
-// Sleep is credited to the date you WOKE UP (civilEndTime), not the evening
-// the session started — "how did I sleep last night" means the night that
-// ended this morning, and a session starting at 23:40 would otherwise land
-// on the previous day's row.
-function dateKeyFor(point: RollupPoint, prefer: 'start' | 'end'): string | null {
-  const first = prefer === 'end' ? point.civilEndTime : point.civilStartTime
-  const second = prefer === 'end' ? point.civilStartTime : point.civilEndTime
-  return civilDateToIso(first) || civilDateToIso(second)
-}
-
 export async function getRecoveryData(
   userId: string,
   opts?: { days?: number }
@@ -192,20 +205,23 @@ export async function getRecoveryData(
 
   try {
     const requested = opts?.days && opts.days > 0 ? Math.floor(opts.days) : DEFAULT_DAYS
-    // Google rejects (400) an over-long range rather than clamping it
-    // itself, and the two caps differ by data type: 14 days for the
-    // heart-rate family, 90 for everything else.
-    const windowDays = Math.min(requested, MAX_RANGE_DAYS.other)
-    const hrDays = Math.min(windowDays, MAX_RANGE_DAYS.heartRate)
+    const windowDays = Math.min(requested, MAX_DAYS)
 
     const end = new Date()
-    const hrStart = daysAgo(hrDays - 1)
-    const sleepStart = daysAgo(windowDays - 1)
+    const start = daysAgo(windowDays - 1)
 
     const [rhr, hrv, sleep] = await Promise.all([
-      fetchRollup(token.accessToken, DATA_TYPE.restingHeartRate, hrStart, end),
-      fetchRollup(token.accessToken, DATA_TYPE.hrv, hrStart, end),
-      fetchRollup(token.accessToken, DATA_TYPE.sleep, sleepStart, end),
+      listDataPoints<DailyRestingHeartRatePoint>(
+        token.accessToken,
+        DATA_TYPE.restingHeartRate,
+        dailySummaryFilter('daily_resting_heart_rate', start, end)
+      ),
+      listDataPoints<DailyHrvPoint>(
+        token.accessToken,
+        DATA_TYPE.hrv,
+        dailySummaryFilter('daily_heart_rate_variability', start, end)
+      ),
+      listDataPoints<SleepPoint>(token.accessToken, DATA_TYPE.sleep, sleepFilter(start, end)),
     ])
 
     const failures = [rhr, hrv, sleep].filter((r) => r.error)
@@ -217,47 +233,51 @@ export async function getRecoveryData(
       restingHeartRate: number | null
       hrvMs: number | null
       sleepMinutes: number | null
-      sleepScore: number | null
-      longestSleep: number
     }
     const byDate = new Map<string, DayAccumulator>()
     const dayFor = (date: string): DayAccumulator => {
       let day = byDate.get(date)
       if (!day) {
-        day = { restingHeartRate: null, hrvMs: null, sleepMinutes: null, sleepScore: null, longestSleep: -1 }
+        day = { restingHeartRate: null, hrvMs: null, sleepMinutes: null }
         byDate.set(date, day)
       }
       return day
     }
 
     for (const point of rhr.points) {
-      const date = dateKeyFor(point, 'start')
+      const d = point.dailyRestingHeartRate
+      const date = civilDateToIso(d?.date ?? null)
       if (!date) continue
-      const value = extractNumber(metricFields(point), RESTING_HR_KEYS)
+      const value = asNumber(d?.beatsPerMinute)
       if (value != null) dayFor(date).restingHeartRate = value
     }
 
     for (const point of hrv.points) {
-      const date = dateKeyFor(point, 'start')
+      const d = point.dailyHeartRateVariability
+      const date = civilDateToIso(d?.date ?? null)
       if (!date) continue
-      const value = extractNumber(metricFields(point), HRV_KEYS)
+      const value = asNumber(d?.averageHeartRateVariabilityMilliseconds)
       if (value != null) dayFor(date).hrvMs = value
     }
 
-    // Sleep is a session record type, so a single day can carry more than
-    // one point (a nap, a split night). Total the minutes, and take the
-    // score from the longest session — averaging two scores where one is a
-    // 20-minute nap would misrepresent the night that actually mattered.
+    // Sleep is a session record, so a single calendar day can carry more
+    // than one point (a nap, a split night) — minutes total for the day.
+    // Credited to the date you WOKE UP (civilEndTime), not the evening the
+    // session started, since "how did I sleep last night" means the night
+    // that ended this morning.
     for (const point of sleep.points) {
-      const date = dateKeyFor(point, 'end')
+      const s = point.sleep
+      const iv = s?.interval
+      const date =
+        civilDateTimeToIso(iv?.civilEndTime ?? null) ||
+        civilDateTimeToIso(iv?.civilStartTime ?? null) ||
+        localDateFromUtc(iv?.endTime, iv?.endUtcOffset) ||
+        localDateFromUtc(iv?.startTime, iv?.startUtcOffset)
       if (!date) continue
-      const day = dayFor(date)
-      const minutes = sleepMinutesOf(point)
-      if (minutes != null) day.sleepMinutes = (day.sleepMinutes ?? 0) + minutes
-      const score = probeStrict(metricFields(point), SLEEP_SCORE_KEYS)
-      if (score != null && (minutes ?? 0) > day.longestSleep) {
-        day.longestSleep = minutes ?? 0
-        day.sleepScore = score
+      const minutes = asNumber(s?.summary?.minutesAsleep)
+      if (minutes != null) {
+        const day = dayFor(date)
+        day.sleepMinutes = (day.sleepMinutes ?? 0) + minutes
       }
     }
 
@@ -268,11 +288,10 @@ export async function getRecoveryData(
         restingHeartRate: round(day.restingHeartRate),
         hrvMs: round(day.hrvMs, 1),
         sleepMinutes: round(day.sleepMinutes),
-        sleepScore: round(day.sleepScore),
       }))
       // A date whose every metric came back null carries no information and
       // would just pad the payload.
-      .filter((d) => d.restingHeartRate != null || d.hrvMs != null || d.sleepMinutes != null || d.sleepScore != null)
+      .filter((d) => d.restingHeartRate != null || d.hrvMs != null || d.sleepMinutes != null)
 
     // Median, not mean — one travel night or one missed-strap reading
     // shouldn't move the number the Coach compares today against.

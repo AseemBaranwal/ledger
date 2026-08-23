@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getRecoveryData, sleepMinutesOf } from '../../api/_lib/recoveryData'
+import { getRecoveryData } from '../../api/_lib/recoveryData'
 import { getValidAccessToken, googleHealthRequest } from '../../api/_lib/googleHealth'
 
 // Mocked at the googleHealth boundary — the same seam the real module owns
 // (token handling + the authed request), so these tests exercise the actual
-// parsing/rollup/median logic rather than a re-implementation of it. The
-// rest of googleHealth (extractNumber, civilDateToIso, DATA_TYPE) stays real
-// on purpose: the defensive extraction IS what's under test here.
+// parsing/aggregation/median logic rather than a re-implementation of it.
+//
+// Every fixture shape below is copied from a REAL response captured against
+// a live connected account (Pixel Watch 3 via Fitbit), not guessed — see the
+// long comment at the top of recoveryData.ts for how the original
+// implementation's assumptions (dailyRollUp, a bare {year,month,day} range,
+// permissive field-name probing) turned out wrong the first time this was
+// ever run against a live connection, and what the confirmed shapes are.
 vi.mock('../../api/_lib/googleHealth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/_lib/googleHealth')>()
   return { ...actual, getValidAccessToken: vi.fn(), googleHealthRequest: vi.fn() }
@@ -14,9 +19,9 @@ vi.mock('../../api/_lib/googleHealth', async (importOriginal) => {
 
 const okToken = { status: 'ok' as const, accessToken: 'tok' }
 
-// Routes each dailyRollUp call to the right fixture by the data type in its
-// path, so a test can supply just the types it cares about.
-function mockRollups(byType: {
+// Routes each dataPoints.list call to the right fixture by the data type in
+// its path, so a test can supply just the types it cares about.
+function mockDataPoints(byType: {
   restingHeartRate?: unknown[] | Error
   hrv?: unknown[] | Error
   sleep?: unknown[] | Error
@@ -24,18 +29,39 @@ function mockRollups(byType: {
   vi.mocked(googleHealthRequest).mockImplementation(async (_token: string, path: string) => {
     const key = path.includes('daily-resting-heart-rate')
       ? 'restingHeartRate'
-      : path.includes('heart-rate-variability')
+      : path.includes('daily-heart-rate-variability')
         ? 'hrv'
         : 'sleep'
     const fixture = byType[key as keyof typeof byType]
     if (fixture instanceof Error) throw fixture
-    return { rollupDataPoints: fixture ?? [] }
+    return { dataPoints: fixture ?? [] }
   })
 }
 
-const civil = (iso: string) => {
+const civilDate = (iso: string) => {
   const [year, month, day] = iso.split('-').map(Number)
   return { year, month, day }
+}
+
+function rhrPoint(date: string, beatsPerMinute: string | number) {
+  return { dailyRestingHeartRate: { beatsPerMinute, date: civilDate(date) } }
+}
+
+function hrvPoint(date: string, averageHeartRateVariabilityMilliseconds: number) {
+  return { dailyHeartRateVariability: { averageHeartRateVariabilityMilliseconds, date: civilDate(date) } }
+}
+
+// Real sleep points never carried civilStartTime/civilEndTime in practice
+// (confirmed against a live connection, despite the field being documented)
+// — only startTime/endTime + start/endUtcOffset. Tests exercise that real
+// path, not the documented-but-unobserved civil-time one.
+function sleepPoint(opts: { endTime: string; endUtcOffset?: string; minutesAsleep: string | number }) {
+  return {
+    sleep: {
+      interval: { endTime: opts.endTime, endUtcOffset: opts.endUtcOffset ?? '0s' },
+      summary: { minutesAsleep: opts.minutesAsleep },
+    },
+  }
 }
 
 beforeEach(() => {
@@ -67,18 +93,12 @@ describe('getRecoveryData — connection states', () => {
 
 describe('getRecoveryData — happy path', () => {
   it('flattens all three data types into one row per date, ascending', async () => {
-    mockRollups({
-      restingHeartRate: [
-        { civilStartTime: civil('2026-08-20'), bpm: 54.4 },
-        { civilStartTime: civil('2026-08-21'), bpm: 58.6 },
-      ],
-      hrv: [
-        { civilStartTime: civil('2026-08-20'), rmssd: 62.34 },
-        { civilStartTime: civil('2026-08-21'), rmssd: 41.06 },
-      ],
+    mockDataPoints({
+      restingHeartRate: [rhrPoint('2026-08-20', '54'), rhrPoint('2026-08-21', '59')],
+      hrv: [hrvPoint('2026-08-20', 62.34), hrvPoint('2026-08-21', 41.06)],
       sleep: [
-        { civilStartTime: civil('2026-08-19'), civilEndTime: civil('2026-08-20'), durationMinutes: 431.4, sleepScore: 82 },
-        { civilStartTime: civil('2026-08-20'), civilEndTime: civil('2026-08-21'), durationMinutes: 352.5, sleepScore: 65 },
+        sleepPoint({ endTime: '2026-08-20T06:00:00Z', minutesAsleep: '431' }),
+        sleepPoint({ endTime: '2026-08-21T06:00:00Z', minutesAsleep: '353' }),
       ],
     })
 
@@ -87,54 +107,45 @@ describe('getRecoveryData — happy path', () => {
     expect(result).toEqual({
       status: 'ok',
       days: [
-        { date: '2026-08-20', restingHeartRate: 54, hrvMs: 62.3, sleepMinutes: 431, sleepScore: 82 },
-        { date: '2026-08-21', restingHeartRate: 59, hrvMs: 41.1, sleepMinutes: 353, sleepScore: 65 },
+        { date: '2026-08-20', restingHeartRate: 54, hrvMs: 62.3, sleepMinutes: 431 },
+        { date: '2026-08-21', restingHeartRate: 59, hrvMs: 41.1, sleepMinutes: 353 },
       ],
       baselines: { restingHeartRate: 57, hrvMs: 51.7, sleepMinutes: 392 },
     })
   })
 
-  it('requests a dailyRollUp per data type, in parallel, with the documented body shape', async () => {
-    mockRollups({})
+  // beatsPerMinute and minutesAsleep are int64-typed on the wire, which
+  // googleapis JSON serializes as a STRING (not a number) to avoid
+  // precision loss — a real, confirmed convention, not a defensive guess.
+  it('parses int64 wire fields serialized as strings', async () => {
+    mockDataPoints({
+      restingHeartRate: [rhrPoint('2026-08-20', '61')],
+      sleep: [sleepPoint({ endTime: '2026-08-20T06:00:00Z', minutesAsleep: '415' })],
+    })
+
+    const result = await getRecoveryData('user-1')
+
+    expect(result).toMatchObject({ days: [{ restingHeartRate: 61, sleepMinutes: 415 }] })
+  })
+
+  it('calls dataPoints.list per data type, in parallel, with a date-range filter', async () => {
+    mockDataPoints({})
 
     await getRecoveryData('user-1')
 
     expect(googleHealthRequest).toHaveBeenCalledTimes(3)
-    const paths = vi.mocked(googleHealthRequest).mock.calls.map((c) => c[1])
-    expect(paths).toEqual([
-      'users/me/dataTypes/daily-resting-heart-rate/dataPoints:dailyRollUp',
-      'users/me/dataTypes/heart-rate-variability/dataPoints:dailyRollUp',
-      'users/me/dataTypes/sleep/dataPoints:dailyRollUp',
-    ])
-    const init = vi.mocked(googleHealthRequest).mock.calls[0][2] as { method: string; body: any }
-    expect(init.method).toBe('POST')
-    expect(init.body).toMatchObject({ windowSizeDays: 1, pageSize: 1440 })
-    expect(init.body.range.start).toEqual(expect.objectContaining({ year: expect.any(Number), month: expect.any(Number), day: expect.any(Number) }))
-  })
-
-  // Google 400s an over-long range rather than clamping it itself, and the
-  // caps differ by data type: 14 days for heart-rate, 90 for everything else.
-  it('clamps the heart-rate range to 14 days even when a longer window is asked for', async () => {
-    mockRollups({})
-
-    await getRecoveryData('user-1', { days: 60 })
-
-    const [hrCall, , sleepCall] = vi.mocked(googleHealthRequest).mock.calls
-    const spanDays = (body: any) => {
-      const asDate = (c: any) => new Date(c.year, c.month - 1, c.day).getTime()
-      return Math.round((asDate(body.range.end) - asDate(body.range.start)) / 86400000) + 1
-    }
-    expect(spanDays((hrCall[2] as any).body)).toBe(14)
-    expect(spanDays((sleepCall[2] as any).body)).toBe(60)
+    const paths = vi.mocked(googleHealthRequest).mock.calls.map((c) => c[1] as string)
+    expect(paths[0]).toContain('users/me/dataTypes/daily-resting-heart-rate/dataPoints?')
+    expect(paths[0]).toContain('daily_resting_heart_rate.date')
+    expect(paths[1]).toContain('users/me/dataTypes/daily-heart-rate-variability/dataPoints?')
+    expect(paths[1]).toContain('daily_heart_rate_variability.date')
+    expect(paths[2]).toContain('users/me/dataTypes/sleep/dataPoints?')
+    expect(paths[2]).toContain('sleep.interval.civil_end_time')
   })
 
   it('uses the median, not the mean, so a single outlier night does not move the baseline', async () => {
-    mockRollups({
-      restingHeartRate: [
-        { civilStartTime: civil('2026-08-18'), bpm: 55 },
-        { civilStartTime: civil('2026-08-19'), bpm: 56 },
-        { civilStartTime: civil('2026-08-20'), bpm: 120 }, // one bad reading
-      ],
+    mockDataPoints({
+      restingHeartRate: [rhrPoint('2026-08-18', '55'), rhrPoint('2026-08-19', '56'), rhrPoint('2026-08-20', '120')],
     })
 
     const result = await getRecoveryData('user-1')
@@ -144,10 +155,10 @@ describe('getRecoveryData — happy path', () => {
   })
 
   it('drops dates where every metric came back null rather than padding the payload', async () => {
-    mockRollups({
+    mockDataPoints({
       restingHeartRate: [
-        { civilStartTime: civil('2026-08-20'), bpm: 55 },
-        { civilStartTime: civil('2026-08-21') }, // no numeric field at all
+        rhrPoint('2026-08-20', '55'),
+        { dailyRestingHeartRate: { date: civilDate('2026-08-21') } }, // no beatsPerMinute at all
       ],
     })
 
@@ -156,40 +167,42 @@ describe('getRecoveryData — happy path', () => {
     expect((result as { days: unknown[] }).days).toHaveLength(1)
   })
 
-  // Sleep is a session record type, so one calendar day can carry a nap plus
-  // a night. Minutes total; the score comes from the longest session.
-  it('totals multiple sleep sessions per day and takes the score from the longest one', async () => {
-    mockRollups({
+  it('totals multiple sleep sessions per day (a nap plus a night)', async () => {
+    mockDataPoints({
       sleep: [
-        { civilEndTime: civil('2026-08-20'), durationMinutes: 400, sleepScore: 88 },
-        { civilEndTime: civil('2026-08-20'), durationMinutes: 25, sleepScore: 30 },
+        sleepPoint({ endTime: '2026-08-20T14:00:00Z', minutesAsleep: '25' }), // nap
+        sleepPoint({ endTime: '2026-08-20T06:00:00Z', minutesAsleep: '400' }), // night
       ],
     })
 
     const result = await getRecoveryData('user-1')
 
-    expect(result).toMatchObject({ days: [{ date: '2026-08-20', sleepMinutes: 425, sleepScore: 88 }] })
+    expect(result).toMatchObject({ days: [{ date: '2026-08-20', sleepMinutes: 425 }] })
   })
 
-  // "How did I sleep last night" means the night that ended this morning —
-  // a session starting 23:40 would otherwise land on the previous day's row.
-  it('credits a sleep session to the wake date, not the date it started', async () => {
-    mockRollups({
-      sleep: [{ civilStartTime: civil('2026-08-19'), civilEndTime: civil('2026-08-20'), durationMinutes: 420 }],
+  // A session starting the evening before must credit the date it ended on
+  // ("how did I sleep last night" means the night that ended this morning),
+  // and the local date has to come from applying the UTC offset, not just
+  // reading the UTC calendar date off the raw timestamp.
+  it('credits a sleep session to the local wake date, applying the UTC offset', async () => {
+    mockDataPoints({
+      // 2026-08-20T02:00:00Z with a -7h offset is 2026-08-19 19:00 local —
+      // if the offset weren't applied this would wrongly land on the 20th.
+      sleep: [sleepPoint({ endTime: '2026-08-20T02:00:00Z', endUtcOffset: '-25200s', minutesAsleep: '420' })],
     })
 
     const result = await getRecoveryData('user-1')
 
-    expect(result).toMatchObject({ days: [{ date: '2026-08-20' }] })
+    expect(result).toMatchObject({ days: [{ date: '2026-08-19' }] })
   })
 })
 
 describe('getRecoveryData — partial failure', () => {
   it('returns the data types that succeeded when one of them errors', async () => {
-    mockRollups({
-      restingHeartRate: [{ civilStartTime: civil('2026-08-20'), bpm: 55 }],
+    mockDataPoints({
+      restingHeartRate: [rhrPoint('2026-08-20', '55')],
       hrv: new Error('Google Health API 503: backend unavailable'),
-      sleep: [{ civilEndTime: civil('2026-08-20'), durationMinutes: 420 }],
+      sleep: [sleepPoint({ endTime: '2026-08-20T06:00:00Z', minutesAsleep: '420' })],
     })
 
     const result = await getRecoveryData('user-1')
@@ -202,94 +215,18 @@ describe('getRecoveryData — partial failure', () => {
   })
 
   it('omits `unavailable` entirely when everything succeeded', async () => {
-    mockRollups({ restingHeartRate: [{ civilStartTime: civil('2026-08-20'), bpm: 55 }] })
+    mockDataPoints({ restingHeartRate: [rhrPoint('2026-08-20', '55')] })
 
     expect(await getRecoveryData('user-1')).not.toHaveProperty('unavailable')
   })
 
   it('reports an error only when all three data types fail', async () => {
-    mockRollups({
+    mockDataPoints({
       restingHeartRate: new Error('Google Health API 500: boom'),
       hrv: new Error('Google Health API 500: boom'),
       sleep: new Error('Google Health API 500: boom'),
     })
 
     expect(await getRecoveryData('user-1')).toEqual({ status: 'error', error: 'Google Health API 500: boom' })
-  })
-})
-
-// Issue #59's "known unknown": Google's public docs never enumerate the
-// per-data-type field names inside a rollup point. Nothing may assume one
-// exact spelling, and a missing metric must degrade to null, never throw.
-describe('getRecoveryData — unknown field-name resilience', () => {
-  it('extracts a resting HR carrying an undocumented field name', async () => {
-    mockRollups({
-      restingHeartRate: [{ civilStartTime: civil('2026-08-20'), someUndocumentedRollupField: 57 }],
-    })
-
-    const result = await getRecoveryData('user-1')
-
-    expect(result).toMatchObject({ days: [{ restingHeartRate: 57 }] })
-  })
-
-  it('extracts a metric nested one level deeper under a plausible key', async () => {
-    mockRollups({
-      hrv: [{ civilStartTime: civil('2026-08-20'), hrvSummary: { avg: 48.2 } }],
-    })
-
-    const result = await getRecoveryData('user-1')
-
-    expect(result).toMatchObject({ days: [{ hrvMs: 48.2 }] })
-  })
-
-  // extractNumber's last-resort leaf scan would happily return a year or an
-  // hour as a bpm if the civil-time fields weren't stripped first.
-  it('never mistakes a civil-time component for a metric value', async () => {
-    mockRollups({
-      restingHeartRate: [{ civilStartTime: { ...civil('2026-08-20'), hours: 7, minutes: 30 }, civilEndTime: civil('2026-08-20') }],
-    })
-
-    const result = await getRecoveryData('user-1')
-
-    expect((result as { days: unknown[] }).days).toHaveLength(0)
-  })
-
-  it('degrades to null instead of throwing on a completely unrecognizable point', async () => {
-    mockRollups({
-      restingHeartRate: [{ civilStartTime: civil('2026-08-20'), note: 'not a number' }],
-      sleep: [{ civilEndTime: civil('2026-08-20'), stage: 'deep' }],
-    })
-
-    const result = await getRecoveryData('user-1')
-
-    expect(result).toMatchObject({ status: 'ok', baselines: { restingHeartRate: null, hrvMs: null, sleepMinutes: null } })
-  })
-})
-
-describe('sleepMinutesOf', () => {
-  it('reads an explicit minutes field as-is', () => {
-    expect(sleepMinutesOf({ sleepMinutes: 412 })).toBe(412)
-  })
-
-  // The one metric whose *scale* is genuinely ambiguous — 28800 is either a
-  // nonsense number of minutes or a perfectly normal 8 hours in seconds.
-  it('converts a seconds-scaled duration to minutes', () => {
-    expect(sleepMinutesOf({ durationSeconds: 28800 })).toBe(480)
-  })
-
-  it('converts a millis-scaled duration to minutes', () => {
-    expect(sleepMinutesOf({ durationMillis: 28800000 })).toBe(480)
-  })
-
-  it('rejects an out-of-range fallback number rather than reporting an absurd sleep total', () => {
-    expect(sleepMinutesOf({ mysteryField: 28800 })).toBeNull()
-  })
-
-  it('accepts a plausible fallback number as minutes', () => {
-    expect(sleepMinutesOf({ mysteryField: 430 })).toBe(430)
-  })
-
-  it('returns null when the point carries no number at all', () => {
-    expect(sleepMinutesOf({ stage: 'rem' })).toBeNull()
   })
 })

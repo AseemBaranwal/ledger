@@ -3,6 +3,9 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import * as errorReporting from '@/services/errorReporting'
+
+vi.mock('@/services/errorReporting', () => ({ reportClientError: vi.fn() }))
 
 function Bomb({ shouldThrow }: { shouldThrow: boolean }) {
   if (shouldThrow) throw new Error('boom')
@@ -15,6 +18,7 @@ describe('ErrorBoundary', () => {
   // silence it so the test output isn't noisy with an expected error.
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(errorReporting.reportClientError).mockClear()
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -37,6 +41,18 @@ describe('ErrorBoundary', () => {
     )
     expect(screen.getByText('Fallback: boom')).toBeTruthy()
     expect(screen.queryByText('Rendered fine')).toBeNull()
+  })
+
+  // Render-phase errors never reach window.onerror/unhandledrejection —
+  // this componentDidCatch call is the ONLY place a crash like this is
+  // ever visible at all (issue #58).
+  it('reports the crash via reportClientError, tagged as error_boundary', () => {
+    render(
+      <ErrorBoundary fallback={(error) => <div>Fallback: {error.message}</div>}>
+        <Bomb shouldThrow={true} />
+      </ErrorBoundary>
+    )
+    expect(errorReporting.reportClientError).toHaveBeenCalledWith('boom', expect.any(String), 'error_boundary')
   })
 
   it('lets the fallback recover via reset() without a full page reload', async () => {

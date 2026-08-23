@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { reportClientError } from '@/services/errorReporting'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -30,10 +31,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // Render-phase errors never reach window.onerror/unhandledrejection —
-    // this is the only place they're ever visible at all, so it's worth
-    // logging distinctly even before any real telemetry exists.
+    // Render-phase errors never reach window.onerror/unhandledrejection
+    // (see main.tsx) — this is the only place they're ever caught at all.
     console.error('[ErrorBoundary] caught a render error:', error, info.componentStack)
+    reportClientError(error.message, error.stack, 'error_boundary')
   }
 
   render() {

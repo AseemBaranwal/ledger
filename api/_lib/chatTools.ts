@@ -2,6 +2,13 @@ import { supabaseAdmin } from './supabaseAdmin.js'
 import { resolveExerciseQuery } from './exerciseCatalog.js'
 import type { ToolDefinition } from './anthropic.js'
 
+// get_recovery_data's handler lives in recoveryData.ts (all the Google
+// Health fetching/normalizing is there) but is re-exported here so the tool
+// loop in api/chat/message.ts imports every tool handler from one place,
+// same as the training-data and swap handlers below.
+export { getRecoveryData } from './recoveryData.js'
+export type { RecoveryResult, RecoveryDay, RecoveryBaselines } from './recoveryData.js'
+
 export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
@@ -21,6 +28,20 @@ export const TOOLS: ToolDefinition[] = [
         limit: {
           type: 'number',
           description: 'Max number of most-recent sessions to return. Defaults to 12 if omitted.',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_recovery_data',
+    description:
+      "Reads recovery/readiness data recorded by the owner's watch — resting heart rate, HRV (in ms), sleep duration (in minutes) and sleep score, one row per day, plus `baselines` (the median of each metric across the window, so you can compare today against typical without doing the math yourself). Call this when the question is about readiness, fatigue, whether to push hard or back off today, or during a weekly check-in — not for questions purely about weights or logged sets. This data may legitimately be unavailable: `status` comes back as `not_connected` (the owner never linked their watch) or `needs_reconnect` (access expired — normal, it lapses about weekly by design). Both are ordinary states, NOT errors: when you get one, simply coach from training data alone and mention in a single short clause that recovery data isn't connected right now. Do not apologize at length, do not retry, and never treat it as something broken. A response may also carry `unavailable`, naming metrics that couldn't be read this time — say so plainly rather than treating a missing metric as a normal reading.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        days: {
+          type: 'number',
+          description: 'How many days back to look. Defaults to 14 if omitted; heart-rate metrics are capped at 14 days by the upstream API regardless.',
         },
       },
     },

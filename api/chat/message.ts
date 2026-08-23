@@ -2,7 +2,7 @@ import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { callAnthropic, type AnthropicMessage, type AnthropicResponseBlock } from '../_lib/anthropic.js'
 import { buildSystemPrompt } from '../_lib/chatSystemPrompt.js'
-import { TOOLS, getTrainingData, resolveExerciseSwap } from '../_lib/chatTools.js'
+import { TOOLS, getTrainingData, getRecoveryData, resolveExerciseSwap } from '../_lib/chatTools.js'
 import { saveChatTurn } from '../_lib/chatHistory.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
@@ -189,11 +189,13 @@ export default async function handler(req: Request): Promise<Response> {
   const statusForTool = (name: string) =>
     name === 'get_training_data'
       ? 'Checking your training data…'
-      : name === 'suggest_exercise_adjustment'
-        ? 'Working out a suggestion…'
-        : name === 'suggest_exercise_swap'
-          ? 'Finding a good alternate…'
-          : 'Working on it…'
+      : name === 'get_recovery_data'
+        ? 'Checking your recovery data…'
+          : name === 'suggest_exercise_adjustment'
+            ? 'Working out a suggestion…'
+            : name === 'suggest_exercise_swap'
+              ? 'Finding a good alternate…'
+              : 'Working on it…'
 
   ;(async () => {
     let totalInputTokens = 0
@@ -257,6 +259,13 @@ export default async function handler(req: Request): Promise<Response> {
           if (block.name === 'get_training_data') {
             const args = block.input as { exerciseCode?: string; sinceDate?: string; limit?: number }
             const result = await getTrainingData(user.id, args)
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
+          } else if (block.name === 'get_recovery_data') {
+            const args = block.input as { days?: number }
+            // Never throws — an unconnected watch, expired Google access, or
+            // one data type failing all come back as an explicit status the
+            // model is told (in the tool description) to treat as normal.
+            const result = await getRecoveryData(user.id, args)
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
           } else if (block.name === 'suggest_exercise_adjustment') {
             const args = block.input as unknown as {

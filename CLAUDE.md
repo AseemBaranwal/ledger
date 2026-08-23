@@ -11,6 +11,52 @@ Full architecture is in [README.md](README.md). This file is a debugging
 playbook — things that cost real time to figure out once and will cost it
 again if forgotten.
 
+## Contents
+
+Each entry names its section heading verbatim (search/grep for it) and
+summarizes what's in it, so you can jump straight to what's relevant
+instead of reading the whole file.
+
+- **Testing convention** — write unit tests alongside new logic, not after;
+  where pure-function and store tests live and how each is structured.
+- **Workflow: issues first, isolated changes** — every fix/feature starts
+  as a GitHub issue; commits stay one logical change each, never bundled.
+- **Infra references** — Vercel/Supabase project ids, the linked Supabase
+  CLI, the Vercel CLI, and the Supabase SQL editor's Monaco-corruption trap.
+- **Vercel Edge Functions — hard-won gotchas** — `vercel dev` vs plain
+  `vite` for testing `api/*`, the required `runtime: 'edge'` config, `.js`
+  extensions on relative imports, the 25s time-to-first-byte limit,
+  untyped-`supabase-js` casts, and the `api/` typecheck recipe.
+- **Supabase gotchas** — preview-URL OAuth redirect allowlisting, the two
+  RLS patterns this app uses (service-role-write-only vs. direct
+  `auth.uid()` client writes) and when to pick each, and `requireUser()`'s
+  REST-vs-SDK quirk.
+- **Workout data lives in Supabase, not a Google Sheet** — `sessions` +
+  `profiles.routine_config` as the real source of truth, the
+  `supabase-js`-doesn't-throw-on-error gotcha, and the still-live opt-in
+  Sheet-sync feature (`api/sheets/sync.ts`).
+- **Claude API integration** (`api/_lib/anthropic.ts`) — model id, the
+  `effort`/`thinking` request shape, prompt-caching setup, and why the
+  tool-use loop has to be hand-rolled under Edge Runtime.
+- **Coach chat tools** (`api/_lib/chatTools.ts`, `api/chat/message.ts`) —
+  the three proposal types the Coach can make, the dual-write
+  (program-config + live-draft) pattern, why suggestion accept/dismiss
+  status must persist server-side, and the tool-call-hallucination gotcha.
+- **Strava gotchas** — the single-athlete API cap, the `external_id`
+  reuse/silent-delete trap, structured-upload requirements, and the
+  `utc_offset` sign-convention bug.
+- **Exercise swap / add / custom** (`src/services/exerciseCatalog.ts`) —
+  how exercise codes work, `resolveExerciseDisplay()` as the single source
+  of truth for what to show, `draftDefs` vs. the static program, and the
+  removal-guard invariant.
+- **Weight units** (`src/services/units.ts`, `src/store/unitStore.ts`) —
+  the lb-everywhere storage model, locale-based default detection,
+  unit-specific increment presets, and the `isWeightUnit()` gate.
+- **General debugging approach that actually worked this session** — check
+  server/deployment logs before trusting a 200 response, verify fixes
+  against the live/deployed environment, test the real data path
+  end-to-end.
+
 ## Testing convention
 
 **Write tests for new logic as you write it, not as a follow-up.** This
@@ -204,8 +250,7 @@ Practical pattern established in `tests/unit/`:
   unexpired token — never fully root-caused, not worth chasing further
   given the direct REST call works and is simpler anyway.
 
-## Workout data lives in Supabase, not a Google Sheet (as of the
-onboarding-removal migration)
+## Workout data lives in Supabase, not a Google Sheet
 
 - **`sessions` table is now the source of truth for logged workouts**,
   written directly by the client (`src/services/sessionsApi.ts`) via RLS —

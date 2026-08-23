@@ -9,6 +9,7 @@ import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 const CoachTab = lazy(() => import('@/components/tabs/CoachTab').then((m) => ({ default: m.CoachTab })))
 import { RestTimer } from '@/components/session'
 import { SignInScreen, ErrorScreen } from '@/components/auth'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { streak } from '@/services/trendCalculations'
 import { fetchSessions } from '@/services/sessionsApi'
 import { unlockAudioContext } from '@/services/audio'
@@ -179,9 +180,38 @@ export default function App() {
         {activeTab === 'trends' && <TrendsTab />}
         {activeTab === 'sync' && <SyncTab />}
         {activeTab === 'coach' && showCoach && (
-          <Suspense fallback={null}>
-            <CoachTab />
-          </Suspense>
+          // Scoped to just this tab, not the top-level boundary in
+          // main.tsx — a failure loading the lazy CoachTab chunk (a stale
+          // service-worker cache after a deploy, a network blip) shouldn't
+          // force reloading the whole app and losing whatever's on screen
+          // elsewhere; it should just show an error in the Coach tab with
+          // a way to retry loading it again.
+          <ErrorBoundary
+            fallback={(error, reset) => (
+              <div style={{ padding: '24px 14px', textAlign: 'center' }}>
+                <div style={{ fontSize: '13.5px', color: 'var(--dim)', marginBottom: '12px' }}>
+                  Couldn't load the Coach tab. {error.message || ''}
+                </div>
+                <button
+                  onClick={reset}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: 'var(--r)',
+                    background: 'var(--amber)',
+                    color: 'var(--ink)',
+                    fontWeight: 600,
+                    fontSize: '13.5px',
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+          >
+            <Suspense fallback={null}>
+              <CoachTab />
+            </Suspense>
+          </ErrorBoundary>
         )}
       </main>
 

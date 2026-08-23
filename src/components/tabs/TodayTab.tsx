@@ -369,7 +369,15 @@ export function TodayTab() {
                           <span className={`${styles.wdGym} mono`}>{p.gym}</span>
                         </div>
                         {withSubstitutions(p.ex).map((e) => {
-                          const last = [...sessions].reverse().flatMap((s) => (s.ex || []).map((x) => ({ ...x, d: s.d }))).find((x) => x.k === e.k && x.r.length)
+                          // Was a hand-rolled flatMap of every exercise
+                          // across the ENTIRE session history, rebuilt from
+                          // scratch on every render this expanded day was
+                          // visible — lastOf() (already used by
+                          // ExerciseLogger for the same lookup) does the
+                          // identical last-logged-set search in a single
+                          // backward pass with an early exit per session,
+                          // no full-history array materialized.
+                          const last = lastOf(sessions, e.k)
                           const lastStr = last
                             ? `Last ${formatLastSets(last, e.u, unitSystem)}`
                             : 'First time — start at target'

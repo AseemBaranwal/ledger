@@ -16,7 +16,15 @@ const MAX_MESSAGE_CHARS = 4000
 // slice is supposed to enforce. Set well above 24 so a legitimate client is
 // never rejected by its own normal behavior.
 const MAX_INBOUND_MESSAGES = 40
-const MAX_TOOL_ITERATIONS = 4
+// Bumped from 4 — analysis of real chat_logs found a genuine case (7 tool
+// calls: get_training_data + 6x suggest_exercise_swap, spread across
+// exactly 4 iterations) that exhausted the old cap while the model still
+// wanted to keep going, falling back to the generic "try asking again"
+// reply below instead of a real answer. The extra headroom here is paired
+// with the FORCED-text-only final iteration below — the two together mean
+// a real answer is now near-guaranteed even on a big multi-suggestion turn,
+// not just less likely to run out.
+const MAX_TOOL_ITERATIONS = 5
 const DEFAULT_DAILY_LIMIT = 60
 const DEFAULT_WINDOW_LIMIT = 10
 
@@ -223,7 +231,17 @@ export default async function handler(req: Request): Promise<Response> {
       send({ type: 'status', message: 'Thinking…' })
 
       for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-        const response = await callAnthropic({ systemPrompt, messages, tools: TOOLS })
+        // The final iteration omits `tools` entirely rather than letting
+        // the model request yet another one — with no tools available it
+        // MUST respond with text, so `stop_reason` naturally comes back
+        // something other than 'tool_use' and the block below always
+        // takes the "give a real reply" path instead of running out of
+        // loop with nothing to show. Confirmed against real chat_logs data
+        // that the old unconditional-tools version could exhaust every
+        // iteration on tool_use and fall back to a placeholder message
+        // (see MAX_TOOL_ITERATIONS's own comment for the specific case).
+        const isLastIteration = iteration === MAX_TOOL_ITERATIONS - 1
+        const response = await callAnthropic({ systemPrompt, messages, tools: isLastIteration ? undefined : TOOLS })
 
         totalInputTokens += response.usage.input_tokens || 0
         totalOutputTokens += response.usage.output_tokens || 0
@@ -340,7 +358,14 @@ export default async function handler(req: Request): Promise<Response> {
 
         messages.push({ role: 'user', content: toolResults })
 
-        if (iteration === MAX_TOOL_ITERATIONS - 1) {
+        // Effectively unreachable now, not the common exhaustion path it
+        // used to be — the final iteration is called with no tools at all
+        // (see isLastIteration above), so a real stop_reason other than
+        // 'tool_use' always comes back and the loop breaks out through the
+        // check above before ever reaching here on that iteration. Kept as
+        // defense-in-depth rather than assumed impossible, in case the API
+        // ever returns tool_use with no tools offered.
+        if (isLastIteration) {
           reply = "I pulled up your data but need another step to finish — try asking again, maybe a bit more specifically."
         } else {
           send({ type: 'status', message: 'Thinking…' })

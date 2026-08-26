@@ -1,6 +1,7 @@
 import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { getBodyWeightData } from '../_lib/bodyWeightData.js'
+import { getRecoveryData } from '../_lib/recoveryData.js'
 
 // See message.ts (api/chat) for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
@@ -27,20 +28,18 @@ interface WeightRow {
   weight_lb: number
 }
 
-// Pushes newly-recorded google_health_weight rows into a "Weight" tab, same
-// incremental/checkpointed shape as the session sync above — a separate
-// function since it has its own checkpoint column (profiles
-// .weight_sheet_sync_checkpoint) and its own POST `type`. getBodyWeightData
-// is called first specifically to refresh google_health_weight with
-// whatever's new since the last sync (it upserts as a side effect — see
-// api/_lib/bodyWeightData.ts) before reading rows to export; skipped
-// entirely, not an error, when Google Health isn't connected.
-//
-// NOTE: the live Apps Script Web App (not in this repo — see CLAUDE.md's
-// "Workout data lives in Supabase" section) needs a `type === 'weight'` case
-// added by hand to actually write these into a Sheet tab, the same one-time
-// step issue #37 needed for the `type: 'targets'` case exportTargetsToSheet
-// .mjs relies on.
+// Pushes newly-recorded google_health_weight rows into the Apps Script's
+// EXISTING "Body" sheet, via its EXISTING `type: 'body'` handler
+// (`{d, wt, bf?, smm?, waist?, fer?}` → ensureBodySheet_()) — confirmed by
+// reading the live script directly, not assumed. This deliberately does
+// NOT use `type: 'weight'`: that type is already taken by a completely
+// different handler in the same script (upserts an EXERCISE's target
+// weight/reps/sets by `code` into the "Weights" sheet). Sending body-weight
+// rows under `type: 'weight'` would have silently landed in the wrong
+// sheet as a garbage row (`code: undefined`) — caught before this ever
+// shipped, not after. Reusing `type: 'body'` needs zero Apps Script
+// changes for weight; bf/smm/waist/fer are simply omitted, same as any
+// other partial update that handler already tolerates.
 async function syncWeightToSheet(
   userId: string,
   scriptUrl: string
@@ -70,7 +69,7 @@ async function syncWeightToSheet(
       const res = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'weight', d: row.d, weightLb: row.weight_lb }),
+        body: JSON.stringify({ type: 'body', d: row.d, wt: row.weight_lb }),
       })
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {
@@ -86,6 +85,78 @@ async function syncWeightToSheet(
   }
 
   return { weightExported, weightFailures }
+}
+
+interface RecoveryRow {
+  d: string
+  resting_heart_rate: number | null
+  hrv_ms: number | null
+  sleep_minutes: number | null
+  sleep_quality_index: number | null
+}
+
+// Same shape as syncWeightToSheet above, against google_health_recovery and
+// its own recovery_sheet_sync_checkpoint column. getRecoveryData is called
+// first to refresh the cache with anything new since the last sync — see
+// api/_lib/recoveryData.ts's cache-check, which means this costs a live
+// Google fetch only when today's reading isn't already cached, not on
+// every sync run.
+async function syncRecoveryToSheet(
+  userId: string,
+  scriptUrl: string
+): Promise<{ recoveryExported: number; recoveryFailures: number }> {
+  const recoveryResult = await getRecoveryData(userId, { days: 90 })
+  if (recoveryResult.status !== 'ok') return { recoveryExported: 0, recoveryFailures: 0 }
+
+  const { data: profile } = await supabaseAdmin()
+    .from('profiles')
+    .select('recovery_sheet_sync_checkpoint')
+    .eq('id', userId)
+    .single()
+  const since = (profile as { recovery_sheet_sync_checkpoint?: string | null } | null)?.recovery_sheet_sync_checkpoint ?? null
+
+  let query = supabaseAdmin()
+    .from('google_health_recovery')
+    .select('d,resting_heart_rate,hrv_ms,sleep_minutes,sleep_quality_index')
+    .eq('user_id', userId)
+    .order('d', { ascending: true })
+  if (since) query = query.gt('d', since)
+
+  const { data: rows } = await query
+  const recoveryRows = (rows || []) as unknown as RecoveryRow[]
+
+  let recoveryExported = 0
+  let recoveryFailures = 0
+  let checkpoint = since
+
+  for (const row of recoveryRows) {
+    try {
+      const res = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'recovery',
+          d: row.d,
+          restingHeartRate: row.resting_heart_rate,
+          hrvMs: row.hrv_ms,
+          sleepMinutes: row.sleep_minutes,
+          sleepQualityIndex: row.sleep_quality_index,
+        }),
+      })
+      const text = await res.text()
+      if (!res.ok || text.startsWith('error')) {
+        recoveryFailures++
+        continue
+      }
+      recoveryExported++
+      checkpoint = row.d
+      await (supabaseAdmin().from('profiles') as any).update({ recovery_sheet_sync_checkpoint: checkpoint }).eq('id', userId)
+    } catch {
+      recoveryFailures++
+    }
+  }
+
+  return { recoveryExported, recoveryFailures }
 }
 
 // Server-side counterpart to scripts/exportSessionsToSheet.mjs, triggered
@@ -173,9 +244,10 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const { weightExported, weightFailures } = await syncWeightToSheet(user.id, scriptUrl)
+  const { recoveryExported, recoveryFailures } = await syncRecoveryToSheet(user.id, scriptUrl)
 
-  return new Response(JSON.stringify({ success: true, exported, failures, weightExported, weightFailures }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
+  return new Response(
+    JSON.stringify({ success: true, exported, failures, weightExported, weightFailures, recoveryExported, recoveryFailures }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  )
 }

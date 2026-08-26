@@ -119,13 +119,14 @@ export function SyncTab() {
       const result = await syncSessionsToSheet()
       if (!result.success) {
         showNotification(result.error || 'Sheet sync failed', 'error')
-      } else if (result.exported === 0 && !result.weightExported) {
+      } else if (result.exported === 0 && !result.weightExported && !result.recoveryExported) {
         showNotification('Sheet already up to date', 'info')
       } else {
         const parts: string[] = []
         if (result.exported) parts.push(`${result.exported} session${result.exported === 1 ? '' : 's'}`)
         if (result.weightExported) parts.push(`${result.weightExported} weight reading${result.weightExported === 1 ? '' : 's'}`)
-        const totalFailures = result.failures + (result.weightFailures || 0)
+        if (result.recoveryExported) parts.push(`${result.recoveryExported} recovery reading${result.recoveryExported === 1 ? '' : 's'}`)
+        const totalFailures = result.failures + (result.weightFailures || 0) + (result.recoveryFailures || 0)
         const suffix = totalFailures ? ` (${totalFailures} failed)` : ''
         showNotification(`Synced ${parts.join(' and ')} to Sheet${suffix}`, totalFailures ? 'error' : 'success')
       }

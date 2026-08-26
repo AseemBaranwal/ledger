@@ -8,6 +8,7 @@ import {
   type CivilDate,
   type CivilDateTime,
 } from './googleHealth.js'
+import { supabaseAdmin } from './supabaseAdmin.js'
 
 // Recovery/readiness data for the Coach — resting heart rate, HRV, sleep,
 // and a derived sleep-quality index — pulled from Google Health (see issue
@@ -266,6 +267,33 @@ function localDateFromUtc(isoUtc: string | undefined, utcOffsetDuration: string 
   return `${year}-${month}-${day}`
 }
 
+// Best-effort side-effect cache — never lets a persistence failure break
+// the actual response, same posture as api/chat/message.ts's logChatCall
+// and bodyWeightData.ts's own upsert. Does NOT change what this function
+// returns or how fresh it is; the Coach still always gets a live fetch.
+// This exists purely so the Trends tab's Recovery domain and the Sheet
+// export have real rows to read without needing Coach-grade freshness on
+// every read — see google_health_recovery.sql's file comment.
+async function upsertRecoveryDays(userId: string, days: RecoveryDay[]): Promise<void> {
+  if (!days.length) return
+  try {
+    const rows = days.map((d) => ({
+      user_id: userId,
+      d: d.date,
+      resting_heart_rate: d.restingHeartRate,
+      hrv_ms: d.hrvMs,
+      sleep_minutes: d.sleepMinutes,
+      sleep_quality_index: d.sleepQualityIndex,
+      synced_at: new Date().toISOString(),
+    }))
+    // See exchange.ts's note on why supabase-js needs the `any` cast here —
+    // no generated Database type in this project, so payloads infer as never.
+    await (supabaseAdmin().from('google_health_recovery') as any).upsert(rows, { onConflict: 'user_id,d' })
+  } catch {
+    // ignore — the fetched data still reaches the caller either way
+  }
+}
+
 function median(values: number[]): number | null {
   if (!values.length) return null
   const sorted = [...values].sort((a, b) => a - b)
@@ -400,6 +428,77 @@ function computeReadiness(deltas: RecoveryDeltas | null): Readiness | null {
   return 'normal'
 }
 
+// Pure — the comparison-against-baseline/flags/readiness math, factored out
+// so it can run on either a freshly live-fetched `days` array or one read
+// back from the google_health_recovery cache (see the cache-check at the
+// top of getRecoveryData below). Keeping this in exactly one place means
+// the cache path can never silently drift from what a live fetch would
+// have computed for the same days.
+function buildRecoveryResult(days: RecoveryDay[], unavailable: string[] = []): RecoveryResult {
+  // Median, not mean — one travel night or one missed-strap reading
+  // shouldn't move the number the Coach compares today against. Computed
+  // from HISTORY ONLY (every day except the latest) — including today's
+  // own reading in its own baseline would partially dilute the very
+  // number it's meant to be compared against, understating a real spike
+  // or dip and, for a short reduced-sleep streak, can even mask the
+  // streak's own flag by dragging the threshold down with it.
+  const history = days.slice(0, -1)
+  const baselines: RecoveryBaselines = {
+    restingHeartRate: round(median(history.map((d) => d.restingHeartRate).filter((v): v is number => v != null))),
+    hrvMs: round(median(history.map((d) => d.hrvMs).filter((v): v is number => v != null)), 1),
+    sleepMinutes: round(median(history.map((d) => d.sleepMinutes).filter((v): v is number => v != null))),
+    sleepQualityIndex: round(
+      median(history.map((d) => d.sleepQualityIndex).filter((v): v is number => v != null))
+    ),
+  }
+
+  const latest = days.length ? days[days.length - 1] : null
+  const deltas = computeDeltas(latest, baselines)
+  const flags = computeFlags(deltas, days, baselines)
+  const readiness = computeReadiness(deltas)
+
+  return unavailable.length
+    ? { status: 'ok', days, baselines, latest, deltas, flags, readiness, unavailable }
+    : { status: 'ok', days, baselines, latest, deltas, flags, readiness }
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+interface CachedRecoveryRow {
+  d: string
+  resting_heart_rate: number | null
+  hrv_ms: number | null
+  sleep_minutes: number | null
+  sleep_quality_index: number | null
+}
+
+// Reads whatever's already cached for the requested window — used both to
+// decide freshness (does today's row exist?) and, once it does, to serve
+// the response without a live Google round-trip at all. RHR/HRV/sleep are
+// daily aggregates: a row already cached for today is exactly as fresh as
+// fetching again right now would be (Google won't recompute a finished
+// day's number mid-day), so this isn't a staleness tradeoff — the Coach
+// gets identical numbers either way, just without paying for three
+// redundant upstream calls when today's reading is already known.
+async function readCachedRecoveryDays(userId: string, windowDays: number): Promise<RecoveryDay[]> {
+  const since = daysAgo(windowDays - 1).toISOString().slice(0, 10)
+  const { data } = await supabaseAdmin()
+    .from('google_health_recovery')
+    .select('d, resting_heart_rate, hrv_ms, sleep_minutes, sleep_quality_index')
+    .eq('user_id', userId)
+    .gte('d', since)
+    .order('d', { ascending: true })
+  return ((data as unknown as CachedRecoveryRow[]) || []).map((r) => ({
+    date: r.d,
+    restingHeartRate: r.resting_heart_rate != null ? Number(r.resting_heart_rate) : null,
+    hrvMs: r.hrv_ms != null ? Number(r.hrv_ms) : null,
+    sleepMinutes: r.sleep_minutes != null ? Number(r.sleep_minutes) : null,
+    sleepQualityIndex: r.sleep_quality_index != null ? Number(r.sleep_quality_index) : null,
+  }))
+}
+
 export async function getRecoveryData(
   userId: string,
   opts?: { days?: number }
@@ -414,6 +513,19 @@ export async function getRecoveryData(
   try {
     const requested = opts?.days && opts.days > 0 ? Math.floor(opts.days) : DEFAULT_DAYS
     const windowDays = Math.min(requested, MAX_DAYS)
+
+    // Skip the three live Google round-trips entirely once today's reading
+    // is already cached — see readCachedRecoveryDays's comment for why
+    // that's safe. Best-effort: a cache-read failure just falls through to
+    // the normal live fetch below rather than failing the whole call.
+    try {
+      const cached = await readCachedRecoveryDays(userId, windowDays)
+      if (cached.some((d) => d.date === todayIso())) {
+        return buildRecoveryResult(cached)
+      }
+    } catch {
+      // fall through to the live fetch
+    }
 
     const end = new Date()
     const start = daysAgo(windowDays - 1)
@@ -541,27 +653,7 @@ export async function getRecoveryData(
       // would just pad the payload.
       .filter((d) => d.restingHeartRate != null || d.hrvMs != null || d.sleepMinutes != null)
 
-    // Median, not mean — one travel night or one missed-strap reading
-    // shouldn't move the number the Coach compares today against. Computed
-    // from HISTORY ONLY (every day except the latest) — including today's
-    // own reading in its own baseline would partially dilute the very
-    // number it's meant to be compared against, understating a real spike
-    // or dip and, for a short reduced-sleep streak, can even mask the
-    // streak's own flag by dragging the threshold down with it.
-    const history = days.slice(0, -1)
-    const baselines: RecoveryBaselines = {
-      restingHeartRate: round(median(history.map((d) => d.restingHeartRate).filter((v): v is number => v != null))),
-      hrvMs: round(median(history.map((d) => d.hrvMs).filter((v): v is number => v != null)), 1),
-      sleepMinutes: round(median(history.map((d) => d.sleepMinutes).filter((v): v is number => v != null))),
-      sleepQualityIndex: round(
-        median(history.map((d) => d.sleepQualityIndex).filter((v): v is number => v != null))
-      ),
-    }
-
-    const latest = days.length ? days[days.length - 1] : null
-    const deltas = computeDeltas(latest, baselines)
-    const flags = computeFlags(deltas, days, baselines)
-    const readiness = computeReadiness(deltas)
+    await upsertRecoveryDays(userId, days)
 
     // Names the metrics that genuinely couldn't be read this call, so the
     // Coach can say "no HRV data" rather than silently treating an outage
@@ -572,9 +664,7 @@ export async function getRecoveryData(
       sleep.error ? 'sleep' : null,
     ].filter((v): v is string => v != null)
 
-    return unavailable.length
-      ? { status: 'ok', days, baselines, latest, deltas, flags, readiness, unavailable }
-      : { status: 'ok', days, baselines, latest, deltas, flags, readiness }
+    return buildRecoveryResult(days, unavailable)
   } catch (e) {
     return { status: 'error', error: e instanceof Error ? e.message : 'Could not read recovery data.' }
   }

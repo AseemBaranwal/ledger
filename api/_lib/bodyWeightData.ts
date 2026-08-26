@@ -66,6 +66,32 @@ function daysAgo(n: number): Date {
   return d
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+interface CachedWeightRow {
+  d: string
+  weight_lb: number
+}
+
+// Reads whatever's already cached for the requested window, in ascending
+// date order — used both to decide freshness (does today's row exist?) and,
+// once it does, to serve the response without a live Google round-trip at
+// all. Weight is a daily aggregate: a row already cached for today is
+// exactly as fresh as fetching again right now would be, so this isn't a
+// staleness tradeoff, just skipping a redundant network call.
+async function readCachedWeightDays(userId: string, windowDays: number): Promise<WeightDay[]> {
+  const since = daysAgo(windowDays).toISOString().slice(0, 10)
+  const { data } = await supabaseAdmin()
+    .from('google_health_weight')
+    .select('d, weight_lb')
+    .eq('user_id', userId)
+    .gte('d', since)
+    .order('d', { ascending: true })
+  return ((data as unknown as CachedWeightRow[]) || []).map((r) => ({ date: r.d, weightLb: Number(r.weight_lb) }))
+}
+
 interface DailyRollupWeightPoint {
   civilStartTime?: CivilDateTime
   civilEndTime?: CivilDateTime
@@ -99,6 +125,20 @@ export async function getBodyWeightData(userId: string, opts?: { days?: number }
   try {
     const requested = opts?.days && opts.days > 0 ? Math.floor(opts.days) : DEFAULT_DAYS
     const windowDays = Math.min(requested, MAX_DAYS)
+
+    // Skip the live Google round-trip entirely once today's reading is
+    // already cached — see readCachedWeightDays's comment for why that's
+    // safe (a daily aggregate doesn't get fresher within the same day).
+    // Best-effort: a cache-read failure just falls through to the normal
+    // live fetch below rather than failing the whole call.
+    try {
+      const cached = await readCachedWeightDays(userId, windowDays)
+      if (cached.some((d) => d.date === todayIso())) {
+        return { status: 'ok', days: cached, latest: cached[cached.length - 1] }
+      }
+    } catch {
+      // fall through to the live fetch
+    }
 
     const end = new Date()
     const start = daysAgo(windowDays)

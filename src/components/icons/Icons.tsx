@@ -142,3 +142,55 @@ export function SearchIcon({ size = '1em' }: IconProps) {
     </svg>
   )
 }
+
+export function RefreshIcon({ size = '1em' }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      style={{ width: size, height: size, display: 'inline-block' }}
+      stroke="currentColor"
+      fill="none"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+      <path d="M19.5 4.5v4.5H15" />
+    </svg>
+  )
+}
+
+export function UnlinkIcon({ size = '1em' }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      style={{ width: size, height: size, display: 'inline-block' }}
+      stroke="currentColor"
+      fill="none"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9.5 14.5l5-5" />
+      <path d="M10 8.5H8a3.5 3.5 0 0 0 0 7h2M14 15.5h2a3.5 3.5 0 0 0 0-7h-2" />
+    </svg>
+  )
+}
+
+// Rotates via the `.spin` keyframe in components.module.css — pass that
+// class name in `className` to animate it.
+export function SpinnerIcon({ size = '1em', className }: IconProps & { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      style={{ width: size, height: size, display: 'inline-block' }}
+      stroke="currentColor"
+      fill="none"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    >
+      <path d="M12 3a9 9 0 1 0 9 9" />
+    </svg>
+  )
+}

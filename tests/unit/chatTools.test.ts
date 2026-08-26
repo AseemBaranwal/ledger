@@ -41,10 +41,11 @@ describe('formatSets', () => {
 })
 
 describe('TOOLS', () => {
-  it('defines exactly the four tools the coach can call', () => {
+  it('defines exactly the five tools the coach can call', () => {
     expect(TOOLS.map((t) => t.name)).toEqual([
       'get_training_data',
       'get_recovery_data',
+      'get_body_weight_data',
       'suggest_exercise_adjustment',
       'suggest_exercise_swap',
     ])

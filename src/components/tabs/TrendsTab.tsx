@@ -496,20 +496,30 @@ export function TrendsTab() {
                 [
                   { key: 'restingHeartRate' as const, label: 'Resting heart rate', colour: '#FF6B4A', unit: 'bpm' },
                   { key: 'hrvMs' as const, label: 'HRV', colour: '#4C9BE8', unit: 'ms' },
+                  // Sleep duration formats its "now" stat as "7h 12m", not a
+                  // raw minute count — the chart itself still plots minutes
+                  // (a line chart has no use for the formatted string).
+                  { key: 'sleepMinutes' as const, label: 'Sleep', colour: '#00C2A8', unit: '', format: formatSleepDuration },
+                  // Ledger's own estimate (see recoveryData.ts), not
+                  // Fitbit's or Google's — neither exposes anything like it.
+                  // Framed as such in the card sub-label, same rule the
+                  // Coach's own system prompt follows for this field.
+                  { key: 'sleepQualityIndex' as const, label: 'Sleep quality (estimated)', colour: '#B57CF6', unit: '/100' },
                 ]
-              ).map(({ key, label, colour, unit }) => {
+              ).map(({ key, label, colour, unit, format }) => {
                 const pts = recoveryData.days
                   .filter((d) => d[key] != null)
                   .map((d) => ({ v: d[key] as number, l: fmtD(d.date).replace(/^\w+, /, '') }))
                 if (pts.length < 2) return null
+                const now = pts[pts.length - 1].v
                 return (
                   <div key={key} className={styles.chartCard}>
                     <div className={styles.chartHd}>
                       <h3>{label}</h3>
                     </div>
                     <div className={styles.statNow}>
-                      <span className="mono">{pts[pts.length - 1].v}</span>
-                      <span className={styles.statUnit}>{unit}</span>
+                      <span className="mono">{format ? format(now) : now}</span>
+                      {unit && <span className={styles.statUnit}>{unit}</span>}
                     </div>
                     <LineChart pts={pts} colour={colour} />
                   </div>

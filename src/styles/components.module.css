@@ -871,6 +871,151 @@ svg.chart {
   position: relative;
 }
 
+/* ── trend domains (Lifts / Body / Recovery) — a pill row above whichever
+   domain's content renders below it. Purpose-named rather than reusing the
+   Sync tab's .chip classes: those encode "connected or not," these encode
+   "currently selected view" — different enough meanings that sharing a
+   class would blur the two. ── */
+.domainRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.domainPill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-2);
+  background: var(--surface);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--dim);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.domainPill svg {
+  width: 15px;
+  height: 15px;
+}
+
+.domainPill.active {
+  border-color: transparent;
+  background: var(--amber);
+  color: var(--ink);
+}
+
+.domainPill:active {
+  transform: scale(0.97);
+}
+
+/* ── recovery stat row (Resting HR / HRV / Sleep) — deliberately no
+   up/down green-red coloring on these numbers themselves, unlike lift and
+   body-weight deltas: "up" isn't uniformly good or bad across these three
+   metrics (higher HRV is good, higher resting HR usually isn't), so
+   color-coding the raw delta would risk implying the wrong thing. The
+   READINESS badge and flags below carry the actual color-coded judgment
+   instead, since those are already computed server-side with the correct
+   semantics baked in. ── */
+.statRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.statRow .stat {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 12px;
+}
+
+.statRow .l {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 5px;
+}
+
+.statRow .v {
+  font-family: 'JetBrains Mono';
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.statRow .d {
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-top: 3px;
+}
+
+.flagRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.flagRow:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.flagRow:last-child {
+  padding-bottom: 0;
+}
+
+.flagDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex: none;
+}
+
+/* ── Google Health connect/reconnect prompt — shown in place of the Body
+   or Recovery domain's content whenever there's no usable connection, so
+   selecting either tab always shows something actionable instead of an
+   empty screen. ── */
+.healthPrompt {
+  text-align: center;
+  padding: 30px 20px;
+}
+
+.healthPromptBadge {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+  color: #fff;
+}
+
+.healthPromptTitle {
+  font-size: 14.5px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.healthPromptBody {
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
 .statNow {
   display: flex;
   align-items: baseline;

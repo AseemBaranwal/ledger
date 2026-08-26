@@ -52,6 +52,13 @@ async function authedFetch(path: string, body: unknown): Promise<Response> {
   })
 }
 
+async function authedGet(path: string): Promise<Response> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Not signed in')
+  return fetch(path, { headers: { Authorization: `Bearer ${token}` } })
+}
+
 export async function exchangeGoogleHealthCode(code: string): Promise<void> {
   const redirectUri = `${window.location.origin}${GOOGLE_HEALTH_CALLBACK_PATH}`
   const res = await authedFetch('/api/google-health/exchange', { code, redirectUri })
@@ -95,4 +102,68 @@ export async function getGoogleHealthConnection(userId: string): Promise<GoogleH
     scopes: data.scopes ?? null,
     refreshFailedAt: data.refresh_failed_at ?? null,
   }
+}
+
+export interface WeightDay {
+  date: string
+  weightLb: number
+}
+
+export type WeightDataResult =
+  | { status: 'ok'; days: WeightDay[]; latest: WeightDay | null }
+  | { status: 'not_connected' }
+  | { status: 'needs_reconnect'; reason: string }
+  | { status: 'error'; error: string }
+
+// Same underlying fetch (and same DB-persisting side effect) as the Coach's
+// get_body_weight_data tool — see api/google-health/weight.ts. Requests a
+// much wider window than the Coach's own 6-day default since this feeds the
+// Trends tab's line chart, which wants a real trend shape, not just a
+// near-term grounding snapshot.
+export async function fetchBodyWeightData(days = 90): Promise<WeightDataResult> {
+  const res = await authedGet(`/api/google-health/weight?days=${days}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Could not read body-weight data')
+  return data as WeightDataResult
+}
+
+export interface RecoveryDay {
+  date: string
+  restingHeartRate: number | null
+  hrvMs: number | null
+  sleepMinutes: number | null
+  sleepQualityIndex: number | null
+}
+
+export interface RecoveryDeltas {
+  restingHeartRate: number | null
+  hrvPercent: number | null
+  sleepMinutes: number | null
+}
+
+export type Readiness = 'primed' | 'normal' | 'compromised'
+
+export type RecoveryDataResult =
+  | {
+      status: 'ok'
+      days: RecoveryDay[]
+      latest: RecoveryDay | null
+      deltas: RecoveryDeltas | null
+      flags: string[]
+      readiness: Readiness | null
+      unavailable?: string[]
+    }
+  | { status: 'not_connected' }
+  | { status: 'needs_reconnect'; reason: string }
+  | { status: 'error'; error: string }
+
+// Same underlying fetch as the Coach's get_recovery_data tool — see
+// api/google-health/recovery.ts. Requests a wider window than the Coach's
+// own 14-day default since the Trends tab's per-metric charts want a real
+// trend shape.
+export async function fetchRecoveryData(days = 30): Promise<RecoveryDataResult> {
+  const res = await authedGet(`/api/google-health/recovery?days=${days}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Could not read recovery data')
+  return data as RecoveryDataResult
 }

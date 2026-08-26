@@ -10,6 +10,11 @@ export interface SheetSyncResult {
   success: boolean
   exported: number
   failures: number
+  // Always 0 (not absent) when Google Health isn't connected or has nothing
+  // new to export — the notification only mentions weight when this is > 0,
+  // so the two "nothing to report" cases don't need to be told apart.
+  weightExported?: number
+  weightFailures?: number
   error?: string
 }
 

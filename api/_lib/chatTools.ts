@@ -9,6 +9,11 @@ import type { ToolDefinition } from './anthropic.js'
 export { getRecoveryData } from './recoveryData.js'
 export type { RecoveryResult, RecoveryDay, RecoveryBaselines } from './recoveryData.js'
 
+// Same pattern for get_body_weight_data — handler lives in
+// bodyWeightData.ts.
+export { getBodyWeightData } from './bodyWeightData.js'
+export type { WeightResult, WeightDay } from './bodyWeightData.js'
+
 export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
@@ -42,6 +47,20 @@ export const TOOLS: ToolDefinition[] = [
         days: {
           type: 'number',
           description: 'How many days back to look. Defaults to 14 if omitted; heart-rate metrics are capped at 14 days by the upstream API regardless.',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_body_weight_data',
+    description:
+      "Reads body-weight readings (from a smart scale synced to Google Health, not a manual log) as `days` (each `{date, weightLb}`, already in lb) and `latest` (the most recent reading, or null if the window has none). Defaults to the last 6 days if `days` isn't given — a short window on purpose, since body weight fluctuates day to day (hydration, food timing, time of measurement) and this tool is meant for grounding a near-term nutrition/recomposition conversation, not for a long-range trend (the app's own Trends tab charts that separately). Don't compute a rate of change or call something a real trend off 2-3 points — say what the readings show plainly and let the person draw conclusions, or ask for a wider `days` window if a longer view is actually needed. Same two routine non-error states as get_recovery_data: `status` may be `not_connected` (never linked) or `needs_reconnect` (expired — normal, ~weekly) — mention it in one short clause and move on, don't apologize or treat it as broken.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        days: {
+          type: 'number',
+          description: 'How many days back to look. Defaults to 6 if omitted.',
         },
       },
     },

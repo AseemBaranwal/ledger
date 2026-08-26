@@ -1,13 +1,62 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useSessionStore, useUIStore, useAuthStore, useStravaStore, useGoogleHealthStore, useUnitStore } from '@/store'
 import { stravaConfigured } from '@/services/strava'
 import { googleHealthConfigured } from '@/services/googleHealth'
 import { sheetSyncConfigured, syncSessionsToSheet } from '@/services/sheetSync'
 import { Avatar } from '@/components/layout'
+import { StravaMark, GoogleHealthMark } from '@/components/icons/BrandIcons'
+import { SpinnerIcon } from '@/components/icons/Icons'
 import type { UnitSystem } from '@/services/units'
 import type { Session } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
+
+const STRAVA_ORANGE = '#FC4C02'
+const GOOGLE_BLUE = '#4285F4'
+
+type ConnState = 'off' | 'on' | 'warn' | 'busy'
+
+// A pill-shaped chip per third-party connection, sized to its content so
+// several sit side by side on one line. The icon badge alone carries the
+// entire status signal — a hollow muted outline when disconnected, filled
+// solid with the service's own brand color once linked — rather than a
+// checkmark, trailing label, or a second button. One tap does the whole
+// job: connect when off, disconnect when on, reconnect when Google's
+// weekly token expiry (see the Google Health block below) needs it.
+function ConnectionChip({
+  brandIcon,
+  brandColor,
+  label,
+  state,
+  onPress,
+  disabled,
+}: {
+  brandIcon: ReactNode
+  brandColor: string
+  label: string
+  state: ConnState
+  onPress: () => void
+  disabled?: boolean
+}) {
+  const busy = state === 'busy'
+  const badgeBg = state === 'on' ? brandColor : state === 'warn' ? 'var(--amber)' : 'transparent'
+  const badgeColor = state === 'on' ? '#fff' : state === 'warn' ? 'var(--ink)' : 'var(--dim)'
+
+  return (
+    <button
+      className={`${styles.chip} ${state === 'on' ? styles.chipOn : ''} ${state === 'warn' ? styles.chipWarn : ''}`}
+      onClick={onPress}
+      disabled={disabled || busy}
+      aria-label={state === 'off' ? `Connect ${label}` : state === 'warn' ? `Reconnect ${label}` : `Disconnect ${label}`}
+      aria-pressed={state === 'on' || state === 'warn'}
+    >
+      <span className={styles.chipBadge} style={{ background: badgeBg, color: badgeColor }}>
+        {busy ? <SpinnerIcon size="14px" className={styles.spin} /> : brandIcon}
+      </span>
+      <span className={styles.chipLabel}>{label}</span>
+    </button>
+  )
+}
 
 function timeAgo(ms: number | null): string {
   if (!ms) return 'never'
@@ -41,7 +90,6 @@ export function SyncTab() {
   const setUnitSystem = useUnitStore((s) => s.setUnitSystem)
 
   const stravaConnected = useStravaStore((s) => s.connected)
-  const stravaAthleteName = useStravaStore((s) => s.athleteName)
   const stravaChecking = useStravaStore((s) => s.checking)
   const stravaDisconnecting = useStravaStore((s) => s.disconnecting)
   const connectStrava = useStravaStore((s) => s.connect)
@@ -52,7 +100,6 @@ export function SyncTab() {
   const googleHealthDisconnecting = useGoogleHealthStore((s) => s.disconnecting)
   const connectGoogleHealth = useGoogleHealthStore((s) => s.connect)
   const disconnectGoogleHealthAction = useGoogleHealthStore((s) => s.disconnect)
-  const googleHealthConnectedAt = useGoogleHealthStore((s) => s.connectedAt)
 
   const dedupKey = (s: Session) => `${s.d}|${s.s}`
 
@@ -101,6 +148,19 @@ export function SyncTab() {
     } catch (error) {
       showNotification('Failed to disconnect Google Health', 'error')
     }
+  }
+
+  // The chip is a single toggle: connect when off, disconnect when
+  // healthy-connected, reconnect when Google's weekly token expiry (see
+  // the needs-reconnect note below) has left it in the amber state.
+  const handleStravaChipPress = () => {
+    if (stravaConnected) handleDisconnectStrava()
+    else connectStrava()
+  }
+
+  const handleGoogleHealthChipPress = () => {
+    if (googleHealthConnected && !googleHealthNeedsReconnect) handleDisconnectGoogleHealth()
+    else connectGoogleHealth()
   }
 
   const handleDownloadBackup = () => {
@@ -199,114 +259,49 @@ export function SyncTab() {
         )}
       </div>
 
-      {/* Connections — one section for every linked third-party account
-          (issue #61: these used to render as separate top-level sections,
-          which stopped reading as "one group of connections" the moment a
-          second provider — Google Health — existed). */}
+      {/* Connections — both chips share one line (issue #61 grouped these
+          under one section; this pass condenses each from a heading +
+          paragraph + full-width button down to a pill: brand icon + name,
+          status conveyed only by the badge's own color). */}
       <div className={styles.sec}>
         <h2>Connections</h2>
         <div className={styles.rule} />
       </div>
-      <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        Strava
-      </div>
-      {stravaChecking ? (
-        <div className={styles.note}>Checking connection…</div>
-      ) : stravaConnected ? (
-        <>
-          <div className={styles.note}>
-            Connected as {stravaAthleteName || 'your Strava account'}. New weight-training sessions post there
-            automatically.
-          </div>
-          <button
-            className={`${styles.btn} ${styles.ghost}`}
-            onClick={handleDisconnectStrava}
-            disabled={stravaDisconnecting}
-          >
-            {stravaDisconnecting ? 'Disconnecting…' : 'Disconnect Strava'}
-          </button>
-        </>
-      ) : (
-        <>
-          <div className={styles.note}>
-            Automatically post your lifting sessions to Strava as activities.
-          </div>
-          <button className={`${styles.btn} ${styles.ghost}`} onClick={connectStrava} disabled={!stravaConfigured}>
-            Connect Strava
-          </button>
-          {!stravaConfigured && <div className={styles.warn}>Strava isn't configured yet.</div>}
-        </>
-      )}
 
-      {/* Google Health — three states, not two. While this app's Google
-          consent screen sits in "Testing" status, Google force-expires the
-          refresh token every 7 days, so "connected but needs reauthorizing"
-          is a routine state the connection passes through weekly, not a
-          failure. It gets its own visible-but-calm prompt (amber, matching
-          the app's own accent) rather than styles.warn, which is red and
-          reads as something broke. */}
-      <div style={{ marginTop: '20px', marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        Google Health
+      <div className={styles.connRow}>
+        <ConnectionChip
+          brandIcon={<StravaMark size="16px" />}
+          brandColor={STRAVA_ORANGE}
+          label="Strava"
+          state={stravaChecking || stravaDisconnecting ? 'busy' : stravaConnected ? 'on' : 'off'}
+          onPress={handleStravaChipPress}
+          disabled={!stravaConfigured}
+        />
+        {/* Google Health has three states, not two — while this app's
+            consent screen sits in "Testing" status, Google force-expires
+            the refresh token every 7 days, so "connected but needs
+            reauthorizing" is routine, not a failure. The badge goes amber
+            for that state (matching the app's own accent, not the red
+            .warn box) and a one-line note stays below, since that's the
+            one case where color alone doesn't say what to do or why —
+            every other state needs none. */}
+        <ConnectionChip
+          brandIcon={<GoogleHealthMark size="16px" />}
+          brandColor={GOOGLE_BLUE}
+          label="Google Health"
+          state={googleHealthDisconnecting ? 'busy' : googleHealthNeedsReconnect ? 'warn' : googleHealthConnected ? 'on' : 'off'}
+          onPress={handleGoogleHealthChipPress}
+          disabled={!googleHealthConfigured}
+        />
       </div>
-      {googleHealthConnected ? (
-        <>
-          {googleHealthNeedsReconnect ? (
-            <div
-              style={{
-                background: 'rgba(255, 176, 32, 0.08)',
-                border: '1px solid var(--amber-dim)',
-                borderRadius: '10px',
-                padding: '11px 13px',
-                fontSize: '12.5px',
-                lineHeight: 1.5,
-                color: 'var(--muted)',
-                marginBottom: '12px',
-              }}
-            >
-              <b style={{ color: 'var(--amber)', fontWeight: 600 }}>Time to reconnect.</b> Google expires this app's
-              access every 7 days while its consent screen is in testing. Reconnect to keep resting heart rate, HRV,
-              and sleep reaching the Coach.
-            </div>
-          ) : (
-            <div className={styles.note}>
-              Connected {timeAgo(googleHealthConnectedAt ? Date.parse(googleHealthConnectedAt) : null)}. The Coach
-              reads your resting heart rate, HRV, and sleep to factor recovery into its advice.
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {googleHealthNeedsReconnect && (
-              <button
-                className={`${styles.btn} ${styles.primary}`}
-                onClick={connectGoogleHealth}
-                disabled={!googleHealthConfigured}
-              >
-                Reconnect
-              </button>
-            )}
-            <button
-              className={`${styles.btn} ${styles.ghost}`}
-              onClick={handleDisconnectGoogleHealth}
-              disabled={googleHealthDisconnecting}
-            >
-              {googleHealthDisconnecting ? 'Disconnecting…' : 'Disconnect Google Health'}
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className={styles.note}>
-            Share resting heart rate, HRV, and sleep from your watch so the Coach factors recovery into its advice.
-          </div>
-          <button
-            className={`${styles.btn} ${styles.ghost}`}
-            onClick={connectGoogleHealth}
-            disabled={!googleHealthConfigured}
-          >
-            Connect Google Health
-          </button>
-          {!googleHealthConfigured && <div className={styles.warn}>Google Health isn't configured yet.</div>}
-        </>
+      {!stravaConfigured && <div className={styles.warn}>Strava isn't configured yet.</div>}
+      {googleHealthNeedsReconnect && (
+        <div className={styles.note}>
+          Google expires access weekly while its consent screen is in testing — reconnect to keep recovery data
+          reaching the Coach.
+        </div>
       )}
+      {!googleHealthConfigured && <div className={styles.warn}>Google Health isn't configured yet.</div>}
 
       {/* Units — defaults from the browser's locale on first sign-in
           (e.g. en-US -> lb, en-IN -> kg) but never overwrites an explicit

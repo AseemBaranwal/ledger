@@ -643,6 +643,86 @@
   color: var(--dim);
 }
 
+/* ── connection chips (Strava / Google Health) — pill-shaped, sized to
+   content so both sit side by side on one line. The icon badge alone
+   carries the status signal (hollow/muted when off, filled with the
+   service's own brand color once linked) — no checkmark, no trailing
+   label, no second button. One tap does the whole job: connect, or
+   disconnect, or (Google Health's amber state) reconnect. ── */
+.connRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: var(--tap);
+  padding: 6px 16px 6px 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-2);
+  background: var(--surface);
+  transition: border-color 0.15s, opacity 0.12s;
+}
+
+.chip:active {
+  transform: scale(0.97);
+}
+
+.chip:disabled {
+  opacity: 0.5;
+}
+
+.chipOn {
+  border-color: var(--line-2);
+}
+
+.chipWarn {
+  border-color: rgba(255, 176, 32, 0.5);
+}
+
+.chipBadge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: 16px;
+  border: 1.5px solid transparent;
+  transition: background 0.15s, color 0.15s;
+}
+
+.chip:not(.chipOn):not(.chipWarn) .chipBadge {
+  border-color: var(--line-2);
+}
+
+.chipLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ── history ─────────────────────────────────────────────── */
 .hrow {
   display: flex;

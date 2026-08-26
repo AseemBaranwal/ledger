@@ -28,6 +28,13 @@ export const DATA_TYPE = {
   restingHeartRate: 'daily-resting-heart-rate',
   hrv: 'daily-heart-rate-variability',
   sleep: 'sleep',
+  // Unlike the three above, `weight` IS one of the data types dailyRollUp
+  // supports — confirmed against the live discovery doc's
+  // DailyRollupDataPoint response schema, which documents a `weight` field
+  // (WeightRollupValue) alongside steps/distance/etc. See
+  // api/_lib/bodyWeightData.ts for the actual fetch, which uses
+  // rollUpDataPoints() below instead of listDataPoints's GET+filter pattern.
+  weight: 'weight',
 } as const
 
 interface StoredConnection {
@@ -227,6 +234,14 @@ export interface CivilDateTime {
   date: CivilDate
 }
 
+// Confirmed against the live discovery doc's CivilTimeInterval schema:
+// { start: CivilDateTime, end: CivilDateTime } — a closed-open range, same
+// wrapping requirement as CivilDateTime itself (no bare {year,month,day}).
+export interface CivilTimeInterval {
+  start: CivilDateTime
+  end: CivilDateTime
+}
+
 export function toCivilDate(d: Date): CivilDate {
   return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() }
 }
@@ -276,4 +291,22 @@ export async function googleHealthRequest(
     throw err
   }
   return parsed
+}
+
+// `POST .../dataPoints:dailyRollUp` — distinct from googleHealthRequest's
+// bare GET+filter usage above (that's the `list` pattern recoveryData.ts
+// uses for sleep/RHR/HRV, all three of which explicitly reject dailyRollUp
+// with a 400). Weight is one of the data types the response union DOES
+// support (see DATA_TYPE.weight's comment), so this is the simpler shape:
+// one POST returns an already-aggregated per-civil-day average instead of
+// raw samples the caller would otherwise have to bucket by date itself.
+export async function rollUpDataPoints(
+  accessToken: string,
+  dataType: string,
+  range: CivilTimeInterval
+): Promise<any> {
+  return googleHealthRequest(accessToken, `users/me/dataTypes/${dataType}/dataPoints:dailyRollUp`, {
+    method: 'POST',
+    body: { range },
+  })
 }

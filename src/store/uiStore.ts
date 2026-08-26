@@ -5,6 +5,10 @@ interface UIStore {
   activeTab: 'today' | 'history' | 'trends' | 'sync' | 'coach'
   expandedHistoryRow: string | null
   selectedTrendGroup: string
+  // Top-level Trends category — Lifts (muscle-group exercise charts) vs.
+  // Body/Recovery (Google Health metrics). Separate from selectedTrendGroup,
+  // which only ever applies within Lifts.
+  selectedTrendDomain: 'lifts' | 'body' | 'recovery'
   notifications: Notification[]
   timerActive: boolean
   timerSeconds: number
@@ -15,6 +19,7 @@ interface UIStore {
   setTab: (tab: 'today' | 'history' | 'trends' | 'sync' | 'coach') => void
   toggleExpandHistory: (id: string) => void
   setTrendGroup: (group: string) => void
+  setTrendDomain: (domain: 'lifts' | 'body' | 'recovery') => void
   showNotification: (message: string, type: 'success' | 'error' | 'info') => void
   dismissNotification: (id: string) => void
   setTimer: (seconds: number, active: boolean) => void
@@ -28,6 +33,7 @@ export const useUIStore = create<UIStore>((set) => ({
   activeTab: 'today',
   expandedHistoryRow: null,
   selectedTrendGroup: 'All',
+  selectedTrendDomain: 'lifts',
   notifications: [],
   timerActive: false,
   timerSeconds: 0,
@@ -42,6 +48,8 @@ export const useUIStore = create<UIStore>((set) => ({
   })),
 
   setTrendGroup: (group) => set({ selectedTrendGroup: group }),
+
+  setTrendDomain: (domain) => set({ selectedTrendDomain: domain }),
 
   showNotification: (message, type) => set((state) => ({
     notifications: [

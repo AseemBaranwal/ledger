@@ -28,20 +28,18 @@ interface WeightRow {
   weight_lb: number
 }
 
-// Pushes newly-recorded google_health_weight rows into a "Weight" tab, same
-// incremental/checkpointed shape as the session sync above — a separate
-// function since it has its own checkpoint column (profiles
-// .weight_sheet_sync_checkpoint) and its own POST `type`. getBodyWeightData
-// is called first specifically to refresh google_health_weight with
-// whatever's new since the last sync (it upserts as a side effect — see
-// api/_lib/bodyWeightData.ts) before reading rows to export; skipped
-// entirely, not an error, when Google Health isn't connected.
-//
-// NOTE: the live Apps Script Web App (not in this repo — see CLAUDE.md's
-// "Workout data lives in Supabase" section) needs a `type === 'weight'` case
-// added by hand to actually write these into a Sheet tab, the same one-time
-// step issue #37 needed for the `type: 'targets'` case exportTargetsToSheet
-// .mjs relies on.
+// Pushes newly-recorded google_health_weight rows into the Apps Script's
+// EXISTING "Body" sheet, via its EXISTING `type: 'body'` handler
+// (`{d, wt, bf?, smm?, waist?, fer?}` → ensureBodySheet_()) — confirmed by
+// reading the live script directly, not assumed. This deliberately does
+// NOT use `type: 'weight'`: that type is already taken by a completely
+// different handler in the same script (upserts an EXERCISE's target
+// weight/reps/sets by `code` into the "Weights" sheet). Sending body-weight
+// rows under `type: 'weight'` would have silently landed in the wrong
+// sheet as a garbage row (`code: undefined`) — caught before this ever
+// shipped, not after. Reusing `type: 'body'` needs zero Apps Script
+// changes for weight; bf/smm/waist/fer are simply omitted, same as any
+// other partial update that handler already tolerates.
 async function syncWeightToSheet(
   userId: string,
   scriptUrl: string
@@ -71,7 +69,7 @@ async function syncWeightToSheet(
       const res = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'weight', d: row.d, weightLb: row.weight_lb }),
+        body: JSON.stringify({ type: 'body', d: row.d, wt: row.weight_lb }),
       })
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {

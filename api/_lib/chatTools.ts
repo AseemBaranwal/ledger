@@ -156,11 +156,40 @@ export async function getTrainingData(
   ownerUserId: string,
   args: { exerciseCode?: string; sinceDate?: string; limit?: number }
 ): Promise<{ rows: TrainingDataRow[]; today: string; activeSwaps?: ActiveSwap[] } | { error: string }> {
-  const { data: profile } = await supabaseAdmin()
-    .from('profiles')
-    .select('exercise_substitutions, routine_config')
-    .eq('id', ownerUserId)
-    .single()
+  const sinceDate = args.sinceDate
+  const exerciseCode = args.exerciseCode
+  const limit = args.limit && args.limit > 0 ? Math.min(args.limit, 30) : 12
+
+  // `limit` caps session ROWS, not occurrences of `exerciseCode` — and a
+  // single exercise only appears on one of the ~5-6 session codes in the
+  // weekly rotation (e.g. Chest Supported Row is Pull-day only), so the
+  // default 12 most-recent rows might contain just 2-3 real occurrences of
+  // the exercise actually being asked about, not enough to see a genuine
+  // trend. Widen the underlying fetch specifically for this case — the
+  // returned `rows` stay small regardless (only matching-exercise rows
+  // survive the per-session filter below), so this doesn't meaningfully
+  // raise token cost, it just reaches back far enough in time to find
+  // enough real data points for the exercise in question.
+  const sessionFetchLimit = exerciseCode ? Math.min(limit * 6, 60) : limit
+
+  let sessionsQuery = supabaseAdmin()
+    .from('sessions')
+    .select('d, s, ex, n')
+    .eq('user_id', ownerUserId)
+    .eq('type', 'PROGRAM')
+    .order('d', { ascending: false })
+    .limit(sessionFetchLimit)
+  if (sinceDate) sessionsQuery = sessionsQuery.gte('d', sinceDate)
+
+  // The profile fetch (for substitutions/program names) and the sessions
+  // fetch don't depend on each other's results — running them concurrently
+  // instead of two sequential awaits saves a full Supabase round-trip on
+  // this hot path (get_training_data is called on essentially every Coach
+  // turn, per the system prompt's DATA HONESTY rule).
+  const [{ data: profile }, { data: sessionRows, error }] = await Promise.all([
+    supabaseAdmin().from('profiles').select('exercise_substitutions, routine_config').eq('id', ownerUserId).single(),
+    sessionsQuery,
+  ])
 
   const substitutions = (profile as { exercise_substitutions?: Record<string, { code: string; name: string }> } | null)?.exercise_substitutions || {}
   const activeSwaps: ActiveSwap[] = Object.entries(substitutions).map(([originalCode, sub]) => ({
@@ -185,32 +214,6 @@ export async function getTrainingData(
     }
   }
 
-  const sinceDate = args.sinceDate
-  const exerciseCode = args.exerciseCode
-  const limit = args.limit && args.limit > 0 ? Math.min(args.limit, 30) : 12
-
-  // `limit` caps session ROWS, not occurrences of `exerciseCode` — and a
-  // single exercise only appears on one of the ~5-6 session codes in the
-  // weekly rotation (e.g. Chest Supported Row is Pull-day only), so the
-  // default 12 most-recent rows might contain just 2-3 real occurrences of
-  // the exercise actually being asked about, not enough to see a genuine
-  // trend. Widen the underlying fetch specifically for this case — the
-  // returned `rows` stay small regardless (only matching-exercise rows
-  // survive the per-session filter below), so this doesn't meaningfully
-  // raise token cost, it just reaches back far enough in time to find
-  // enough real data points for the exercise in question.
-  const sessionFetchLimit = exerciseCode ? Math.min(limit * 6, 60) : limit
-
-  let query = supabaseAdmin()
-    .from('sessions')
-    .select('d, s, ex, n')
-    .eq('user_id', ownerUserId)
-    .eq('type', 'PROGRAM')
-    .order('d', { ascending: false })
-    .limit(sessionFetchLimit)
-  if (sinceDate) query = query.gte('d', sinceDate)
-
-  const { data: sessionRows, error } = await query
   if (error) return { error: 'Could not read training data right now.' }
 
   const sessions = (sessionRows || []) as SheetSession[]

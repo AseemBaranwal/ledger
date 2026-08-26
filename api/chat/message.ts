@@ -9,6 +9,13 @@ import { saveChatTurn } from '../_lib/chatHistory.js'
 export const config = { runtime: 'edge' }
 
 const MAX_MESSAGE_CHARS = 4000
+// The client only ever sends the last MAX_MESSAGES_SENT (24, see
+// chatStore.ts) messages per turn — this is a server-side backstop, not the
+// primary control, so a stale/buggy client can't bill an ever-growing,
+// uncached history against this endpoint regardless of what the client-side
+// slice is supposed to enforce. Set well above 24 so a legitimate client is
+// never rejected by its own normal behavior.
+const MAX_INBOUND_MESSAGES = 40
 const MAX_TOOL_ITERATIONS = 4
 const DEFAULT_DAILY_LIMIT = 60
 const DEFAULT_WINDOW_LIMIT = 10
@@ -130,6 +137,9 @@ export default async function handler(req: Request): Promise<Response> {
   if (!inbound.length) {
     return new Response(JSON.stringify({ error: 'No messages provided' }), { status: 400 })
   }
+  if (inbound.length > MAX_INBOUND_MESSAGES) {
+    return new Response(JSON.stringify({ error: `Too much history sent (max ${MAX_INBOUND_MESSAGES} messages)` }), { status: 400 })
+  }
   const lastMessage = inbound[inbound.length - 1]
   const lastText = typeof lastMessage.content === 'string' ? lastMessage.content : ''
   if (lastText.length > MAX_MESSAGE_CHARS) {
@@ -230,13 +240,10 @@ export default async function handler(req: Request): Promise<Response> {
           .join('\n')
         if (thinkingText) {
           thinkingChunks.push(`[iteration ${iteration}] ${thinkingText}`)
-          // Was previously only ever captured for chat_logs (server-side
-          // debugging) — never sent to the client at all, so the "Thinking…"
-          // status pill was the only visible sign anything was happening.
-          // Streamed here per-iteration (not buffered to the end) since
-          // that's the real granularity available: the underlying Anthropic
-          // call itself isn't token-streamed, so this is delivered a whole
-          // iteration's reasoning at a time, not word-by-word.
+          // Streamed to the client per-iteration (not buffered to the end)
+          // since that's the real granularity available: the underlying
+          // Anthropic call itself isn't token-streamed, so this arrives a
+          // whole iteration's reasoning at a time, not word-by-word.
           send({ type: 'thinking', text: thinkingText })
         }
 
@@ -338,34 +345,42 @@ export default async function handler(req: Request): Promise<Response> {
 
     // A call can "succeed" (nothing thrown) yet still carry no usable text —
     // e.g. hitting max_tokens while still in extended thinking, before any
-    // text block was ever emitted. This used to save and send that empty
-    // reply as if it were a normal successful turn, with chat_logs.error
-    // staying null the whole time — indistinguishable from a real success
-    // without the stop_reason, which wasn't logged anywhere either.
+    // text block was ever emitted. Treated as its own error case rather
+    // than a normal successful turn, so chat_logs.error and the
+    // stop_reason both make an empty reply distinguishable from a real one.
     if (!callError && !reply) {
       callError = `Coach didn't return any reply text (stop_reason: ${finalStopReason ?? 'unknown'}) — try again, maybe with a shorter or more focused question.`
     }
 
     const latencyMs = Date.now() - startedAt
 
-    await logChatCall({
-      user_id: user.id,
-      input_tokens: totalInputTokens,
-      output_tokens: totalOutputTokens,
-      cache_read_tokens: totalCacheReadTokens,
-      cache_creation_tokens: totalCacheCreationTokens,
-      tool_calls: toolCallNames,
-      latency_ms: latencyMs,
-      stop_reason: finalStopReason,
-      reply,
-      thinking: thinkingChunks.join('\n\n'),
-      error: callError,
-    })
+    // chat_logs (metrics) and chat_messages (conversation content, via
+    // saveChatTurn) are different tables written by independent, best-effort
+    // calls — neither depends on the other's result, so running them
+    // concurrently instead of two sequential awaits shaves a full Supabase
+    // round-trip off the tail latency of every reply the client receives.
+    // fetchDailyTokenTotals still runs after: it reads back rows including
+    // the one logChatCall just wrote, so it does have a real dependency.
+    const [, savedIds] = await Promise.all([
+      logChatCall({
+        user_id: user.id,
+        input_tokens: totalInputTokens,
+        output_tokens: totalOutputTokens,
+        cache_read_tokens: totalCacheReadTokens,
+        cache_creation_tokens: totalCacheCreationTokens,
+        tool_calls: toolCallNames,
+        latency_ms: latencyMs,
+        stop_reason: finalStopReason,
+        reply,
+        thinking: thinkingChunks.join('\n\n'),
+        error: callError,
+      }),
+      callError ? Promise.resolve(null) : saveChatTurn(user.id, lastText, reply, suggestions, thinkingChunks.length ? thinkingChunks.join('\n\n') : null),
+    ])
 
     if (callError) {
       send({ type: 'error', error: callError })
     } else {
-      const savedIds = await saveChatTurn(user.id, lastText, reply, suggestions, thinkingChunks.length ? thinkingChunks.join('\n\n') : null)
       // logChatCall() above already wrote this call's own token counts into
       // chat_logs, so this total is already inclusive of the current call —
       // don't add totalInputTokens/totalOutputTokens again on top of it.

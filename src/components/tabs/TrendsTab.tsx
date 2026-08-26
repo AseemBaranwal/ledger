@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type MouseEvent } from 'react'
+import { useState, useEffect, useMemo, useRef, type MouseEvent } from 'react'
 import { useSessionStore, useConfigStore, useUIStore, useUnitStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD, ago } from '@/services/dateUtils'
@@ -125,6 +125,43 @@ export function TrendsTab() {
   const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
   const isMetric = unitSystem === 'metric'
 
+  // Both blocks only depend on sessions/program, not on the selected-group
+  // filter or unit system — memoized so switching the group tab or tapping
+  // a chart point (unrelated state elsewhere in this component) doesn't
+  // rebuild them from scratch. Placed before the early return below so the
+  // hook always runs in the same order (Rules of Hooks).
+  const { weeks, grp, gtot } = useMemo(() => {
+    // weekly consistency, last 8 weeks
+    const wk: Record<string, number> = {}
+    sessions.forEach((s) => {
+      const d = new Date(s.d + 'T12:00')
+      const m = new Date(d)
+      m.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+      wk[iso(m)] = (wk[iso(m)] || 0) + 1
+    })
+    const weeks: BarPt[] = []
+    const now = new Date()
+    const mon = new Date(now)
+    mon.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+    for (let i = 7; i >= 0; i--) {
+      const w = new Date(mon)
+      w.setDate(mon.getDate() - i * 7)
+      weeks.push({ l: `${w.getMonth() + 1}/${w.getDate()}`, v: wk[iso(w)] || 0 })
+    }
+
+    // volume by group (set count), last 4 weeks
+    const cut = iso(new Date(Date.now() - 28 * 864e5))
+    const grp: Record<string, number> = { legs: 0, push: 0, pull: 0, sprint: 0 }
+    sessions.filter((s) => s.d >= cut).forEach((s) => {
+      const c = program[s.s || '']?.colour
+      if (c != null) grp[c] = (grp[c] || 0) + (s.ex || []).reduce((t, e) => t + e.r.length, 0)
+    })
+    const gtot = Object.values(grp).reduce((a, b) => a + b, 0) || 1
+
+    return { weeks, grp, gtot }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, program])
+
   if (sessions.length < 1) {
     return (
       <div>
@@ -152,33 +189,6 @@ export function TrendsTab() {
   const allGroups = [...new Set(allK.map(groupOf))]
   const trendGroup = allGroups.includes(selectedGroup) ? selectedGroup : allGroups[0]
   const groupExercises = allK.filter((k) => groupOf(k) === trendGroup)
-
-  // weekly consistency, last 8 weeks
-  const wk: Record<string, number> = {}
-  sessions.forEach((s) => {
-    const d = new Date(s.d + 'T12:00')
-    const m = new Date(d)
-    m.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-    wk[iso(m)] = (wk[iso(m)] || 0) + 1
-  })
-  const weeks: BarPt[] = []
-  const now = new Date()
-  const mon = new Date(now)
-  mon.setDate(now.getDate() - ((now.getDay() + 6) % 7))
-  for (let i = 7; i >= 0; i--) {
-    const w = new Date(mon)
-    w.setDate(mon.getDate() - i * 7)
-    weeks.push({ l: `${w.getMonth() + 1}/${w.getDate()}`, v: wk[iso(w)] || 0 })
-  }
-
-  // volume by group (set count), last 4 weeks
-  const cut = iso(new Date(Date.now() - 28 * 864e5))
-  const grp: Record<string, number> = { legs: 0, push: 0, pull: 0, sprint: 0 }
-  sessions.filter((s) => s.d >= cut).forEach((s) => {
-    const c = program[s.s || '']?.colour
-    if (c != null) grp[c] = (grp[c] || 0) + (s.ex || []).reduce((t, e) => t + e.r.length, 0)
-  })
-  const gtot = Object.values(grp).reduce((a, b) => a + b, 0) || 1
 
   return (
     <div>

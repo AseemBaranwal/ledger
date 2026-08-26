@@ -11,8 +11,8 @@ import './styles/globals.css'
 // never reaches window.onerror or unhandledrejection, and vice versa
 // (an error thrown from an event handler, a timer callback, or a
 // rejected promise never reaches a render-phase error boundary). Both are
-// needed for real crash visibility (issue #58): before this, neither
-// category was logged anywhere.
+// needed for full crash visibility — without them, one whole category of
+// error goes unlogged.
 window.addEventListener('error', (event) => {
   reportClientError(event.message, event.error?.stack, 'window.onerror')
 })

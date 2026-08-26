@@ -90,13 +90,12 @@ export async function callAnthropic({
   systemPrompt,
   messages,
   tools,
-  // Was 3072 (too tight, see #28), then 8192 — raised again per the
-  // owner's explicit request for more headroom on deep "think hard and
-  // deep" replies, with an accepted cost tradeoff. Adaptive-thinking
-  // tokens count against this budget even though display:'omitted' hides
-  // them from the response body, so a low ceiling can still truncate a
-  // reply mid-reasoning before any text block is emitted (see #28 and
-  // message.ts's stop_reason/empty-reply check for how that's surfaced).
+  // Adaptive-thinking tokens count against this budget even though
+  // display:'omitted' hides them from the response body, so too low a
+  // ceiling can truncate a reply mid-reasoning before any text block is
+  // emitted (see message.ts's stop_reason/empty-reply check for how
+  // that's surfaced). Set high deliberately, with an accepted cost
+  // tradeoff, to give deep "think hard" replies enough headroom.
   //
   // Cost math (claude-sonnet-5: $3/$15 per MTok input/output, standard
   // rate — a $2/$10 intro rate applies through 2026-08-31): a typical
@@ -124,7 +123,7 @@ export async function callAnthropic({
     max_tokens: maxTokens,
     // display:'summarized' costs nothing extra — thinking happens and is
     // billed identically under every display setting; this only changes
-    // whether we get the readable summary back to log (see #34).
+    // whether we get the readable summary back to log.
     thinking: { type: 'adaptive', display: 'summarized' },
     output_config: { effort },
     system: [

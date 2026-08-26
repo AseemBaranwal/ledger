@@ -158,10 +158,10 @@ export function resolveTiming(
 // does not affect how timestamps are parsed" (confirmed against their docs)
 // — start_time is always correctly interpreted as the real UTC instant, but
 // Strava's UI shows start_time shifted by utc_offset when rendering the
-// activity's local time. Hardcoding utc_offset to 0 (as this used to do)
-// silently told Strava "the athlete is in UTC+0", which is why a session
-// really logged at 7am Pacific showed up in Strava at 2pm — a wrong DISPLAY
-// time despite a correct underlying instant.
+// activity's local time. Hardcoding utc_offset to 0 would silently tell
+// Strava "the athlete is in UTC+0" — a session really logged at 7am
+// Pacific would show up in Strava at 2pm, a wrong DISPLAY time despite a
+// correct underlying instant.
 //
 // JS's Date.getTimezoneOffset() returns minutes to ADD to local time to
 // reach UTC (positive for timezones behind UTC, e.g. +480 for PST) — the

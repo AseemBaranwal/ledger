@@ -43,26 +43,19 @@ interface AuthStore {
 // Re-points the local per-user caches (sessions, body scans) at the given
 // user's namespaced storage key and forces them to re-read from it.
 //
-// `isAccountSwitch` controls whether state gets blanked FIRST, and it
-// matters a lot — this used to always blank unconditionally, which caused
-// a real data-loss bug (issue #58): zustand's persist.rehydrate() does NOT
-// reset state when the target storage key is empty (its default merge is
-// `{...currentState, ...persisted}`), so switching from user A to user B
-// without an explicit SIGNED_OUT in between (e.g. a provider-level account
-// switch) could leave A's data on screen until B's own storage happens to
-// overwrite it — blanking first was the fix for THAT. But the caller used
-// to treat every cold app open as a "switch" too (in-memory auth state
-// always starts null on a fresh page load, so comparing against it alone
-// can't tell "same user reopening the app" apart from a genuine switch),
-// and set() on a persisted store writes through to storage SYNCHRONOUSLY —
-// so on every single relaunch, the blank write completed and clobbered the
-// real draft in storage before the very next line's rehydrate() ever got a
-// chance to read it back. An in-progress workout was silently wiped by
-// nothing more than closing and reopening the app. `isAccountSwitch` is
-// computed by the caller against a value that actually survives a reload
-// (see userScope.ts's getLastKnownUserId), not in-memory state — so the
-// blank now only ever runs for a genuine different-user switch, and the
-// same user's own reload just rehydrates their real data straight through.
+// `isAccountSwitch` gates whether state gets blanked FIRST, and getting it
+// wrong causes real data loss either way. zustand's persist.rehydrate()
+// does NOT reset state when the target key is empty (merge is
+// `{...currentState, ...persisted}`), so switching users without blanking
+// first can leave the old user's data on screen. But set() on a persisted
+// store writes through to storage SYNCHRONOUSLY, and in-memory auth state
+// always starts null on a fresh load — so blanking on every cold app open
+// (not just a genuine switch) clobbers the real draft in storage before
+// rehydrate() ever gets to read it back, silently wiping an in-progress
+// workout on nothing more than closing and reopening the app.
+// `isAccountSwitch` must therefore be computed against a value that
+// survives a reload (see userScope.ts's getLastKnownUserId), not in-memory
+// state, so the blank only ever runs for a genuine different-user switch.
 //
 // Awaited by callers so the app doesn't briefly render with blanked-out
 // state before the real (correctly-scoped) data has finished loading back

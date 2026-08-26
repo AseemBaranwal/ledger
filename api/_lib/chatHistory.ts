@@ -85,10 +85,10 @@ export async function fetchChatHistory(userId: string, limit: number): Promise<S
 // array — read-modify-write since Supabase's JS client has no partial-jsonb-
 // array-element update. Called right after the user taps Accept/Dismiss on
 // a suggestion card, so the choice survives a reload or a different device
-// instead of every suggestion silently reverting to "pending" the next time
-// loadHistory() runs (which is exactly what happened before this existed —
-// the client only ever tracked status in local zustand state, and the
-// initial save from saveChatTurn() never included one).
+// instead of every suggestion reverting to "pending" the next time
+// loadHistory() runs — which is what happens if status is only ever
+// tracked in local zustand state, since saveChatTurn()'s initial save
+// never includes one.
 export async function updateSuggestionStatus(
   userId: string,
   messageId: number,

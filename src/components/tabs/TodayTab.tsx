@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSessionStore, useConfigStore, useUIStore, useUnitStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
 import { applySubstitutions, resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { saveSubstitution } from '@/services/exerciseSubstitutionsApi'
 import { doneThisWeek, owedThisWeek, tgtStr } from '@/services/weekProgress'
-import { lastDialedWeight, formatLastSets } from '@/services/trendCalculations'
+import { lastDialedWeight, formatLastSets, lastOf } from '@/services/trendCalculations'
 import type { ProgramExercise, RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
@@ -45,6 +45,14 @@ export function TodayTab() {
 
   const [today] = useState(new Date())
   const [picker, setPicker] = useState<{ mode: 'swap' | 'add'; index?: number } | null>(null)
+
+  // Stable across re-renders (not recreated inline at the JSX call site) so
+  // ExerciseLogger's React.memo actually holds — see that component's own
+  // comment. Every set logged/weight bumped mid-session re-renders TodayTab
+  // (draftEx/draft replace by reference), and an inline arrow prop would
+  // defeat the memo on every single one of those.
+  const handleRequestSwap = useCallback((i: number) => setPicker({ mode: 'swap', index: i }), [])
+  const handleRequestRemove = useCallback((i: number) => removeExercise(i), [removeExercise])
   const dayOfWeek = today.getDay()
   const weekDays = schedule.weekDays.length ? schedule.weekDays : [1, 2, 3, 4, 5, 6, 0]
   const priority = schedule.priority
@@ -53,10 +61,9 @@ export function TodayTab() {
 
   const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] => applySubstitutions(exList, substitutions)
 
-  // saveDraft() already computed which exercises hit a new PR this session
-  // (via the previously-orphaned checkPRs()) but nothing ever surfaced it —
-  // there was no in-app moment marking a PR at all. A toast is the smallest
-  // change that actually closes the loop from "detected" to "seen."
+  // saveDraft() already computes which exercises hit a new PR this session
+  // via checkPRs(), but nothing surfaces it in-app — a toast is the
+  // smallest change that closes the loop from "detected" to "seen."
   const handleSaveDraft = () => {
     const prCodes = saveDraft()
     if (!prCodes.length) return
@@ -204,8 +211,8 @@ export function TodayTab() {
                 key={index}
                 def={def}
                 index={index}
-                onRequestSwap={(i) => setPicker({ mode: 'swap', index: i })}
-                onRequestRemove={(i) => removeExercise(i)}
+                onRequestSwap={handleRequestSwap}
+                onRequestRemove={handleRequestRemove}
               />
             )
           })}
@@ -362,7 +369,15 @@ export function TodayTab() {
                           <span className={`${styles.wdGym} mono`}>{p.gym}</span>
                         </div>
                         {withSubstitutions(p.ex).map((e) => {
-                          const last = [...sessions].reverse().flatMap((s) => (s.ex || []).map((x) => ({ ...x, d: s.d }))).find((x) => x.k === e.k && x.r.length)
+                          // Was a hand-rolled flatMap of every exercise
+                          // across the ENTIRE session history, rebuilt from
+                          // scratch on every render this expanded day was
+                          // visible — lastOf() (already used by
+                          // ExerciseLogger for the same lookup) does the
+                          // identical last-logged-set search in a single
+                          // backward pass with an early exit per session,
+                          // no full-history array materialized.
+                          const last = lastOf(sessions, e.k)
                           const lastStr = last
                             ? `Last ${formatLastSets(last, e.u, unitSystem)}`
                             : 'First time — start at target'

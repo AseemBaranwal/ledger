@@ -17,7 +17,12 @@ interface StravaStore {
 export const useStravaStore = create<StravaStore>((set) => ({
   connected: false,
   athleteName: null,
-  checking: false,
+  // Starts true (not false) — App.tsx always calls checkConnection() right
+  // after sign-in, so "checking" is the honest state until that resolves.
+  // Defaulting to false let SyncTab render "Connect Strava" for one frame
+  // even for an already-connected account, before flipping to "Connected"
+  // once the check came back — a visible flash of the wrong state.
+  checking: true,
   disconnecting: false,
 
   checkConnection: async (userId: string) => {

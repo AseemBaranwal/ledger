@@ -199,10 +199,11 @@ export const useChatStore = create<ChatStore>()(
 
       // Covers weight, reps, and/or sets changes — `changes` only carries
       // whichever field(s) the accepted suggestion actually proposed.
-      // Always writes through to the Sheet (the durable "next time" target,
-      // same as weight-only suggestions always have), and additionally
-      // syncs the live draft session if one is active and has this
-      // exercise, so the change is visible immediately without restarting.
+      // Always writes through to profiles.routine_config (the durable
+      // "next time" target, same as weight-only suggestions always have),
+      // and additionally syncs the live draft session if one is active and
+      // has this exercise, so the change is visible immediately without
+      // restarting.
       acceptSuggestion: async (messageId, suggestionIndex, changes) => {
         const message = get().messages.find((m) => m.id === messageId)
         const suggestion = message?.suggestions?.[suggestionIndex]

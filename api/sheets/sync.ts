@@ -71,8 +71,18 @@ export default async function handler(req: Request): Promise<Response> {
   const rows = (sessions || []) as unknown as SessionRow[]
   let exported = 0
   let failures = 0
-  let maxCreatedAt = since
+  let checkpoint = since
 
+  // The checkpoint is persisted after EVERY successful row, not once at the
+  // end of the loop. A batch that times out or crashes partway through a
+  // large backlog (e.g. a first-ever sync of months of history) would
+  // otherwise leave the checkpoint at its pre-run value — every row already
+  // POSTed successfully in that run gets duplicated into the Sheet on the
+  // next attempt, and a backlog that reliably exceeds the function's time
+  // budget could never finish syncing since it always restarts from
+  // scratch. One extra write per exported row costs little at this app's
+  // real volume (a handful of sessions per sync) against the correctness
+  // this buys.
   for (const session of rows) {
     if (!session.ex?.length) continue // no exercises logged — nothing to append
 
@@ -88,14 +98,11 @@ export default async function handler(req: Request): Promise<Response> {
         continue // don't advance the checkpoint past a row that failed
       }
       exported++
-      maxCreatedAt = session.created_at
+      checkpoint = session.created_at
+      await (supabaseAdmin().from('profiles') as any).update({ sheet_sync_checkpoint: checkpoint }).eq('id', user.id)
     } catch {
       failures++
     }
-  }
-
-  if (maxCreatedAt && maxCreatedAt !== since) {
-    await (supabaseAdmin().from('profiles') as any).update({ sheet_sync_checkpoint: maxCreatedAt }).eq('id', user.id)
   }
 
   return new Response(JSON.stringify({ success: true, exported, failures }), {

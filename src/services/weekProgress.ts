@@ -1,8 +1,6 @@
-// Pure "what's done/owed this week" logic — extracted out of TodayTab.tsx,
-// which is the app's largest component and previously the only place this
-// was reachable, unlike the sessionStore logic it sits next to (already
-// directly unit tested). No behavior change, just a relocation so it's
-// testable on its own.
+// Pure "what's done/owed this week" logic, kept out of TodayTab.tsx (the
+// app's largest component) so it's directly unit-testable, same as the
+// sessionStore logic it sits next to.
 import { iso, mondayOf } from './dateUtils'
 import type { Session, Program, ProgramExercise } from '@/types'
 

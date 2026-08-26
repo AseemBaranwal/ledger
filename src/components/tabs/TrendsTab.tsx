@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type MouseEvent } from 'react'
+import { useState, useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from 'react'
 import { useSessionStore, useConfigStore, useUIStore, useUnitStore, useGoogleHealthStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD, ago } from '@/services/dateUtils'
@@ -6,12 +6,21 @@ import { streak } from '@/services/trendCalculations'
 import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import { displayWeight, unitLabel } from '@/services/units'
 import { plotLine, nearestPointIndex, type ChartPoint } from '@/services/chartGeometry'
-import { fetchBodyWeightData, type WeightDataResult } from '@/services/googleHealth'
+import {
+  fetchBodyWeightData,
+  fetchRecoveryData,
+  type WeightDataResult,
+  type RecoveryDataResult,
+} from '@/services/googleHealth'
+import { GoogleHealthMark } from '@/components/icons/BrandIcons'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
 interface LinePt { v: number; l: string }
 interface BarPt { l: string; v: number }
+type TrendDomain = 'lifts' | 'body' | 'recovery'
+
+const GOOGLE_BLUE = '#4285F4'
 
 // "Big number, minimal sparkline" — chosen over labeled-points-per-chart
 // (see the mockup comparison linked from the commit) because it leads with
@@ -116,6 +125,80 @@ function BarChart({ pts, colour, h = 110 }: { pts: BarPt[]; colour: string; h?: 
   )
 }
 
+function DomainPills({ domain, onSelect }: { domain: TrendDomain; onSelect: (d: TrendDomain) => void }) {
+  const items: Array<{ id: TrendDomain; label: string; icon: ReactNode }> = [
+    {
+      id: 'lifts',
+      label: 'Lifts',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+          <path d="M6 20V10M12 20V4M18 20v-7" />
+        </svg>
+      ),
+    },
+    {
+      id: 'body',
+      label: 'Body',
+      icon: <GoogleHealthMark size="15px" />,
+    },
+    {
+      id: 'recovery',
+      label: 'Recovery',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 12h4l2-7 4 14 2-7h6" />
+        </svg>
+      ),
+    },
+  ]
+  return (
+    <div className={styles.domainRow}>
+      {items.map((it) => (
+        <button
+          key={it.id}
+          className={`${styles.domainPill} ${domain === it.id ? styles.active : ''}`}
+          onClick={() => onSelect(it.id)}
+        >
+          {it.icon}
+          {it.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Shown in place of the Body or Recovery domain's content whenever there's
+// no usable Google Health connection — so picking either tab always shows
+// something actionable (issue #72's follow-up) instead of an empty screen.
+// Google Health is the only provider today; framed generically enough
+// ("connect a health app") that a future Apple Health/Fit option could
+// join without a copy rewrite, but not built out now — there's nothing
+// else to actually connect yet.
+function HealthConnectPrompt({ label, needsReconnect, onConnect }: { label: string; needsReconnect: boolean; onConnect: () => void }) {
+  return (
+    <div className={`${styles.chartCard} ${styles.healthPrompt}`}>
+      <div className={styles.healthPromptBadge} style={{ background: needsReconnect ? 'var(--amber)' : GOOGLE_BLUE, color: needsReconnect ? 'var(--ink)' : '#fff' }}>
+        <GoogleHealthMark size="20px" />
+      </div>
+      <div className={styles.healthPromptTitle}>{needsReconnect ? 'Reconnect Google Health' : 'Connect a health app'}</div>
+      <div className={styles.healthPromptBody}>
+        {needsReconnect
+          ? `Google Health access expired — reconnect to keep seeing ${label} here.`
+          : `Link Google Health to see ${label} here.`}
+      </div>
+      <button className={`${styles.btn} ${styles.ghost}`} onClick={onConnect}>
+        {needsReconnect ? 'Reconnect' : 'Connect Google Health'}
+      </button>
+    </div>
+  )
+}
+
+function formatSleepDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = Math.round(minutes % 60)
+  return `${h}h ${m}m`
+}
+
 export function TrendsTab() {
   const sessions = useSessionStore((s) => s.sessions)
   const program = useConfigStore((s) => s.program)
@@ -123,21 +206,25 @@ export function TrendsTab() {
   const customExercises = useCustomExerciseStore((s) => s.customExercises)
   const selectedGroup = useUIStore((s) => s.selectedTrendGroup)
   const setTrendGroup = useUIStore((s) => s.setTrendGroup)
+  const selectedDomain = useUIStore((s) => s.selectedTrendDomain)
+  const setTrendDomain = useUIStore((s) => s.setTrendDomain)
   const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
   const isMetric = unitSystem === 'metric'
   const googleHealthConnected = useGoogleHealthStore((s) => s.connected)
+  const googleHealthNeedsReconnect = useGoogleHealthStore((s) => s.needsReconnect)
+  const connectGoogleHealth = useGoogleHealthStore((s) => s.connect)
 
-  // Fetches (and, server-side, persists — see api/_lib/bodyWeightData.ts)
-  // body weight straight from Google Health whenever this tab is open and a
-  // connection exists. Placed before the early return below, same reason as
-  // the useMemo right after it — hooks must run in the same order every
-  // render regardless of the `sessions.length < 1` branch further down.
+  // Fetched only once the relevant domain is actually selected, not
+  // unconditionally on mount — recovery data in particular costs 2-3
+  // upstream Google calls per request, no reason to pay that for a domain
+  // the person isn't even looking at. Both persist (weight, server-side —
+  // see api/_lib/bodyWeightData.ts) or read (recovery) the same way the
+  // Coach's own tools do, just reachable without a chat turn. Placed
+  // before the early return below, same reason as the useMemo right after
+  // it — hooks must run in the same order every render.
   const [weightData, setWeightData] = useState<WeightDataResult | null>(null)
   useEffect(() => {
-    if (!googleHealthConnected) {
-      setWeightData(null)
-      return
-    }
+    if (!googleHealthConnected || googleHealthNeedsReconnect || selectedDomain !== 'body') return
     let cancelled = false
     fetchBodyWeightData(90)
       .then((res) => {
@@ -149,7 +236,23 @@ export function TrendsTab() {
     return () => {
       cancelled = true
     }
-  }, [googleHealthConnected])
+  }, [googleHealthConnected, googleHealthNeedsReconnect, selectedDomain])
+
+  const [recoveryData, setRecoveryData] = useState<RecoveryDataResult | null>(null)
+  useEffect(() => {
+    if (!googleHealthConnected || googleHealthNeedsReconnect || selectedDomain !== 'recovery') return
+    let cancelled = false
+    fetchRecoveryData(30)
+      .then((res) => {
+        if (!cancelled) setRecoveryData(res)
+      })
+      .catch(() => {
+        if (!cancelled) setRecoveryData({ status: 'error', error: 'Could not load recovery data' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [googleHealthConnected, googleHealthNeedsReconnect, selectedDomain])
 
   // Both blocks only depend on sessions/program, not on the selected-group
   // filter or unit system — memoized so switching the group tab or tapping
@@ -212,9 +315,16 @@ export function TrendsTab() {
   const groupOf = (k: string): string => resolveExerciseDisplay(k, program, colours, customExercises).group
   const colOf = (k: string): string => resolveExerciseDisplay(k, program, colours, customExercises).colour
 
-  const allGroups = [...new Set(allK.map(groupOf))]
+  // Sprint excluded here, not just hidden downstream — sprint sessions log
+  // a rep count into the weight field (w: 0), so a per-exercise weight
+  // chart for it was always a flat zero line, never real data. Conditioning
+  // work needs its own metric (distance/pace/time) before it earns a chart
+  // here, not a forced fit into the strength-progression view.
+  const allGroups = [...new Set(allK.map(groupOf))].filter((g) => g !== 'Sprint')
   const trendGroup = allGroups.includes(selectedGroup) ? selectedGroup : allGroups[0]
   const groupExercises = allK.filter((k) => groupOf(k) === trendGroup)
+
+  const healthState: 'off' | 'warn' | 'on' = !googleHealthConnected ? 'off' : googleHealthNeedsReconnect ? 'warn' : 'on'
 
   return (
     <div>
@@ -236,77 +346,181 @@ export function TrendsTab() {
         </div>
       </div>
 
-      <select className={styles.pick} value={trendGroup} onChange={(e) => setTrendGroup(e.target.value)}>
-        {allGroups.map((g) => (
-          <option key={g} value={g}>{g}</option>
-        ))}
-      </select>
+      <DomainPills domain={selectedDomain} onSelect={setTrendDomain} />
 
-      {groupExercises.map((k) => {
-        // The exercise's own unit isn't in the session log itself, only
-        // its weight numbers — look it up from the current program def,
-        // same fallback-to-'lb' reasoning as HistoryTab.
-        const exUnit = Object.values(program).flatMap((p) => p.ex).find((x) => x.k === k)?.u || 'lb'
-        const convert = isMetric && (exUnit === 'lb' || exUnit === '+lb')
-        const pts = sessions
-          .filter((s) => (s.ex || []).some((e) => e.k === k))
-          .map((s) => {
-            const e = s.ex!.find((x) => x.k === k)!
-            const w = e.ws ? Math.max(...e.ws) : e.w || 0
-            return { v: convert ? displayWeight(w, 'metric') : w, l: fmtD(s.d).replace(/^\w+, /, '') }
-          })
-        // A single logged session can't show a progression — there's
-        // nothing to compare it to — so skip the whole card rather than
-        // rendering a title/delta around an empty chart placeholder.
-        if (pts.length < 2) return null
-        const dl = pts[pts.length - 1].v - pts[0].v
-        const dcls = dl > 0 ? styles.up : dl < 0 ? styles.dn : styles.flat
-        const unit = convert ? unitLabel('metric').toLowerCase() : 'lb'
+      {selectedDomain === 'lifts' && (
+        <>
+          <select className={styles.pick} value={trendGroup} onChange={(e) => setTrendGroup(e.target.value)}>
+            {allGroups.map((g) => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
 
-        return (
-          <div key={k} className={styles.chartCard}>
-            <div className={styles.chartHd}>
-              <h3>{nameOf(k)}</h3>
-              <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} {unit}</span>
-            </div>
-            <div className={styles.statNow}>
-              <span className="mono">{pts[pts.length - 1].v}</span>
-              <span className={styles.statUnit}>{unit}</span>
-            </div>
-            <LineChart pts={pts} colour={colOf(k)} />
-          </div>
-        )
-      })}
+          {groupExercises.map((k) => {
+            // The exercise's own unit isn't in the session log itself, only
+            // its weight numbers — look it up from the current program def,
+            // same fallback-to-'lb' reasoning as HistoryTab.
+            const exUnit = Object.values(program).flatMap((p) => p.ex).find((x) => x.k === k)?.u || 'lb'
+            const convert = isMetric && (exUnit === 'lb' || exUnit === '+lb')
+            const pts = sessions
+              .filter((s) => (s.ex || []).some((e) => e.k === k))
+              .map((s) => {
+                const e = s.ex!.find((x) => x.k === k)!
+                const w = e.ws ? Math.max(...e.ws) : e.w || 0
+                return { v: convert ? displayWeight(w, 'metric') : w, l: fmtD(s.d).replace(/^\w+, /, '') }
+              })
+            // A single logged session can't show a progression — there's
+            // nothing to compare it to — so skip the whole card rather than
+            // rendering a title/delta around an empty chart placeholder.
+            if (pts.length < 2) return null
+            const dl = pts[pts.length - 1].v - pts[0].v
+            const dcls = dl > 0 ? styles.up : dl < 0 ? styles.dn : styles.flat
+            const unit = convert ? unitLabel('metric').toLowerCase() : 'lb'
 
-      {/* Body weight — from Google Health, not a manual log (issue #70's
-          follow-up). Only rendered once there are at least 2 readings, same
-          "nothing to show a progression against" rule the exercise charts
-          above already use — a lone reading with no chart would just be an
-          empty card. Needs_reconnect/not_connected/error all render nothing
-          here rather than an error card; the Sync tab is where connection
-          state is actually surfaced and actionable. */}
-      {weightData?.status === 'ok' && weightData.days.length >= 2 && (() => {
-        const pts = weightData.days.map((d) => ({
-          v: isMetric ? displayWeight(d.weightLb, 'metric') : d.weightLb,
-          l: fmtD(d.date).replace(/^\w+, /, ''),
-        }))
-        const dl = Math.round((pts[pts.length - 1].v - pts[0].v) * 10) / 10
-        const dcls = dl > 0 ? styles.up : dl < 0 ? styles.dn : styles.flat
-        const unit = isMetric ? unitLabel('metric').toLowerCase() : 'lb'
-        return (
-          <div className={styles.chartCard}>
-            <div className={styles.chartHd}>
-              <h3>Body weight</h3>
-              <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} {unit}</span>
-            </div>
-            <div className={styles.statNow}>
-              <span className="mono">{pts[pts.length - 1].v}</span>
-              <span className={styles.statUnit}>{unit}</span>
-            </div>
-            <LineChart pts={pts} colour="#8B7CF6" />
-          </div>
-        )
-      })()}
+            return (
+              <div key={k} className={styles.chartCard}>
+                <div className={styles.chartHd}>
+                  <h3>{nameOf(k)}</h3>
+                  <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} {unit}</span>
+                </div>
+                <div className={styles.statNow}>
+                  <span className="mono">{pts[pts.length - 1].v}</span>
+                  <span className={styles.statUnit}>{unit}</span>
+                </div>
+                <LineChart pts={pts} colour={colOf(k)} />
+              </div>
+            )
+          })}
+        </>
+      )}
+
+      {selectedDomain === 'body' && (
+        <>
+          {healthState !== 'on' ? (
+            <HealthConnectPrompt label="your body-weight trend" needsReconnect={healthState === 'warn'} onConnect={connectGoogleHealth} />
+          ) : weightData == null ? (
+            <div className={styles.note}>Loading…</div>
+          ) : weightData.status === 'ok' && weightData.days.length >= 2 ? (
+            (() => {
+              const pts = weightData.days.map((d) => ({
+                v: isMetric ? displayWeight(d.weightLb, 'metric') : d.weightLb,
+                l: fmtD(d.date).replace(/^\w+, /, ''),
+              }))
+              const dl = Math.round((pts[pts.length - 1].v - pts[0].v) * 10) / 10
+              const dcls = dl > 0 ? styles.up : dl < 0 ? styles.dn : styles.flat
+              const unit = isMetric ? unitLabel('metric').toLowerCase() : 'lb'
+              return (
+                <div className={styles.chartCard}>
+                  <div className={styles.chartHd}>
+                    <h3>Body weight</h3>
+                    <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} {unit}</span>
+                  </div>
+                  <div className={styles.statNow}>
+                    <span className="mono">{pts[pts.length - 1].v}</span>
+                    <span className={styles.statUnit}>{unit}</span>
+                  </div>
+                  <LineChart pts={pts} colour="#8B7CF6" />
+                </div>
+              )
+            })()
+          ) : weightData.status === 'error' ? (
+            <div className={styles.note}>Could not load body-weight data right now.</div>
+          ) : (
+            <div className={styles.note}>Not enough readings yet — check back once your scale has synced a couple more.</div>
+          )}
+        </>
+      )}
+
+      {selectedDomain === 'recovery' && (
+        <>
+          {healthState !== 'on' ? (
+            <HealthConnectPrompt label="resting heart rate, HRV, and sleep" needsReconnect={healthState === 'warn'} onConnect={connectGoogleHealth} />
+          ) : recoveryData == null ? (
+            <div className={styles.note}>Loading…</div>
+          ) : recoveryData.status === 'error' ? (
+            <div className={styles.note}>Could not load recovery data right now.</div>
+          ) : recoveryData.status === 'ok' && recoveryData.latest ? (
+            <>
+              <div className={styles.statRow}>
+                <div className={styles.stat}>
+                  <div className={styles.l}>Resting HR</div>
+                  <div className={styles.v}>{recoveryData.latest.restingHeartRate ?? '—'}</div>
+                  <div className={styles.d}>
+                    {recoveryData.latest.restingHeartRate != null ? 'bpm' : 'no data'}
+                    {recoveryData.deltas?.restingHeartRate != null && ` · ${recoveryData.deltas.restingHeartRate > 0 ? '+' : ''}${recoveryData.deltas.restingHeartRate} vs baseline`}
+                  </div>
+                </div>
+                <div className={styles.stat}>
+                  <div className={styles.l}>HRV</div>
+                  <div className={styles.v}>{recoveryData.latest.hrvMs ?? '—'}</div>
+                  <div className={styles.d}>
+                    {recoveryData.latest.hrvMs != null ? 'ms' : 'no data'}
+                    {recoveryData.deltas?.hrvPercent != null && ` · ${recoveryData.deltas.hrvPercent > 0 ? '+' : ''}${recoveryData.deltas.hrvPercent}%`}
+                  </div>
+                </div>
+                <div className={styles.stat}>
+                  <div className={styles.l}>Sleep</div>
+                  <div className={styles.v}>{recoveryData.latest.sleepMinutes != null ? formatSleepDuration(recoveryData.latest.sleepMinutes) : '—'}</div>
+                  <div className={styles.d}>last night</div>
+                </div>
+              </div>
+
+              {(recoveryData.readiness || recoveryData.flags.length > 0) && (
+                <div className={styles.chartCard}>
+                  {recoveryData.readiness && (
+                    <div className={styles.flagRow}>
+                      <span
+                        className={styles.flagDot}
+                        style={{
+                          background:
+                            recoveryData.readiness === 'primed'
+                              ? 'var(--teal)'
+                              : recoveryData.readiness === 'compromised'
+                                ? 'var(--coral)'
+                                : 'var(--amber)',
+                        }}
+                      />
+                      Readiness: {recoveryData.readiness}
+                    </div>
+                  )}
+                  {recoveryData.flags.map((flag, i) => (
+                    <div key={i} className={styles.flagRow}>
+                      <span className={styles.flagDot} style={{ background: 'var(--line-2)' }} />
+                      {flag}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(
+                [
+                  { key: 'restingHeartRate' as const, label: 'Resting heart rate', colour: '#FF6B4A', unit: 'bpm' },
+                  { key: 'hrvMs' as const, label: 'HRV', colour: '#4C9BE8', unit: 'ms' },
+                ]
+              ).map(({ key, label, colour, unit }) => {
+                const pts = recoveryData.days
+                  .filter((d) => d[key] != null)
+                  .map((d) => ({ v: d[key] as number, l: fmtD(d.date).replace(/^\w+, /, '') }))
+                if (pts.length < 2) return null
+                return (
+                  <div key={key} className={styles.chartCard}>
+                    <div className={styles.chartHd}>
+                      <h3>{label}</h3>
+                    </div>
+                    <div className={styles.statNow}>
+                      <span className="mono">{pts[pts.length - 1].v}</span>
+                      <span className={styles.statUnit}>{unit}</span>
+                    </div>
+                    <LineChart pts={pts} colour={colour} />
+                  </div>
+                )
+              })}
+            </>
+          ) : (
+            <div className={styles.note}>No recovery data in the last 30 days yet — check back once your watch has synced.</div>
+          )}
+        </>
+      )}
 
       <div className={styles.chartCard}>
         <div className={styles.chartHd}>

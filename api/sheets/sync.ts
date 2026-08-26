@@ -1,5 +1,6 @@
 import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
+import { getBodyWeightData } from '../_lib/bodyWeightData.js'
 
 // See message.ts (api/chat) for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
@@ -19,6 +20,72 @@ interface SessionRow {
   ex: unknown[] | null
   n: string | null
   created_at: string
+}
+
+interface WeightRow {
+  d: string
+  weight_lb: number
+}
+
+// Pushes newly-recorded google_health_weight rows into a "Weight" tab, same
+// incremental/checkpointed shape as the session sync above — a separate
+// function since it has its own checkpoint column (profiles
+// .weight_sheet_sync_checkpoint) and its own POST `type`. getBodyWeightData
+// is called first specifically to refresh google_health_weight with
+// whatever's new since the last sync (it upserts as a side effect — see
+// api/_lib/bodyWeightData.ts) before reading rows to export; skipped
+// entirely, not an error, when Google Health isn't connected.
+//
+// NOTE: the live Apps Script Web App (not in this repo — see CLAUDE.md's
+// "Workout data lives in Supabase" section) needs a `type === 'weight'` case
+// added by hand to actually write these into a Sheet tab, the same one-time
+// step issue #37 needed for the `type: 'targets'` case exportTargetsToSheet
+// .mjs relies on.
+async function syncWeightToSheet(
+  userId: string,
+  scriptUrl: string
+): Promise<{ weightExported: number; weightFailures: number }> {
+  const weightResult = await getBodyWeightData(userId, { days: 90 })
+  if (weightResult.status !== 'ok') return { weightExported: 0, weightFailures: 0 }
+
+  const { data: profile } = await supabaseAdmin()
+    .from('profiles')
+    .select('weight_sheet_sync_checkpoint')
+    .eq('id', userId)
+    .single()
+  const since = (profile as { weight_sheet_sync_checkpoint?: string | null } | null)?.weight_sheet_sync_checkpoint ?? null
+
+  let query = supabaseAdmin().from('google_health_weight').select('d,weight_lb').eq('user_id', userId).order('d', { ascending: true })
+  if (since) query = query.gt('d', since)
+
+  const { data: rows } = await query
+  const weightRows = (rows || []) as unknown as WeightRow[]
+
+  let weightExported = 0
+  let weightFailures = 0
+  let checkpoint = since
+
+  for (const row of weightRows) {
+    try {
+      const res = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'weight', d: row.d, weightLb: row.weight_lb }),
+      })
+      const text = await res.text()
+      if (!res.ok || text.startsWith('error')) {
+        weightFailures++
+        continue
+      }
+      weightExported++
+      checkpoint = row.d
+      await (supabaseAdmin().from('profiles') as any).update({ weight_sheet_sync_checkpoint: checkpoint }).eq('id', userId)
+    } catch {
+      weightFailures++
+    }
+  }
+
+  return { weightExported, weightFailures }
 }
 
 // Server-side counterpart to scripts/exportSessionsToSheet.mjs, triggered
@@ -105,7 +172,9 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  return new Response(JSON.stringify({ success: true, exported, failures }), {
+  const { weightExported, weightFailures } = await syncWeightToSheet(user.id, scriptUrl)
+
+  return new Response(JSON.stringify({ success: true, exported, failures, weightExported, weightFailures }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })

@@ -1,6 +1,7 @@
 import { requireUser } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { getBodyWeightData } from '../_lib/bodyWeightData.js'
+import { getRecoveryData } from '../_lib/recoveryData.js'
 
 // See message.ts (api/chat) for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
@@ -88,6 +89,78 @@ async function syncWeightToSheet(
   return { weightExported, weightFailures }
 }
 
+interface RecoveryRow {
+  d: string
+  resting_heart_rate: number | null
+  hrv_ms: number | null
+  sleep_minutes: number | null
+  sleep_quality_index: number | null
+}
+
+// Same shape as syncWeightToSheet above, against google_health_recovery and
+// its own recovery_sheet_sync_checkpoint column. getRecoveryData is called
+// first to refresh the cache with anything new since the last sync — see
+// api/_lib/recoveryData.ts's cache-check, which means this costs a live
+// Google fetch only when today's reading isn't already cached, not on
+// every sync run.
+async function syncRecoveryToSheet(
+  userId: string,
+  scriptUrl: string
+): Promise<{ recoveryExported: number; recoveryFailures: number }> {
+  const recoveryResult = await getRecoveryData(userId, { days: 90 })
+  if (recoveryResult.status !== 'ok') return { recoveryExported: 0, recoveryFailures: 0 }
+
+  const { data: profile } = await supabaseAdmin()
+    .from('profiles')
+    .select('recovery_sheet_sync_checkpoint')
+    .eq('id', userId)
+    .single()
+  const since = (profile as { recovery_sheet_sync_checkpoint?: string | null } | null)?.recovery_sheet_sync_checkpoint ?? null
+
+  let query = supabaseAdmin()
+    .from('google_health_recovery')
+    .select('d,resting_heart_rate,hrv_ms,sleep_minutes,sleep_quality_index')
+    .eq('user_id', userId)
+    .order('d', { ascending: true })
+  if (since) query = query.gt('d', since)
+
+  const { data: rows } = await query
+  const recoveryRows = (rows || []) as unknown as RecoveryRow[]
+
+  let recoveryExported = 0
+  let recoveryFailures = 0
+  let checkpoint = since
+
+  for (const row of recoveryRows) {
+    try {
+      const res = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'recovery',
+          d: row.d,
+          restingHeartRate: row.resting_heart_rate,
+          hrvMs: row.hrv_ms,
+          sleepMinutes: row.sleep_minutes,
+          sleepQualityIndex: row.sleep_quality_index,
+        }),
+      })
+      const text = await res.text()
+      if (!res.ok || text.startsWith('error')) {
+        recoveryFailures++
+        continue
+      }
+      recoveryExported++
+      checkpoint = row.d
+      await (supabaseAdmin().from('profiles') as any).update({ recovery_sheet_sync_checkpoint: checkpoint }).eq('id', userId)
+    } catch {
+      recoveryFailures++
+    }
+  }
+
+  return { recoveryExported, recoveryFailures }
+}
+
 // Server-side counterpart to scripts/exportSessionsToSheet.mjs, triggered
 // from the Sync tab instead of a manual `node scripts/...` run. Pushes
 // newly-logged PROGRAM sessions into the owner's Google Sheet via its
@@ -173,9 +246,10 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const { weightExported, weightFailures } = await syncWeightToSheet(user.id, scriptUrl)
+  const { recoveryExported, recoveryFailures } = await syncRecoveryToSheet(user.id, scriptUrl)
 
-  return new Response(JSON.stringify({ success: true, exported, failures, weightExported, weightFailures }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
+  return new Response(
+    JSON.stringify({ success: true, exported, failures, weightExported, weightFailures, recoveryExported, recoveryFailures }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  )
 }

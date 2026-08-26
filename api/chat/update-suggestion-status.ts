@@ -1,16 +1,8 @@
-import { requireUser } from '../_lib/auth.js'
+import { requireUser, isOwner } from '../_lib/auth.js'
 import { updateSuggestionStatus } from '../_lib/chatHistory.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
-
-function isOwner(userId: string): boolean {
-  const allowList = (process.env.CHAT_OWNER_USER_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return allowList.includes(userId)
-}
 
 // Called right after the user taps Accept/Dismiss on a suggestion card, so
 // the choice persists in chat_messages.suggestions instead of only living

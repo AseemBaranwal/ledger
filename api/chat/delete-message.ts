@@ -1,18 +1,10 @@
-import { requireUser } from '../_lib/auth.js'
+import { requireUser, isOwner } from '../_lib/auth.js'
 import { deleteChatMessages } from '../_lib/chatHistory.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
 
 const MAX_IDS_PER_REQUEST = 10
-
-function isOwner(userId: string): boolean {
-  const allowList = (process.env.CHAT_OWNER_USER_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return allowList.includes(userId)
-}
 
 // Lets the owner remove a turn (or a stray message) from the durable
 // conversation — mainly so a wrong/misleading exchange can be excluded

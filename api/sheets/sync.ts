@@ -1,18 +1,10 @@
-import { requireUser } from '../_lib/auth.js'
+import { requireUser, isOwner } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { getBodyWeightData } from '../_lib/bodyWeightData.js'
 import { getRecoveryData } from '../_lib/recoveryData.js'
 
 // See message.ts (api/chat) for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
-
-function isOwner(userId: string): boolean {
-  const allowList = (process.env.CHAT_OWNER_USER_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return allowList.includes(userId)
-}
 
 // Edge Functions must send their first response byte within 25s (see
 // CLAUDE.md's Edge Functions section) — a real limit this handler hit in

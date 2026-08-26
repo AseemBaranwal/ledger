@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef, type MouseEvent } from 'react'
-import { useSessionStore, useConfigStore, useUIStore, useUnitStore } from '@/store'
+import { useSessionStore, useConfigStore, useUIStore, useUnitStore, useGoogleHealthStore } from '@/store'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
 import { iso, fmtD, ago } from '@/services/dateUtils'
 import { streak } from '@/services/trendCalculations'
 import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import { displayWeight, unitLabel } from '@/services/units'
 import { plotLine, nearestPointIndex, type ChartPoint } from '@/services/chartGeometry'
+import { fetchBodyWeightData, type WeightDataResult } from '@/services/googleHealth'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 
@@ -124,6 +125,31 @@ export function TrendsTab() {
   const setTrendGroup = useUIStore((s) => s.setTrendGroup)
   const unitSystem = useUnitStore((s) => s.unitSystem) ?? 'imperial'
   const isMetric = unitSystem === 'metric'
+  const googleHealthConnected = useGoogleHealthStore((s) => s.connected)
+
+  // Fetches (and, server-side, persists — see api/_lib/bodyWeightData.ts)
+  // body weight straight from Google Health whenever this tab is open and a
+  // connection exists. Placed before the early return below, same reason as
+  // the useMemo right after it — hooks must run in the same order every
+  // render regardless of the `sessions.length < 1` branch further down.
+  const [weightData, setWeightData] = useState<WeightDataResult | null>(null)
+  useEffect(() => {
+    if (!googleHealthConnected) {
+      setWeightData(null)
+      return
+    }
+    let cancelled = false
+    fetchBodyWeightData(90)
+      .then((res) => {
+        if (!cancelled) setWeightData(res)
+      })
+      .catch(() => {
+        if (!cancelled) setWeightData({ status: 'error', error: 'Could not load body-weight data' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [googleHealthConnected])
 
   // Both blocks only depend on sessions/program, not on the selected-group
   // filter or unit system — memoized so switching the group tab or tapping
@@ -251,6 +277,36 @@ export function TrendsTab() {
           </div>
         )
       })}
+
+      {/* Body weight — from Google Health, not a manual log (issue #70's
+          follow-up). Only rendered once there are at least 2 readings, same
+          "nothing to show a progression against" rule the exercise charts
+          above already use — a lone reading with no chart would just be an
+          empty card. Needs_reconnect/not_connected/error all render nothing
+          here rather than an error card; the Sync tab is where connection
+          state is actually surfaced and actionable. */}
+      {weightData?.status === 'ok' && weightData.days.length >= 2 && (() => {
+        const pts = weightData.days.map((d) => ({
+          v: isMetric ? displayWeight(d.weightLb, 'metric') : d.weightLb,
+          l: fmtD(d.date).replace(/^\w+, /, ''),
+        }))
+        const dl = Math.round((pts[pts.length - 1].v - pts[0].v) * 10) / 10
+        const dcls = dl > 0 ? styles.up : dl < 0 ? styles.dn : styles.flat
+        const unit = isMetric ? unitLabel('metric').toLowerCase() : 'lb'
+        return (
+          <div className={styles.chartCard}>
+            <div className={styles.chartHd}>
+              <h3>Body weight</h3>
+              <span className={`${styles.delta} ${dcls}`}>{dl > 0 ? '+' : ''}{dl} {unit}</span>
+            </div>
+            <div className={styles.statNow}>
+              <span className="mono">{pts[pts.length - 1].v}</span>
+              <span className={styles.statUnit}>{unit}</span>
+            </div>
+            <LineChart pts={pts} colour="#8B7CF6" />
+          </div>
+        )
+      })()}
 
       <div className={styles.chartCard}>
         <div className={styles.chartHd}>

@@ -1,4 +1,4 @@
-import { requireUser } from '../_lib/auth.js'
+import { requireUser, isOwner } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { callAnthropic, type AnthropicMessage, type AnthropicResponseBlock } from '../_lib/anthropic.js'
 import { buildSystemPrompt } from '../_lib/chatSystemPrompt.js'
@@ -27,14 +27,6 @@ const MAX_INBOUND_MESSAGES = 40
 const MAX_TOOL_ITERATIONS = 5
 const DEFAULT_DAILY_LIMIT = 60
 const DEFAULT_WINDOW_LIMIT = 10
-
-function isOwner(userId: string): boolean {
-  const allowList = (process.env.CHAT_OWNER_USER_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return allowList.includes(userId)
-}
 
 interface Suggestion {
   kind: 'adjustment' | 'swap'

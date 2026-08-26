@@ -30,3 +30,15 @@ export async function requireUser(req: Request): Promise<{ id: string } | null> 
   if (!user?.id) return null
   return { id: user.id }
 }
+
+// Gates every owner-only endpoint (the Coach's chat routes, Sheet sync) —
+// was duplicated verbatim across 7 separate api/ files (issue #67) before
+// being consolidated here next to requireUser(), which every one of those
+// same files already imports.
+export function isOwner(userId: string): boolean {
+  const allowList = (process.env.CHAT_OWNER_USER_ID || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return allowList.includes(userId)
+}

@@ -133,7 +133,7 @@ export function equipmentForType(type: string): Equipment {
 // alternatesForCode), so the picker can show an icon regardless of which
 // of the picker's several row sources a given exercise came from.
 export function equipmentForCode(code: string): Equipment {
-  const type = stravaExerciseTypeForCode(code)
+  const type = stravaExerciseTypeForCode(code) ?? 'CORE_GENERIC'
   return equipmentForType(type)
 }
 
@@ -152,7 +152,7 @@ export function alternatesForType(type: string): CatalogEntry[] {
 // via its Strava mapping first.
 export function alternatesForCode(code: string): CatalogEntry[] {
   const type = stravaExerciseTypeForCode(code)
-  if (type === 'CORE_GENERIC') return [] // unmapped code — no known movement pattern to draw alternates from
+  if (!type) return [] // genuinely unmapped code — no known movement pattern to draw alternates from
   return alternatesForType(type)
 }
 

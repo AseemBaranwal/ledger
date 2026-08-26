@@ -48,8 +48,13 @@ describe('stravaExerciseTypeForCode', () => {
     expect(stravaExerciseTypeForCode('HLR')).toBe('HANGING_LEG_RAISE')
   })
 
-  it('falls back to CORE_GENERIC for an unmapped code rather than throwing', () => {
-    expect(stravaExerciseTypeForCode('NOT_A_REAL_CODE')).toBe('CORE_GENERIC')
+  it('returns null for a genuinely unmapped code rather than throwing', () => {
+    // Regression test for issue #68: this used to return the string
+    // "CORE_GENERIC" as an overloaded "unmapped" sentinel, which made a
+    // caller unable to tell an unmapped code apart from a code that
+    // legitimately resolves to the real CORE_GENERIC catalog entry (see
+    // the "passes through the real CORE_GENERIC type" case below).
+    expect(stravaExerciseTypeForCode('NOT_A_REAL_CODE')).toBeNull()
   })
 
   it('passes through a code that is already a valid Strava exercise_type unchanged', () => {
@@ -58,6 +63,10 @@ describe('stravaExerciseTypeForCode', () => {
     // entries in the hand-maintained map to upload correctly.
     expect(stravaExerciseTypeForCode('LEG_PRESS')).toBe('LEG_PRESS')
     expect(stravaExerciseTypeForCode('SEATED_CALF_RAISE')).toBe('SEATED_CALF_RAISE')
+  })
+
+  it('passes through the real CORE_GENERIC type, distinct from the unmapped case', () => {
+    expect(stravaExerciseTypeForCode('CORE_GENERIC')).toBe('CORE_GENERIC')
   })
 })
 

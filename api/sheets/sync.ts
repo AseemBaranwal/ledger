@@ -1,18 +1,10 @@
-import { requireUser } from '../_lib/auth.js'
+import { requireUser, isOwner } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { getBodyWeightData } from '../_lib/bodyWeightData.js'
 import { getRecoveryData } from '../_lib/recoveryData.js'
 
 // See message.ts (api/chat) for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
-
-function isOwner(userId: string): boolean {
-  const allowList = (process.env.CHAT_OWNER_USER_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return allowList.includes(userId)
-}
 
 // Edge Functions must send their first response byte within 25s (see
 // CLAUDE.md's Edge Functions section) — a real limit this handler hit in
@@ -84,6 +76,15 @@ async function syncWeightToSheet(
   let weightExported = 0
   let weightFailures = 0
   let checkpoint = since
+  // Once true, the checkpoint stops advancing for the rest of this run —
+  // see the shared explanation on the checkpoint-advancement fix above the
+  // main session loop below (issue #66): letting a LATER success overwrite
+  // the checkpoint past an EARLIER failure would permanently skip that
+  // failed row on every future sync, since the next query starts strictly
+  // after the (now-advanced) checkpoint. Rows after a failure are still
+  // attempted this run (best-effort), just don't move the persisted
+  // checkpoint past the failure point.
+  let sawFailure = false
 
   for (const row of weightRows) {
     if (pastDeadline(deadline)) return { weightExported, weightFailures, weightHasMore: true }
@@ -96,13 +97,17 @@ async function syncWeightToSheet(
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {
         weightFailures++
+        sawFailure = true
         continue
       }
       weightExported++
-      checkpoint = row.d
-      await (supabaseAdmin().from('profiles') as any).update({ weight_sheet_sync_checkpoint: checkpoint }).eq('id', userId)
+      if (!sawFailure) {
+        checkpoint = row.d
+        await (supabaseAdmin().from('profiles') as any).update({ weight_sheet_sync_checkpoint: checkpoint }).eq('id', userId)
+      }
     } catch {
       weightFailures++
+      sawFailure = true
     }
   }
 
@@ -151,6 +156,9 @@ async function syncRecoveryToSheet(
   let recoveryExported = 0
   let recoveryFailures = 0
   let checkpoint = since
+  // See syncWeightToSheet's identical sawFailure comment (issue #66) — same
+  // fix, same reasoning, applied here too.
+  let sawFailure = false
 
   for (const row of recoveryRows) {
     if (pastDeadline(deadline)) return { recoveryExported, recoveryFailures, recoveryHasMore: true }
@@ -170,13 +178,17 @@ async function syncRecoveryToSheet(
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {
         recoveryFailures++
+        sawFailure = true
         continue
       }
       recoveryExported++
-      checkpoint = row.d
-      await (supabaseAdmin().from('profiles') as any).update({ recovery_sheet_sync_checkpoint: checkpoint }).eq('id', userId)
+      if (!sawFailure) {
+        checkpoint = row.d
+        await (supabaseAdmin().from('profiles') as any).update({ recovery_sheet_sync_checkpoint: checkpoint }).eq('id', userId)
+      }
     } catch {
       recoveryFailures++
+      sawFailure = true
     }
   }
 
@@ -253,6 +265,18 @@ export default async function handler(req: Request): Promise<Response> {
   // Edge Function's 25s time-to-first-byte limit regardless of how slow any
   // one Apps Script POST turns out to be.
   const deadline = Date.now() + SYNC_TIME_BUDGET_MS
+
+  // Once true, the checkpoint stops advancing for the rest of this run
+  // (issue #66) — previously a LATER success in the same batch would still
+  // overwrite `checkpoint` past an EARLIER failed row, since the checkpoint
+  // was just a scalar unconditionally reassigned on every success. That
+  // permanently skipped the failed row: the next sync's `.gt(checkpoint)`
+  // query starts strictly after the now-advanced checkpoint, so a row that
+  // failed once could never be retried again. Rows after a failure are
+  // still attempted this run (best-effort — a transient blip on one row
+  // shouldn't block everything after it), just don't move the persisted
+  // checkpoint past the failure point.
+  let sawFailure = false
   for (const session of rows) {
     if (!session.ex?.length) continue // no exercises logged — nothing to append
     if (pastDeadline(deadline)) {
@@ -269,13 +293,17 @@ export default async function handler(req: Request): Promise<Response> {
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {
         failures++
+        sawFailure = true
         continue // don't advance the checkpoint past a row that failed
       }
       exported++
-      checkpoint = session.created_at
-      await (supabaseAdmin().from('profiles') as any).update({ sheet_sync_checkpoint: checkpoint }).eq('id', user.id)
+      if (!sawFailure) {
+        checkpoint = session.created_at
+        await (supabaseAdmin().from('profiles') as any).update({ sheet_sync_checkpoint: checkpoint }).eq('id', user.id)
+      }
     } catch {
       failures++
+      sawFailure = true
     }
   }
 

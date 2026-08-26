@@ -499,7 +499,7 @@ function AdjustmentSuggestionCard({ suggestion, onAccept, onDismiss }: Adjustmen
           </button>
         </div>
       )}
-      {suggestion.status === 'accepted' && <div style={{ fontSize: '12px', color: 'var(--teal)' }}>Sent to your sheet.</div>}
+      {suggestion.status === 'accepted' && <div style={{ fontSize: '12px', color: 'var(--teal)' }}>Applied to your program.</div>}
       {suggestion.status === 'dismissed' && <div style={{ fontSize: '12px', color: 'var(--dim)' }}>Dismissed.</div>}
     </div>
   )

@@ -24,7 +24,7 @@ export function Toast() {
 
   const notification = notifications[0]
   return (
-    <div className={`${styles.toast} ${styles[notification.type]} ${notifications.length > 0 ? styles.up : ''}`}>
+    <div className={`${styles.toast} ${styles[notification.type]} ${styles.up}`}>
       {notification.message}
     </div>
   )

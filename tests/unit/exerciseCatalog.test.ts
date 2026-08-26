@@ -124,6 +124,17 @@ describe('alternatesForCode', () => {
   it('returns an empty list for a code with no Strava mapping', () => {
     expect(alternatesForCode('NOT_A_REAL_CODE')).toEqual([])
   })
+
+  it('still returns alternates for a code that genuinely resolves to CORE_GENERIC', () => {
+    // Regression test for issue #68: CORE_GENERIC is both a real Strava
+    // catalog entry AND was being reused as the "unmapped" sentinel, so a
+    // code that legitimately maps to it (e.g. picked directly from the
+    // swap picker's Strava catalog search) wrongly got zero alternates,
+    // indistinguishable from a truly unmapped code.
+    const alts = alternatesForCode('CORE_GENERIC')
+    expect(alts.length).toBeGreaterThan(0)
+    expect(alts.some((a) => a.type === 'CORE_GENERIC')).toBe(false)
+  })
 })
 
 describe('searchCatalog', () => {

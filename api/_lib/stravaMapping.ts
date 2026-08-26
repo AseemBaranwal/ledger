@@ -68,11 +68,16 @@ const LEDGER_EXERCISE_TO_STRAVA_TYPE: Record<string, string> = {
   DF: 'DRAGON_FLAG',
 }
 
-// Falls back to a category-neutral generic rather than throwing — an
-// unmapped code (e.g. a new exercise added to config.json, or a fully
-// custom one-off logged from the exercise picker) shouldn't break the whole
-// upload, just post with a less specific exercise icon.
-export function stravaExerciseTypeForCode(code: string): string {
+// Returns null for a genuinely unmapped code rather than overloading
+// CORE_GENERIC as a "no mapping found" sentinel (issue #68) — CORE_GENERIC
+// is also a real Strava catalog entry (a code picked directly from the
+// swap picker can legitimately BE "CORE_GENERIC"), so reusing it to also
+// mean "unmapped" made alternatesForCode() below wrongly suppress real
+// alternates for that genuine case. Callers that need a concrete Strava
+// type regardless (e.g. the actual upload path, which has no such
+// ambiguity to preserve) fall back to 'CORE_GENERIC' themselves at the
+// call site.
+export function stravaExerciseTypeForCode(code: string): string | null {
   // Codes picked from the exercise-swap picker's Strava catalog search ARE
   // already a valid Strava exercise_type (e.g. "LEG_PRESS") — no hand
   // mapping needed, it maps to itself.
@@ -80,7 +85,7 @@ export function stravaExerciseTypeForCode(code: string): string {
   const mapped = LEDGER_EXERCISE_TO_STRAVA_TYPE[code]
   if (mapped && STRAVA_EXERCISE_TYPES.has(mapped)) return mapped
   console.error('stravaExerciseTypeForCode: no mapping for code', code)
-  return 'CORE_GENERIC'
+  return null
 }
 
 const LB_TO_KG = 0.45359237
@@ -106,7 +111,11 @@ export interface StravaSet {
 export function buildStravaSets(exercises: ExerciseLike[]): StravaSet[] {
   const sets: StravaSet[] = []
   for (const e of exercises) {
-    const exerciseType = stravaExerciseTypeForCode(e.k)
+    // Falls back to a category-neutral generic rather than throwing — an
+    // unmapped code (e.g. a new exercise added to config.json, or a fully
+    // custom one-off logged from the exercise picker) shouldn't break the
+    // whole upload, just post with a less specific exercise icon.
+    const exerciseType = stravaExerciseTypeForCode(e.k) ?? 'CORE_GENERIC'
     e.r.forEach((reps, i) => {
       const lb = e.ws ? e.ws[i] : e.w
       const set: StravaSet = { exercise_type: exerciseType, repetitions: reps }

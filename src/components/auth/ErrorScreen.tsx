@@ -16,8 +16,7 @@ export function ErrorScreen() {
       </div>
 
       <div className={styles.warn}>
-        This is a connection problem, not a sign-out — your account and sheet connection are still intact. Try
-        again in a moment.
+        This is a connection problem, not a sign-out — your account is still intact. Try again in a moment.
       </div>
 
       <button className={`${styles.btn} ${styles.primary}`} onClick={retryProfileLoad}>

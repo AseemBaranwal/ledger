@@ -14,6 +14,26 @@ function isOwner(userId: string): boolean {
   return allowList.includes(userId)
 }
 
+// Edge Functions must send their first response byte within 25s (see
+// CLAUDE.md's Edge Functions section) — a real limit this handler hit in
+// production once weight/recovery sync were added on top of sessions: a
+// first-ever sync can have a 90-day backlog in EACH of three phases, each
+// row costing its own synchronous POST to the (often slow, sometimes
+// cold-starting) Apps Script Web App. A per-phase row cap would still risk
+// blowing the budget if any one POST is slow; a shared wall-clock deadline
+// across all three phases is what actually bounds total latency regardless
+// of per-request variance. 18s leaves a real margin under the 25s hard
+// limit for the sessions-read query and response serialization that still
+// have to happen after the loops. Stopping early is safe and lossless: the
+// exact same per-row checkpoint that already protects against a crash
+// mid-batch also means an early stop just continues seamlessly on the next
+// call — nothing already exported gets re-sent, nothing pending is skipped.
+const SYNC_TIME_BUDGET_MS = 18000
+
+function pastDeadline(deadline: number): boolean {
+  return Date.now() >= deadline
+}
+
 interface SessionRow {
   d: string
   s: string | null
@@ -42,10 +62,11 @@ interface WeightRow {
 // other partial update that handler already tolerates.
 async function syncWeightToSheet(
   userId: string,
-  scriptUrl: string
-): Promise<{ weightExported: number; weightFailures: number }> {
+  scriptUrl: string,
+  deadline: number
+): Promise<{ weightExported: number; weightFailures: number; weightHasMore: boolean }> {
   const weightResult = await getBodyWeightData(userId, { days: 90 })
-  if (weightResult.status !== 'ok') return { weightExported: 0, weightFailures: 0 }
+  if (weightResult.status !== 'ok') return { weightExported: 0, weightFailures: 0, weightHasMore: false }
 
   const { data: profile } = await supabaseAdmin()
     .from('profiles')
@@ -65,6 +86,7 @@ async function syncWeightToSheet(
   let checkpoint = since
 
   for (const row of weightRows) {
+    if (pastDeadline(deadline)) return { weightExported, weightFailures, weightHasMore: true }
     try {
       const res = await fetch(scriptUrl, {
         method: 'POST',
@@ -84,7 +106,7 @@ async function syncWeightToSheet(
     }
   }
 
-  return { weightExported, weightFailures }
+  return { weightExported, weightFailures, weightHasMore: false }
 }
 
 interface RecoveryRow {
@@ -103,10 +125,11 @@ interface RecoveryRow {
 // every sync run.
 async function syncRecoveryToSheet(
   userId: string,
-  scriptUrl: string
-): Promise<{ recoveryExported: number; recoveryFailures: number }> {
+  scriptUrl: string,
+  deadline: number
+): Promise<{ recoveryExported: number; recoveryFailures: number; recoveryHasMore: boolean }> {
   const recoveryResult = await getRecoveryData(userId, { days: 90 })
-  if (recoveryResult.status !== 'ok') return { recoveryExported: 0, recoveryFailures: 0 }
+  if (recoveryResult.status !== 'ok') return { recoveryExported: 0, recoveryFailures: 0, recoveryHasMore: false }
 
   const { data: profile } = await supabaseAdmin()
     .from('profiles')
@@ -130,6 +153,7 @@ async function syncRecoveryToSheet(
   let checkpoint = since
 
   for (const row of recoveryRows) {
+    if (pastDeadline(deadline)) return { recoveryExported, recoveryFailures, recoveryHasMore: true }
     try {
       const res = await fetch(scriptUrl, {
         method: 'POST',
@@ -156,7 +180,7 @@ async function syncRecoveryToSheet(
     }
   }
 
-  return { recoveryExported, recoveryFailures }
+  return { recoveryExported, recoveryFailures, recoveryHasMore: false }
 }
 
 // Server-side counterpart to scripts/exportSessionsToSheet.mjs, triggered
@@ -210,6 +234,7 @@ export default async function handler(req: Request): Promise<Response> {
   let exported = 0
   let failures = 0
   let checkpoint = since
+  let sessionsHasMore = false
 
   // The checkpoint is persisted after EVERY successful row, not once at the
   // end of the loop. A batch that times out or crashes partway through a
@@ -221,8 +246,19 @@ export default async function handler(req: Request): Promise<Response> {
   // scratch. One extra write per exported row costs little at this app's
   // real volume (a handful of sessions per sync) against the correctness
   // this buys.
+  //
+  // deadline is shared across sessions + weight + recovery below, not a
+  // separate budget per phase — see SYNC_TIME_BUDGET_MS's comment for why a
+  // wall-clock deadline (not a row-count cap) is what actually bounds this
+  // Edge Function's 25s time-to-first-byte limit regardless of how slow any
+  // one Apps Script POST turns out to be.
+  const deadline = Date.now() + SYNC_TIME_BUDGET_MS
   for (const session of rows) {
     if (!session.ex?.length) continue // no exercises logged — nothing to append
+    if (pastDeadline(deadline)) {
+      sessionsHasMore = true
+      break
+    }
 
     try {
       const res = await fetch(scriptUrl, {
@@ -243,11 +279,21 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  const { weightExported, weightFailures } = await syncWeightToSheet(user.id, scriptUrl)
-  const { recoveryExported, recoveryFailures } = await syncRecoveryToSheet(user.id, scriptUrl)
+  const { weightExported, weightFailures, weightHasMore } = await syncWeightToSheet(user.id, scriptUrl, deadline)
+  const { recoveryExported, recoveryFailures, recoveryHasMore } = await syncRecoveryToSheet(user.id, scriptUrl, deadline)
+  const hasMore = sessionsHasMore || weightHasMore || recoveryHasMore
 
   return new Response(
-    JSON.stringify({ success: true, exported, failures, weightExported, weightFailures, recoveryExported, recoveryFailures }),
+    JSON.stringify({
+      success: true,
+      exported,
+      failures,
+      weightExported,
+      weightFailures,
+      recoveryExported,
+      recoveryFailures,
+      hasMore,
+    }),
     { status: 200, headers: { 'Content-Type': 'application/json' } }
   )
 }

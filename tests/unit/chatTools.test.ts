@@ -41,8 +41,34 @@ describe('formatSets', () => {
 })
 
 describe('TOOLS', () => {
-  it('defines exactly the three tools the coach can call', () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(['get_training_data', 'suggest_exercise_adjustment', 'suggest_exercise_swap'])
+  it('defines exactly the four tools the coach can call', () => {
+    expect(TOOLS.map((t) => t.name)).toEqual([
+      'get_training_data',
+      'get_recovery_data',
+      'suggest_exercise_adjustment',
+      'suggest_exercise_swap',
+    ])
+  })
+
+  // TOOLS must stay a static array with no per-request content: Anthropic
+  // renders tools → system → messages, so the single cache_control marker on
+  // the last system block covers the tool schemas too (see CLAUDE.md).
+  it('exposes get_recovery_data with an all-optional schema so the model can call it bare', () => {
+    const tool = TOOLS.find((t) => t.name === 'get_recovery_data')!
+    const schema = tool.input_schema as { required?: string[]; properties: Record<string, unknown> }
+    expect(Object.keys(schema.properties)).toEqual(['days'])
+    expect(schema.required).toBeUndefined()
+  })
+
+  // Unavailability is the expected steady state here — Google force-expires
+  // refresh tokens weekly while the OAuth app is in Testing status — so the
+  // description has to tell the model that in the tool itself, not rely on
+  // the system prompt alone.
+  it('tells the model that missing recovery data is normal, not an error', () => {
+    const tool = TOOLS.find((t) => t.name === 'get_recovery_data')!
+    expect(tool.description).toContain('not_connected')
+    expect(tool.description).toContain('needs_reconnect')
+    expect(tool.description.toLowerCase()).toContain('normal')
   })
 
   it('requires exerciseCode/exerciseName/reasoning on suggest_exercise_adjustment, but not the optional change fields', () => {

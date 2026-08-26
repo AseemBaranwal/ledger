@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
-import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore, useUnitStore } from '@/store'
+import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore, useGoogleHealthStore, useUnitStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
 import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 
@@ -15,6 +15,7 @@ import { fetchSessions } from '@/services/sessionsApi'
 import { unlockAudioContext } from '@/services/audio'
 import { onStorageError } from '@/services/userScope'
 import { STRAVA_CALLBACK_PATH, exchangeStravaCode } from '@/services/strava'
+import { GOOGLE_HEALTH_CALLBACK_PATH, exchangeGoogleHealthCode } from '@/services/googleHealth'
 import { registerSW } from 'virtual:pwa-register'
 import { useActiveSessionBackGuard } from '@/hooks/useActiveSessionBackGuard'
 import styles from '@/styles/App.module.css'
@@ -139,6 +140,40 @@ export default function App() {
           .catch((e) => {
             useUIStore.getState().showNotification(e instanceof Error ? e.message : 'Could not connect Strava', 'error')
           })
+      }
+      setTab('sync')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
+
+  // Google Health: same shape as the Strava effect above, on its own
+  // dedicated callback path (see googleHealth.ts — Supabase's own Google
+  // sign-in already claims `?code=` on the app root).
+  useEffect(() => {
+    if (!user) return
+    useGoogleHealthStore.getState().checkConnection(user.id)
+
+    if (window.location.pathname === GOOGLE_HEALTH_CALLBACK_PATH) {
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
+      // Google reports a declined consent screen as `?error=access_denied`
+      // with no code at all, so a missing code alone doesn't say why.
+      const oauthError = params.get('error')
+      window.history.replaceState({}, '', '/')
+      if (code) {
+        exchangeGoogleHealthCode(code)
+          .then(() => {
+            useGoogleHealthStore.getState().applyCallback()
+            useUIStore.getState().showNotification('Google Health connected', 'success')
+          })
+          .catch((e) => {
+            useUIStore.getState().showNotification(
+              e instanceof Error ? e.message : 'Could not connect Google Health',
+              'error'
+            )
+          })
+      } else if (oauthError) {
+        useUIStore.getState().showNotification('Google Health was not connected', 'info')
       }
       setTab('sync')
     }

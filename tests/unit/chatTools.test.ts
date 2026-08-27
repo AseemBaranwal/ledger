@@ -329,7 +329,7 @@ describe('getTrainingData', () => {
       const result = await getTrainingData('user-1', {})
 
       expect(result).toMatchObject({
-        trends: { SQ: { occurrences: 3, lastWorkingWeight: 105, weightTrend: 'flat', recentEffort: 'clean' } },
+        trends: { SQ: { LA: { occurrences: 3, lastWorkingWeight: 105, weightTrend: 'flat', recentEffort: 'clean' } } },
       })
     })
 
@@ -342,7 +342,7 @@ describe('getTrainingData', () => {
       const result = await getTrainingData('user-1', {})
 
       expect(result).toMatchObject({
-        trends: { DBL: { occurrences: 2, lastWorkingWeight: 15, weightTrend: 'flat', recentEffort: 'hard' } },
+        trends: { DBL: { PU: { occurrences: 2, lastWorkingWeight: 15, weightTrend: 'flat', recentEffort: 'hard' } } },
       })
     })
 
@@ -374,7 +374,7 @@ describe('getTrainingData', () => {
 
       const result = await getTrainingData('user-1', {})
 
-      expect(result).toMatchObject({ trends: { RDL: { weightTrend: 'rising' } } })
+      expect(result).toMatchObject({ trends: { RDL: { LA: { weightTrend: 'rising' } } } })
     })
 
     it("uses the MODE weight, not the max, so one heavier single doesn't skew the trend", async () => {
@@ -389,7 +389,7 @@ describe('getTrainingData', () => {
 
       const result = await getTrainingData('user-1', {})
 
-      expect(result).toMatchObject({ trends: { SQ: { lastWorkingWeight: 105 } } })
+      expect(result).toMatchObject({ trends: { SQ: { LA: { lastWorkingWeight: 105 } } } })
     })
 
     it('caps trend occurrences at the most recent 3, even with a wider fetch window', async () => {
@@ -402,7 +402,29 @@ describe('getTrainingData', () => {
 
       const result = await getTrainingData('user-1', {})
 
-      expect(result).toMatchObject({ trends: { WPU: { occurrences: 3 } } })
+      expect(result).toMatchObject({ trends: { WPU: { PL: { occurrences: 3 } } } })
+    })
+
+    // Regression test for the real cross-session-slot bug this design was
+    // changed to fix: SLC (Single-Leg Calf Raise) genuinely has different
+    // loading in different program slots in this account's real data —
+    // grouping by exercise code alone produced a misleading "falling"
+    // trend that was really just two unrelated numbers from two different
+    // session slots, not an actual regression.
+    it('keeps trends for the same exercise code separate per session, not blended', async () => {
+      mockSupabase({ exercise_substitutions: {} }, [
+        { d: '2026-08-24', s: 'LA', ex: [{ k: 'SLC', r: [15, 15], ws: [40, 40] }] },
+        { d: '2026-08-22', s: 'LB', ex: [{ k: 'SLC', r: [15, 15], ws: [195, 195] }] },
+        { d: '2026-08-01', s: 'LB', ex: [{ k: 'SLC', r: [15, 15], ws: [195, 195] }] },
+      ])
+
+      const result = await getTrainingData('user-1', {})
+
+      // LA has only 1 occurrence (below the threshold) — no entry at all,
+      // NOT blended into LB's numbers.
+      expect(result).toMatchObject({ trends: { SLC: { LB: { occurrences: 2, lastWorkingWeight: 195, weightTrend: 'flat' } } } })
+      const trends = (result as { trends?: Record<string, Record<string, unknown>> }).trends
+      expect(trends?.SLC).not.toHaveProperty('LA')
     })
 
     it('omits trends entirely when there are no rows at all', async () => {

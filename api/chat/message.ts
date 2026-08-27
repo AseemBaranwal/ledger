@@ -2,7 +2,7 @@ import { requireUser, isOwner } from '../_lib/auth.js'
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { callAnthropic, type AnthropicMessage, type AnthropicResponseBlock } from '../_lib/anthropic.js'
 import { buildSystemPrompt } from '../_lib/chatSystemPrompt.js'
-import { TOOLS, getTrainingData, getRecoveryData, getBodyWeightData, resolveExerciseSwap } from '../_lib/chatTools.js'
+import { TOOLS, getTrainingData, getRecoveryData, getBodyWeightData, resolveExerciseSwap, toCoachRecoveryPayload } from '../_lib/chatTools.js'
 import { saveChatTurn } from '../_lib/chatHistory.js'
 
 // See exchange.ts for why this is pinned to the Edge Runtime.
@@ -280,12 +280,17 @@ export default async function handler(req: Request): Promise<Response> {
             const result = await getTrainingData(user.id, args)
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
           } else if (block.name === 'get_recovery_data') {
-            const args = block.input as { days?: number }
+            const args = block.input as { days?: number; includeDailyBreakdown?: boolean }
             // Never throws — an unconnected watch, expired Google access, or
             // one data type failing all come back as an explicit status the
             // model is told (in the tool description) to treat as normal.
             const result = await getRecoveryData(user.id, args)
-            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
+            // Drops the raw day-by-day array by default — see
+            // toCoachRecoveryPayload's own comment for why that's safe here
+            // specifically (not inside getRecoveryData itself, which the
+            // Trends tab and Sheet sync also depend on for the full array).
+            const payload = toCoachRecoveryPayload(result, args.includeDailyBreakdown)
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(payload) })
           } else if (block.name === 'get_body_weight_data') {
             const args = block.input as { days?: number }
             // Same never-throws contract as get_recovery_data above.

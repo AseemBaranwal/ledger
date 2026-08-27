@@ -6,6 +6,7 @@ import {
   TOOLS,
   resolveExerciseSwap,
   getTrainingData,
+  toCoachRecoveryPayload,
 } from '../../api/_lib/chatTools'
 import { supabaseAdmin } from '../../api/_lib/supabaseAdmin'
 
@@ -92,7 +93,7 @@ describe('TOOLS', () => {
   it('exposes get_recovery_data with an all-optional schema so the model can call it bare', () => {
     const tool = TOOLS.find((t) => t.name === 'get_recovery_data')!
     const schema = tool.input_schema as { required?: string[]; properties: Record<string, unknown> }
-    expect(Object.keys(schema.properties)).toEqual(['days'])
+    expect(Object.keys(schema.properties)).toEqual(['days', 'includeDailyBreakdown'])
     expect(schema.required).toBeUndefined()
   })
 
@@ -398,5 +399,33 @@ describe('getTrainingData', () => {
 
       expect(result).not.toHaveProperty('trends')
     })
+  })
+})
+
+describe('toCoachRecoveryPayload', () => {
+  const okResult = {
+    status: 'ok' as const,
+    days: [{ date: '2026-08-25', restingHeartRate: 69, hrvMs: null, sleepMinutes: null, sleepQualityIndex: null }],
+    baselines: { restingHeartRate: 66, hrvMs: 67.2, sleepMinutes: 376, sleepQualityIndex: 85 },
+    latest: { date: '2026-08-25', restingHeartRate: 69, hrvMs: null, sleepMinutes: null, sleepQualityIndex: null },
+    deltas: { restingHeartRate: 3, hrvPercent: null, sleepMinutes: null },
+    flags: [],
+    readiness: 'normal' as const,
+  }
+
+  it('strips the raw `days` array by default', () => {
+    const payload = toCoachRecoveryPayload(okResult)
+    expect(payload).not.toHaveProperty('days')
+    expect(payload).toMatchObject({ status: 'ok', readiness: 'normal' })
+  })
+
+  it('keeps `days` when includeDailyBreakdown is true', () => {
+    const payload = toCoachRecoveryPayload(okResult, true)
+    expect(payload).toHaveProperty('days', okResult.days)
+  })
+
+  it('passes non-ok statuses through unchanged (nothing to strip)', () => {
+    const notConnected = { status: 'not_connected' as const }
+    expect(toCoachRecoveryPayload(notConnected)).toEqual(notConnected)
   })
 })

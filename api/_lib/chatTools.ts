@@ -6,8 +6,25 @@ import type { ToolDefinition } from './anthropic.js'
 // Health fetching/normalizing is there) but is re-exported here so the tool
 // loop in api/chat/message.ts imports every tool handler from one place,
 // same as the training-data and swap handlers below.
+import type { RecoveryResult } from './recoveryData.js'
 export { getRecoveryData } from './recoveryData.js'
 export type { RecoveryResult, RecoveryDay, RecoveryBaselines } from './recoveryData.js'
+
+// Coach-only trimming of getRecoveryData's result, applied at this call
+// site rather than inside recoveryData.ts itself — that function is also
+// the data source for the Trends tab's Recovery chart and the Sheet-sync
+// export (api/google-health/recovery.ts, api/sheets/sync.ts), both of
+// which need the full `days` array. The Coach almost never does: the
+// system prompt already tells the model `days`/`baselines` are only for a
+// specific historical date the person asks about, since `latest`/`deltas`/
+// `flags`/`readiness` already cover every other case — so by default this
+// drops `days` from what actually reaches the model's context, and only
+// includes it when the model explicitly asks via `includeDailyBreakdown`.
+export function toCoachRecoveryPayload(result: RecoveryResult, includeDailyBreakdown?: boolean): unknown {
+  if (result.status !== 'ok' || includeDailyBreakdown) return result
+  const { days: _days, ...withoutDays } = result
+  return withoutDays
+}
 
 // Same pattern for get_body_weight_data — handler lives in
 // bodyWeightData.ts.
@@ -40,13 +57,18 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_recovery_data',
     description:
-      "Reads recovery/readiness data recorded by the owner's watch and returns it PRE-ANALYZED, not raw — use `flags`, `readiness`, and `deltas` as your primary signal; don't re-derive your own comparisons from `days`. Fields: `latest` (most recent day's resting heart rate, HRV in ms, sleep minutes, and `sleepQualityIndex`); `deltas` (latest vs baseline, already subtracted — `restingHeartRate` in bpm, `hrvPercent` in %, `sleepMinutes` in minutes, all signed); `flags` (short factual strings, already decided to be worth mentioning — includes GOOD signals too, e.g. an HRV rise, not just concerning ones); `readiness` (`'primed'`, `'normal'`, or `'compromised'`, computed from the deltas — state it plainly rather than re-judging the numbers yourself); `days`/`baselines` (the full per-day history and window medians — use these ONLY for a specific historical lookback the person actually asks about, e.g. 'how'd I sleep last Tuesday'). `sleepQualityIndex` (0-100, on `latest` and each day) is LEDGER'S OWN estimate modeled on Fitbit's published sleep-score methodology (duration/efficiency/restoration) — it is NOT a number Fitbit or Google actually computed or reports (confirmed: no such field exists anywhere in the Google Health API). Call it 'an estimated sleep quality score,' never 'your Fitbit sleep score' or similar. It's `null` on nights without full sleep-stage data — say sleep quality wasn't available that night rather than guessing a number. Call this tool when the question is about readiness, fatigue, whether to push hard or back off today, or during a weekly check-in — not for questions purely about weights or logged sets. This data may legitimately be unavailable: `status` comes back as `not_connected` (the owner never linked their watch) or `needs_reconnect` (access expired — normal, it lapses about weekly by design). Both are ordinary states, NOT errors: when you get one, simply coach from training data alone and mention in a single short clause that recovery data isn't connected right now. Do not apologize at length, do not retry, and never treat it as something broken. A response may also carry `unavailable`, naming metrics that couldn't be read this time — say so plainly rather than treating a missing metric as a normal reading.",
+      "Reads recovery/readiness data recorded by the owner's watch and returns it PRE-ANALYZED, not raw — use `flags`, `readiness`, and `deltas` as your primary signal; don't re-derive your own comparisons from `days`. Fields: `latest` (most recent day's resting heart rate, HRV in ms, sleep minutes, and `sleepQualityIndex`); `deltas` (latest vs baseline, already subtracted — `restingHeartRate` in bpm, `hrvPercent` in %, `sleepMinutes` in minutes, all signed); `flags` (short factual strings, already decided to be worth mentioning — includes GOOD signals too, e.g. an HRV rise, not just concerning ones); `readiness` (`'primed'`, `'normal'`, or `'compromised'`, computed from the deltas — state it plainly rather than re-judging the numbers yourself); `baselines` (the window medians `latest` is compared against). The full day-by-day `days` array is NOT included by default — `latest`/`deltas`/`flags`/`readiness`/`baselines` already cover every case except one: the person asking about a specific historical date (e.g. 'how'd I sleep last Tuesday'). Only then, pass `includeDailyBreakdown: true` to get it. `sleepQualityIndex` (0-100, on `latest` and each day) is LEDGER'S OWN estimate modeled on Fitbit's published sleep-score methodology (duration/efficiency/restoration) — it is NOT a number Fitbit or Google actually computed or reports (confirmed: no such field exists anywhere in the Google Health API). Call it 'an estimated sleep quality score,' never 'your Fitbit sleep score' or similar. It's `null` on nights without full sleep-stage data — say sleep quality wasn't available that night rather than guessing a number. Call this tool when the question is about readiness, fatigue, whether to push hard or back off today, or during a weekly check-in — not for questions purely about weights or logged sets. This data may legitimately be unavailable: `status` comes back as `not_connected` (the owner never linked their watch) or `needs_reconnect` (access expired — normal, it lapses about weekly by design). Both are ordinary states, NOT errors: when you get one, simply coach from training data alone and mention in a single short clause that recovery data isn't connected right now. Do not apologize at length, do not retry, and never treat it as something broken. A response may also carry `unavailable`, naming metrics that couldn't be read this time — say so plainly rather than treating a missing metric as a normal reading.",
     input_schema: {
       type: 'object',
       properties: {
         days: {
           type: 'number',
           description: 'How many days back to look. Defaults to 14 if omitted; heart-rate metrics are capped at 14 days by the upstream API regardless.',
+        },
+        includeDailyBreakdown: {
+          type: 'boolean',
+          description:
+            'Set true only when you actually need the raw day-by-day list — e.g. the person asked about one specific date. Omitted or false by default: latest/deltas/flags/readiness/baselines already cover every other case and cost far fewer tokens.',
         },
       },
     },

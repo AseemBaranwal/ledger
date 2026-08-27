@@ -346,14 +346,24 @@ describe('getTrainingData', () => {
       })
     })
 
-    it('marks a single occurrence as too-new (n/a) rather than guessing a trend', async () => {
+    // Regression test: an earlier version included a 'too new' n/a entry
+    // for every single-occurrence code — on a real broad-window fetch this
+    // added more tokens (many low-signal entries) than the sets-compression
+    // saved. Since a 1-occurrence code is already fully visible from `rows`
+    // with no precomputed field needed, it's dropped from `trends` entirely
+    // rather than kept as a low-value n/a entry.
+    it('omits a single-occurrence exercise from trends entirely, rather than an n/a entry', async () => {
       mockSupabase({ exercise_substitutions: {} }, [
         { d: '2026-08-24', s: 'LA', ex: [{ k: 'MACHINE_HIP_ABDUCTION', r: [15, 15], ws: [50, 50] }] },
+        { d: '2026-08-24', s: 'LA', ex: [{ k: 'SQ', r: [6], ws: [105] }] },
+        { d: '2026-08-17', s: 'LA', ex: [{ k: 'SQ', r: [6], ws: [105] }] },
       ])
 
       const result = await getTrainingData('user-1', {})
 
-      expect(result).toMatchObject({ trends: { MACHINE_HIP_ABDUCTION: { occurrences: 1, weightTrend: 'n/a' } } })
+      const trends = (result as { trends?: Record<string, unknown> }).trends
+      expect(trends).not.toHaveProperty('MACHINE_HIP_ABDUCTION')
+      expect(trends).toHaveProperty('SQ') // the 2-occurrence exercise still gets an entry
     })
 
     it('flags rising working weight across occurrences', async () => {
@@ -369,9 +379,12 @@ describe('getTrainingData', () => {
 
     it("uses the MODE weight, not the max, so one heavier single doesn't skew the trend", async () => {
       // Real-world case: three sets at 105, one heavier single at 115 —
-      // the working weight is 105, not 115.
+      // the working weight is 105, not 115. A second occurrence is included
+      // purely so this exercise clears the 2-occurrence threshold for
+      // getting a trends entry at all.
       mockSupabase({ exercise_substitutions: {} }, [
         { d: '2026-08-10', s: 'LA', ex: [{ k: 'SQ', r: [7, 6, 6, 5], ws: [105, 105, 105, 115] }] },
+        { d: '2026-08-03', s: 'LA', ex: [{ k: 'SQ', r: [6], ws: [105] }] },
       ])
 
       const result = await getTrainingData('user-1', {})

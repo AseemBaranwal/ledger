@@ -35,7 +35,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone. A run of identical sets is collapsed to one entry with a trailing ' xN' (e.g. \"105x6(o) x4\" means four identical sets, not one) — this is pure compression, not fewer real sets than logged. A row may also carry notes — whatever the owner wrote down for that session (form, energy, anything worth remembering) — attached once per session on its first row, not repeated on every row. Ground observations in these notes directly rather than guessing at context the owner already told you. `trends` (one entry per exercise code that appears in the results) gives a precomputed `weightTrend` ('flat'/'rising'/'falling'/'mixed'/'n/a') and `recentEffort` ('clean'/'mixed'/'hard'/'n/a') from that exercise's last 2-3 occurrences, plus its current `lastWorkingWeight` (the mode weight of the most recent occurrence, not necessarily the session's single heaviest set) — use this as your primary signal for whether an exercise has room to progress rather than re-deriving the same comparison yourself from the raw `sets` strings across many rows. It is a mechanical summary, not a final verdict: still weigh it together with any relevant `notes` (an equipment mixup, home vs. gym, an off day already explained) before proposing a change.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone. A run of identical sets is collapsed to one entry with a trailing ' xN' (e.g. \"105x6(o) x4\" means four identical sets, not one) — this is pure compression, not fewer real sets than logged. A row may also carry notes — whatever the owner wrote down for that session (form, energy, anything worth remembering) — attached once per session on its first row, not repeated on every row. Ground observations in these notes directly rather than guessing at context the owner already told you. `trends` gives a precomputed `weightTrend` ('flat'/'rising'/'falling'/'mixed'/'n/a') and `recentEffort` ('clean'/'mixed'/'hard'/'n/a') per exercise code, from that exercise's last 2-3 occurrences, plus its current `lastWorkingWeight` (the mode weight of the most recent occurrence, not necessarily the session's single heaviest set) — use this as your primary signal for whether an exercise has room to progress rather than re-deriving the same comparison yourself from the raw `sets` strings across many rows. Only codes with 2+ occurrences in this window get an entry; a code with just 1 occurrence has nothing to compare yet (you can already see that directly from `rows`) so it's simply absent from `trends`, not included as an empty/n-a entry. It is a mechanical summary, not a final verdict: still weigh it together with any relevant `notes` (an equipment mixup, home vs. gym, an off day already explained) before proposing a change.",
     input_schema: {
       type: 'object',
       properties: {
@@ -216,14 +216,17 @@ export type EffortCharacter = 'clean' | 'mixed' | 'hard' | 'n/a'
 
 export interface ExerciseTrendSummary {
   // How many of the last (up to 3) occurrences in this response window this
-  // is based on — 1 means there's nothing to compare yet.
+  // is based on. Always >= 2 — a code with only 1 occurrence gets no entry
+  // at all (see the loop below that builds this map), since that fact is
+  // already fully visible from `rows` without a precomputed field.
   occurrences: number
   // The working weight (mode, not max — see modeWeightOf) from the most
   // recent occurrence.
   lastWorkingWeight: number | null
   // Direction of the working weight across the sampled occurrences,
-  // earliest to latest. 'n/a' with fewer than 2 occurrences, or if any
-  // sampled occurrence has no trackable weight (a bodyweight exercise).
+  // earliest to latest. 'n/a' only if some sampled occurrence has no
+  // trackable weight (a bodyweight exercise) — occurrences is always >= 2
+  // here, that's not itself a reason for 'n/a' anymore.
   weightTrend: WeightTrend
   // Effort character of the MOST RECENT occurrence only (fraction of its
   // sets tagged 'h'): 0% = 'clean', 100% = 'hard', anything between =
@@ -386,8 +389,19 @@ export async function getTrainingData(
   // readiness: a training-weight call also depends on context this
   // function doesn't have (an equipment mixup noted in `notes`, home vs.
   // gym) that the model still needs to weigh itself.
+  //
+  // Skips any code with fewer than 2 occurrences entirely, rather than
+  // including it as an 'n/a' entry — confirmed against a real broad-window
+  // fetch that this matters: a plain "how's my training going" call can
+  // span 20+ distinct exercise codes, and roughly half typically have only
+  // one occurrence in the window. An 'n/a' entry for those costs real
+  // tokens (a real trace showed this outweighing what set-compression
+  // saved) while adding nothing the model can't already see directly from
+  // `rows` — a single row for a code IS the fact that it's too new to
+  // trend, no precomputed field needed to say so.
   const trends: Record<string, ExerciseTrendSummary> = {}
   for (const [code, occurrences] of trendOccurrences) {
+    if (occurrences.length < 2) continue
     const weights = occurrences.map((o) => o.modeWeight).filter((w): w is number => w != null)
     const latest = occurrences[0]
     trends[code] = {

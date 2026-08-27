@@ -168,7 +168,7 @@ describe('getTrainingData', () => {
   // today's date — without this, the model had to infer "today" from the
   // most recent session row, fragile for this-week/last-week reasoning.
   it('includes today as a real ISO date, not derived from the session rows', async () => {
-    mockSupabase({ exercise_substitutions: {} }, [{ d: '2020-01-01', s: 'LA', ex: [] }])
+    mockSupabase({}, [{ d: '2020-01-01', s: 'LA', ex: [] }])
 
     const result = await getTrainingData('user-1', {})
 
@@ -179,7 +179,7 @@ describe('getTrainingData', () => {
   })
 
   it('shapes rows from the sessions table, one per logged exercise', async () => {
-    mockSupabase({ exercise_substitutions: {} }, [
+    mockSupabase({}, [
       { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5, 5], ws: [80, 80] }] },
     ])
 
@@ -190,24 +190,19 @@ describe('getTrainingData', () => {
     })
   })
 
-  // Caught live: the model guessed "SLC" was "Seated Leg Curl" when it's
-  // actually "Single-Leg Calf Raise" in the real program — get_training_data
-  // never gave it a real name to work from, only the bare code, so it had
-  // to guess from an inherently ambiguous abbreviation. Resolving the name
-  // from the owner's own routine_config.program removes the guesswork.
   it("resolves each row's exerciseName from the owner's program config, not the code", async () => {
     mockSupabase(
-      { exercise_substitutions: {}, routine_config: { program: { LB: { ex: [{ k: 'SLC', n: 'Single-Leg Calf Raise' }] } } } },
-      [{ d: '2026-07-25', s: 'LB', ex: [{ k: 'SLC', r: [15], ws: [175] }] }]
+      { routine_config: { program: { LB: { ex: [{ k: 'SINGLE_LEG_STANDING_CALF_RAISE', n: 'Single-Leg Calf Raise' }] } } } },
+      [{ d: '2026-07-25', s: 'LB', ex: [{ k: 'SINGLE_LEG_STANDING_CALF_RAISE', r: [15], ws: [175] }] }]
     )
 
     const result = await getTrainingData('user-1', {})
 
-    expect(result).toMatchObject({ rows: [{ exercise: 'SLC', exerciseName: 'Single-Leg Calf Raise' }] })
+    expect(result).toMatchObject({ rows: [{ exercise: 'SINGLE_LEG_STANDING_CALF_RAISE', exerciseName: 'Single-Leg Calf Raise' }] })
   })
 
   it('falls back to the bare code for an exercise no longer in the current program', async () => {
-    mockSupabase({ exercise_substitutions: {}, routine_config: { program: {} } }, [
+    mockSupabase({ routine_config: { program: {} } }, [
       { d: '2026-07-14', s: 'LA', ex: [{ k: 'OLD_CODE', r: [10] }] },
     ])
 
@@ -217,7 +212,7 @@ describe('getTrainingData', () => {
   })
 
   it("attaches a session's notes to only its first exercise row, not every row", async () => {
-    mockSupabase({ exercise_substitutions: {} }, [
+    mockSupabase({}, [
       { d: '2026-07-14', s: 'LA', n: 'Felt strong today', ex: [{ k: 'SQ', r: [5], ws: [80] }, { k: 'BSS', r: [8], ws: [20] }] },
     ])
 
@@ -228,7 +223,7 @@ describe('getTrainingData', () => {
   })
 
   it('omits notes entirely when the session has none', async () => {
-    mockSupabase({ exercise_substitutions: {} }, [
+    mockSupabase({}, [
       { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5], ws: [80] }] },
     ])
 
@@ -238,7 +233,7 @@ describe('getTrainingData', () => {
   })
 
   it('filters rows to the requested exerciseCode', async () => {
-    mockSupabase({ exercise_substitutions: {} }, [
+    mockSupabase({}, [
       { d: '2026-07-14', s: 'LA', ex: [{ k: 'SQ', r: [5], ws: [80] }, { k: 'BSS', r: [8], ws: [20] }] },
     ])
 
@@ -249,7 +244,7 @@ describe('getTrainingData', () => {
   })
 
   it('surfaces a clean error when the sessions query fails, rather than throwing', async () => {
-    mockSupabase({ exercise_substitutions: {} }, [], { message: 'connection refused' })
+    mockSupabase({}, [], { message: 'connection refused' })
 
     const result = await getTrainingData('user-1', {})
 
@@ -270,7 +265,7 @@ describe('getTrainingData', () => {
     vi.mocked(supabaseAdmin).mockReturnValue({
       from: (table: string) => {
         if (table === 'profiles') {
-          return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { exercise_substitutions: {} }, error: null }) }) }) }
+          return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: {}, error: null }) }) }) }
         }
         const chain: any = {
           select: () => chain,
@@ -298,7 +293,7 @@ describe('getTrainingData', () => {
     // assumes that ordering rather than re-sorting.
 
     it('flags flat weight + clean effort as a ready-to-progress signal', async () => {
-      mockSupabase({ exercise_substitutions: {} }, [
+      mockSupabase({}, [
         { d: '2026-08-24', s: 'LA', ex: [{ k: 'SQ', r: [6, 6, 6, 6], ws: [105, 105, 105, 105] }] },
         { d: '2026-08-17', s: 'LA', ex: [{ k: 'SQ', r: [6, 6, 6], ws: [105, 105, 105], ef: [null, null, 'h'] }] },
         { d: '2026-08-10', s: 'LA', ex: [{ k: 'SQ', r: [7, 6, 6, 5], ws: [105, 105, 105, 115] }] },
@@ -312,7 +307,7 @@ describe('getTrainingData', () => {
     })
 
     it('flags flat weight + all-hard effort as a stuck plateau', async () => {
-      mockSupabase({ exercise_substitutions: {} }, [
+      mockSupabase({}, [
         { d: '2026-08-25', s: 'PU', ex: [{ k: 'DBL', r: [13, 13, 13, 13], ws: [15, 15, 15, 15], ef: ['h', 'h', 'h', 'h'] }] },
         { d: '2026-08-19', s: 'PU', ex: [{ k: 'DBL', r: [15, 15], ws: [15, 15] }] },
       ])
@@ -331,7 +326,7 @@ describe('getTrainingData', () => {
     // with no precomputed field needed, it's dropped from `trends` entirely
     // rather than kept as a low-value n/a entry.
     it('omits a single-occurrence exercise from trends entirely, rather than an n/a entry', async () => {
-      mockSupabase({ exercise_substitutions: {} }, [
+      mockSupabase({}, [
         { d: '2026-08-24', s: 'LA', ex: [{ k: 'MACHINE_HIP_ABDUCTION', r: [15, 15], ws: [50, 50] }] },
         { d: '2026-08-24', s: 'LA', ex: [{ k: 'SQ', r: [6], ws: [105] }] },
         { d: '2026-08-17', s: 'LA', ex: [{ k: 'SQ', r: [6], ws: [105] }] },
@@ -345,7 +340,7 @@ describe('getTrainingData', () => {
     })
 
     it('flags rising working weight across occurrences', async () => {
-      mockSupabase({ exercise_substitutions: {} }, [
+      mockSupabase({}, [
         { d: '2026-08-24', s: 'LA', ex: [{ k: 'RDL', r: [8], ws: [100] }] },
         { d: '2026-08-17', s: 'LA', ex: [{ k: 'RDL', r: [8], ws: [95] }] },
       ])
@@ -360,7 +355,7 @@ describe('getTrainingData', () => {
       // the working weight is 105, not 115. A second occurrence is included
       // purely so this exercise clears the 2-occurrence threshold for
       // getting a trends entry at all.
-      mockSupabase({ exercise_substitutions: {} }, [
+      mockSupabase({}, [
         { d: '2026-08-10', s: 'LA', ex: [{ k: 'SQ', r: [7, 6, 6, 5], ws: [105, 105, 105, 115] }] },
         { d: '2026-08-03', s: 'LA', ex: [{ k: 'SQ', r: [6], ws: [105] }] },
       ])
@@ -371,7 +366,7 @@ describe('getTrainingData', () => {
     })
 
     it('caps trend occurrences at the most recent 3, even with a wider fetch window', async () => {
-      mockSupabase({ exercise_substitutions: {} }, [
+      mockSupabase({}, [
         { d: '2026-08-24', s: 'PL', ex: [{ k: 'WPU', r: [5], w: 5 }] },
         { d: '2026-08-20', s: 'PL', ex: [{ k: 'WPU', r: [5], w: 0 }] },
         { d: '2026-08-13', s: 'PL', ex: [{ k: 'WPU', r: [5], w: 0 }] },
@@ -383,30 +378,28 @@ describe('getTrainingData', () => {
       expect(result).toMatchObject({ trends: { WPU: { PL: { occurrences: 3 } } } })
     })
 
-    // Regression test for the real cross-session-slot bug this design was
-    // changed to fix: SLC (Single-Leg Calf Raise) genuinely has different
-    // loading in different program slots in this account's real data —
-    // grouping by exercise code alone produced a misleading "falling"
-    // trend that was really just two unrelated numbers from two different
-    // session slots, not an actual regression.
+    // The same exercise code can genuinely have different loading in
+    // different program slots (e.g. a single-leg calf raise programmed
+    // lighter in one session than another) — grouping by exercise code
+    // alone would blend those into one misleading trend.
     it('keeps trends for the same exercise code separate per session, not blended', async () => {
-      mockSupabase({ exercise_substitutions: {} }, [
-        { d: '2026-08-24', s: 'LA', ex: [{ k: 'SLC', r: [15, 15], ws: [40, 40] }] },
-        { d: '2026-08-22', s: 'LB', ex: [{ k: 'SLC', r: [15, 15], ws: [195, 195] }] },
-        { d: '2026-08-01', s: 'LB', ex: [{ k: 'SLC', r: [15, 15], ws: [195, 195] }] },
+      mockSupabase({}, [
+        { d: '2026-08-24', s: 'LA', ex: [{ k: 'SINGLE_LEG_STANDING_CALF_RAISE', r: [15, 15], ws: [40, 40] }] },
+        { d: '2026-08-22', s: 'LB', ex: [{ k: 'SINGLE_LEG_STANDING_CALF_RAISE', r: [15, 15], ws: [195, 195] }] },
+        { d: '2026-08-01', s: 'LB', ex: [{ k: 'SINGLE_LEG_STANDING_CALF_RAISE', r: [15, 15], ws: [195, 195] }] },
       ])
 
       const result = await getTrainingData('user-1', {})
 
       // LA has only 1 occurrence (below the threshold) — no entry at all,
       // NOT blended into LB's numbers.
-      expect(result).toMatchObject({ trends: { SLC: { LB: { occurrences: 2, lastWorkingWeight: 195, weightTrend: 'flat' } } } })
+      expect(result).toMatchObject({ trends: { SINGLE_LEG_STANDING_CALF_RAISE: { LB: { occurrences: 2, lastWorkingWeight: 195, weightTrend: 'flat' } } } })
       const trends = (result as { trends?: Record<string, Record<string, unknown>> }).trends
-      expect(trends?.SLC).not.toHaveProperty('LA')
+      expect(trends?.SINGLE_LEG_STANDING_CALF_RAISE).not.toHaveProperty('LA')
     })
 
     it('omits trends entirely when there are no rows at all', async () => {
-      mockSupabase({ exercise_substitutions: {} }, [])
+      mockSupabase({}, [])
 
       const result = await getTrainingData('user-1', {})
 

@@ -29,7 +29,7 @@ const baseUsage = {
 describe('chatStore', () => {
   beforeEach(() => {
     useChatStore.setState({ messages: [], sending: false, statusMessage: null, thinkingText: '', lastUsage: null, error: null })
-    useConfigStore.setState({ program: {}, substitutions: {} })
+    useConfigStore.setState({ program: {} })
     vi.clearAllMocks()
     vi.mocked(chatService.updateSuggestionStatus).mockResolvedValue(undefined)
     vi.mocked(chatService.applyExerciseSwap).mockResolvedValue(undefined)
@@ -385,7 +385,7 @@ describe('chatStore', () => {
             role: 'assistant',
             content: 'Swap suggestion',
             suggestions: [
-              { kind: 'swap', exerciseCode: 'SQ', exerciseName: 'Back Squat', newExerciseCode: 'LEG_PRESS', newExerciseName: 'Leg Press', reasoning: 'x', status: 'pending' },
+              { kind: 'swap', exerciseCode: 'BARBELL_BACK_SQUAT', exerciseName: 'Back Squat', newExerciseCode: 'LEG_PRESS', newExerciseName: 'Leg Press', reasoning: 'x', status: 'pending' },
             ],
           },
         ],
@@ -397,8 +397,8 @@ describe('chatStore', () => {
     it('swaps the exercise in the active draft session and marks the suggestion accepted', async () => {
       useSessionStore.setState({
         draft: { d: '2026-01-01', s: 'LA', g: 'Gym', n: '', type: 'PROGRAM' },
-        draftDefs: [{ k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }],
-        draftEx: [{ k: 'SQ', w: 75, r: [] }],
+        draftDefs: [{ k: 'BARBELL_BACK_SQUAT', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }],
+        draftEx: [{ k: 'BARBELL_BACK_SQUAT', w: 75, r: [] }],
       })
 
       await useChatStore.getState().acceptSwap('a1', 0)
@@ -407,20 +407,19 @@ describe('chatStore', () => {
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
     })
 
-    // The program IS the swap now — no separate redirect table (see
-    // CLAUDE.md's exercise-code section on why that split source of truth
-    // was retired). api/chat/apply-exercise-swap.ts writes routine_config
-    // directly; this just checks the client calls it with the right
+    // api/chat/apply-exercise-swap.ts writes routine_config directly —
+    // there's no separate redirect table (see CLAUDE.md's exercise-code
+    // section). This checks the client calls it with the right
     // exerciseCode and mirrors the change into the local program state
     // optimistically, same pattern acceptSuggestion already uses.
     it('writes the swap and marks it accepted even with no active session', async () => {
       useConfigStore.setState({
-        program: { LA: { name: 'Lower A', full: '', colour: 'legs', gym: '', day: 1, ex: [{ k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }] } },
+        program: { LA: { name: 'Lower A', full: '', colour: 'legs', gym: '', day: 1, ex: [{ k: 'BARBELL_BACK_SQUAT', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }] } },
       })
 
       await useChatStore.getState().acceptSwap('a1', 0)
 
-      expect(chatService.applyExerciseSwap).toHaveBeenCalledWith('SQ', {
+      expect(chatService.applyExerciseSwap).toHaveBeenCalledWith('BARBELL_BACK_SQUAT', {
         code: 'LEG_PRESS',
         name: 'Leg Press',
         group: 'Legs',
@@ -452,8 +451,8 @@ describe('chatStore', () => {
       })
       useSessionStore.setState({
         draft: { d: '2026-01-01', s: 'LA', g: 'Gym', n: '', type: 'PROGRAM' },
-        draftDefs: [{ k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }],
-        draftEx: [{ k: 'SQ', w: 75, r: [] }],
+        draftDefs: [{ k: 'BARBELL_BACK_SQUAT', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }],
+        draftEx: [{ k: 'BARBELL_BACK_SQUAT', w: 75, r: [] }],
         // Stale historical logging at a lower weight — the freshly-updated
         // program target (120) should win over this (60).
         sessions: [{ d: '2026-01-01', s: 'LA', ex: [{ k: 'LEG_PRESS', r: [10], w: 60 }] }],

@@ -233,11 +233,8 @@ export function TodayTab() {
                   // change the program's own schedule; only a Coach-
                   // accepted suggest_exercise_swap does that (see
                   // chatStore.acceptSwap / api/chat/apply-exercise-swap.ts,
-                  // which write the program directly). Before this, every
-                  // manual swap here ALSO persisted a standing substitution
-                  // — silently turning "just today" into "forever" was a
-                  // real source of confusion (see CLAUDE.md's exercise-code
-                  // section).
+                  // which write the program directly). See CLAUDE.md's
+                  // exercise-code section for the standing rule.
                   swapExercise(picker.index, def, startWeight)
                 } else {
                   addExercise(def, startWeight)

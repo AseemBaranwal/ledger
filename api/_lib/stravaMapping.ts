@@ -30,20 +30,10 @@ export function supportsStructuredSets(sportType: string): boolean {
   return JSON_UPLOAD_SPORT_TYPES.has(sportType)
 }
 
-// Every exercise code in this app IS a real Strava exercise_type constant —
-// there is no separate short-abbreviation code system anymore. That used to
-// exist (a hand-maintained SQ/RDL/BSS-style table mapping short codes to
-// their Strava equivalent) and was retired: it was a genuine second source
-// of truth for the same exercise's identity, split across the program's own
-// stored code and whatever a swap or Strava upload actually resolved to.
-// That split caused a real, live data-integrity bug — a swapped exercise's
-// program entry silently disagreed with what got logged, trends couldn't
-// count occurrences of "the same exercise" correctly (some logged under the
-// short code, some under the descriptive one), and a mistaken swap could
-// never be undone. See CLAUDE.md's "Exercise codes are the Strava
-// exercise_type, everywhere" section for the full story and the standing
-// rule this enforces: every exercise code, in the program, in a logged
-// session, everywhere, is always the same descriptive Strava constant.
+// Every exercise code in this app IS a real Strava exercise_type constant,
+// in the program, in a logged session, everywhere — there is no separate
+// short-abbreviation code system. See CLAUDE.md's "Exercise codes are the
+// Strava exercise_type, everywhere" section for the standing rule.
 //
 // Returns null for a genuinely unmapped code rather than overloading
 // CORE_GENERIC as a "no mapping found" sentinel (issue #68) — CORE_GENERIC

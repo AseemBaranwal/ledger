@@ -18,22 +18,14 @@ interface ProgramExerciseLike {
 // from apply-exercise-change.ts (weight/reps/sets targets on the SAME
 // exercise) — this replaces which exercise a program slot resolves to.
 //
-// Writes directly into profiles.routine_config's own stored exercise
-// entry — NOT a separate redirect table. Previously this wrote to
-// profiles.exercise_substitutions (see supabase/exercise_substitutions.sql,
-// now unused everywhere in this codebase — the column is left in place but
-// nothing reads or writes it anymore), keyed by the original code, with
-// the program's own entry left permanently stale. That split-source-of-
-// truth design was the root cause of a real, live data bug (issue #89):
-// a swapped exercise's PROGRAM entry (used by, among other things, the
-// accept-flow for weight/reps/sets changes) never agreed with what a swap
-// had actually changed it to, and there was no way to ever undo a mistaken
-// swap short of another swap. Now the program's own `k`/`n`/`group`/`u`
-// ARE the swap — one field to update, one thing to read, everywhere.
-// weight/reps/sets are deliberately left as whatever the slot already had
-// — a rough starting point for a genuinely new exercise, self-correcting
-// via a real suggest_exercise_adjustment once actual data exists, same as
-// today's UX for a brand new exercise added to the program.
+// Writes directly into the matching entry inside profiles.routine_config's
+// own program — there's no separate redirect table, so the program's own
+// `k`/`n`/`group`/`u` fields ARE the swap; one field to update, one thing
+// to read, everywhere. weight/reps/sets are deliberately left as whatever
+// the slot already had — a rough starting point for a genuinely new
+// exercise, self-correcting via a real suggest_exercise_adjustment once
+// actual data exists, same as today's UX for a brand new exercise added
+// to the program.
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })

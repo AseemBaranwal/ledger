@@ -48,3 +48,32 @@ export async function saveSubstitution(originalCode: string, replacement: Exerci
     .eq('id', userId)
   if (updateError) throw new Error(updateError.message)
 }
+
+// Clears a standing substitution entirely, reverting that program slot back
+// to whatever it originally was — until this existed, the only operation
+// available anywhere in the codebase (this file, api/chat/apply-exercise-
+// swap.ts, and the manual picker) was SET, never remove. That gap is what
+// let a real substitution mistake become permanently stuck: a user trying
+// to "swap back" to their original exercise can only ever re-resolve
+// through the catalog to a new target, never actually clear the override
+// (see issue #89 — confirmed via real chat history on a live account).
+export async function removeSubstitution(originalCode: string): Promise<void> {
+  const userId = getCurrentUserId()
+  if (!userId) throw new Error('Not signed in')
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('exercise_substitutions')
+    .eq('id', userId)
+    .single()
+  if (error) throw new Error(error.message)
+
+  const substitutions = { ...((data?.exercise_substitutions as Record<string, ExerciseSubstitution>) || {}) }
+  delete substitutions[originalCode]
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ exercise_substitutions: substitutions })
+    .eq('id', userId)
+  if (updateError) throw new Error(updateError.message)
+}

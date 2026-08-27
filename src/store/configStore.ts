@@ -28,6 +28,10 @@ interface ConfigStore {
   // Optimistic local update so a swap accepted this session is reflected
   // immediately, without waiting for a re-fetch.
   setSubstitution: (originalCode: string, replacement: ExerciseSubstitution) => void
+  // Clears a standing substitution, reverting that slot to the program's
+  // own original exercise — the local-state counterpart to
+  // exerciseSubstitutionsApi.ts's removeSubstitution().
+  removeSubstitution: (originalCode: string) => void
   // Back to a neutral, unpersonalized state — called on sign-out or when
   // switching to a different signed-in user, so the previous person's
   // program can't flash on screen while the new one's profile is loading.
@@ -92,6 +96,13 @@ export const useConfigStore = create<ConfigStore>((set) => ({
 
   setSubstitution: (originalCode, replacement) =>
     set((state) => ({ substitutions: { ...state.substitutions, [originalCode]: replacement } })),
+
+  removeSubstitution: (originalCode) =>
+    set((state) => {
+      const substitutions = { ...state.substitutions }
+      delete substitutions[originalCode]
+      return { substitutions }
+    }),
 
   resetProgram: () =>
     set({

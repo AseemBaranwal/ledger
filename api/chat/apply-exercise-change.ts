@@ -59,7 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const { data: profile, error } = await supabaseAdmin()
     .from('profiles')
-    .select('routine_config')
+    .select('routine_config, exercise_substitutions')
     .eq('id', user.id)
     .single()
 
@@ -68,15 +68,34 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'No training program found for this account' }), { status: 404 })
   }
 
-  let found = false
-  for (const session of Object.values(routineConfig.program)) {
-    for (const ex of session.ex || []) {
-      if (ex.k !== exerciseCode) continue
-      found = true
-      if (weight != null) ex.w = weight
-      if (reps != null) ex.r = reps
-      if (sets != null) ex.s = sets
+  // Try the code as given first, then fall back to resolving it as a
+  // currently-SWAPPED-IN code back to the program's own original code — a
+  // swap only ever writes a standing substitution (profiles.
+  // exercise_substitutions), it deliberately never rewrites the program's
+  // own stored code (see supabase/exercise_substitutions.sql). A caller
+  // that only has visibility into the swapped-in code (e.g. the Coach's
+  // get_training_data, whose rows show whatever a session was actually
+  // logged under) would otherwise 404 here for any currently-swapped
+  // exercise — confirmed as a real, live bug on a swapped Squat (issue #88).
+  function applyTo(code: string): boolean {
+    let matched = false
+    for (const session of Object.values(routineConfig!.program!)) {
+      for (const ex of session.ex || []) {
+        if (ex.k !== code) continue
+        matched = true
+        if (weight != null) ex.w = weight
+        if (reps != null) ex.r = reps
+        if (sets != null) ex.s = sets
+      }
     }
+    return matched
+  }
+
+  let found = applyTo(exerciseCode)
+  if (!found) {
+    const substitutions = (profile as { exercise_substitutions?: Record<string, { code: string }> } | null)?.exercise_substitutions || {}
+    const originalCode = Object.keys(substitutions).find((code) => substitutions[code]?.code === exerciseCode)
+    if (originalCode) found = applyTo(originalCode)
   }
 
   if (!found) {

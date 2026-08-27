@@ -37,8 +37,9 @@ export interface DisplayMessage extends ChatMessage {
 
 // The API is stateless — every call resends history. Sending the FULL
 // scrollback would grow unboundedly, so only the last N messages go out per
-// turn; everything stays in the UI for scrollback regardless.
-const MAX_MESSAGES_SENT = 24
+// turn; everything stays in the UI for scrollback regardless. 10 = the last
+// 5 user/assistant exchanges.
+const MAX_MESSAGES_SENT = 10
 
 interface ChatStore {
   messages: DisplayMessage[]

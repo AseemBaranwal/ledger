@@ -9,13 +9,13 @@ import { saveChatTurn } from '../_lib/chatHistory.js'
 export const config = { runtime: 'edge' }
 
 const MAX_MESSAGE_CHARS = 4000
-// The client only ever sends the last MAX_MESSAGES_SENT (24, see
+// The client only ever sends the last MAX_MESSAGES_SENT (10, see
 // chatStore.ts) messages per turn — this is a server-side backstop, not the
 // primary control, so a stale/buggy client can't bill an ever-growing,
 // uncached history against this endpoint regardless of what the client-side
-// slice is supposed to enforce. Set well above 24 so a legitimate client is
+// slice is supposed to enforce. Set well above 10 so a legitimate client is
 // never rejected by its own normal behavior.
-const MAX_INBOUND_MESSAGES = 40
+const MAX_INBOUND_MESSAGES = 20
 // Bumped from 4 — analysis of real chat_logs found a genuine case (7 tool
 // calls: get_training_data + 6x suggest_exercise_swap, spread across
 // exactly 4 iterations) that exhausted the old cap while the model still

@@ -30,44 +30,21 @@ export function supportsStructuredSets(sportType: string): boolean {
   return JSON_UPLOAD_SPORT_TYPES.has(sportType)
 }
 
-// Maps each of Ledger's own exercise codes (from config.json's program
-// definitions) to the closest Strava exercise_type. Verified by hand against
-// developers.strava.com/docs/uploads/ — where the movement's implement
-// (barbell/dumbbell/cable/machine) isn't obvious from Ledger's data alone,
-// this was confirmed directly with the user rather than guessed.
-const LEDGER_EXERCISE_TO_STRAVA_TYPE: Record<string, string> = {
-  // Lower A
-  SQ: 'BARBELL_BACK_SQUAT',
-  BSS: 'DUMBBELL_BULGARIAN_SPLIT_SQUATS',
-  RDL: 'BARBELL_ROMANIAN_DEADLIFT',
-  WL: 'DUMBBELL_WALKING_LUNGES',
-  SCR: 'STANDING_CALF_RAISE',
-  SEC: 'SEATED_CALF_RAISE',
-  HLR: 'HANGING_LEG_RAISE',
-  // Push
-  OHP: 'STANDING_BARBELL_PRESS',
-  DBL: 'LATERAL_RAISE_GENERIC', // Strava has no plain dumbbell lateral raise variant
-  CLR: 'CABLE_LATERAL_RAISE',
-  RDF: 'DUMBBELL_REAR_DELT_FLY',
-  IDP: 'INCLINE_DUMBBELL_BENCH_PRESS',
-  OTE: 'OVERHEAD_DUMBBELL_TRICEPS_EXTENSION',
-  // Pull
-  WPU: 'WEIGHTED_CHIN_UP',
-  LPD: 'LAT_PULLDOWN', // Strava has no wide-grip-specific variant
-  CSR: 'CHEST_SUPPORTED_ROW',
-  FP: 'FACE_PULL',
-  SHR: 'SHRUG_GENERIC', // Strava has no plain dumbbell shrug variant
-  BC: 'CABLE_BICEPS_CURL',
-  // Lower B
-  HT: 'BARBELL_HIP_THRUST',
-  EHC: 'MACHINE_LEG_CURL_SEATED',
-  SU: 'STEP_UP',
-  BJ: 'BOX_JUMP',
-  SLC: 'SINGLE_LEG_STANDING_CALF_RAISE',
-  CC: 'CABLE_CRUNCH',
-  DF: 'DRAGON_FLAG',
-}
-
+// Every exercise code in this app IS a real Strava exercise_type constant —
+// there is no separate short-abbreviation code system anymore. That used to
+// exist (a hand-maintained SQ/RDL/BSS-style table mapping short codes to
+// their Strava equivalent) and was retired: it was a genuine second source
+// of truth for the same exercise's identity, split across the program's own
+// stored code and whatever a swap or Strava upload actually resolved to.
+// That split caused a real, live data-integrity bug — a swapped exercise's
+// program entry silently disagreed with what got logged, trends couldn't
+// count occurrences of "the same exercise" correctly (some logged under the
+// short code, some under the descriptive one), and a mistaken swap could
+// never be undone. See CLAUDE.md's "Exercise codes are the Strava
+// exercise_type, everywhere" section for the full story and the standing
+// rule this enforces: every exercise code, in the program, in a logged
+// session, everywhere, is always the same descriptive Strava constant.
+//
 // Returns null for a genuinely unmapped code rather than overloading
 // CORE_GENERIC as a "no mapping found" sentinel (issue #68) — CORE_GENERIC
 // is also a real Strava catalog entry (a code picked directly from the
@@ -78,12 +55,7 @@ const LEDGER_EXERCISE_TO_STRAVA_TYPE: Record<string, string> = {
 // ambiguity to preserve) fall back to 'CORE_GENERIC' themselves at the
 // call site.
 export function stravaExerciseTypeForCode(code: string): string | null {
-  // Codes picked from the exercise-swap picker's Strava catalog search ARE
-  // already a valid Strava exercise_type (e.g. "LEG_PRESS") — no hand
-  // mapping needed, it maps to itself.
   if (STRAVA_EXERCISE_TYPES.has(code)) return code
-  const mapped = LEDGER_EXERCISE_TO_STRAVA_TYPE[code]
-  if (mapped && STRAVA_EXERCISE_TYPES.has(mapped)) return mapped
   console.error('stravaExerciseTypeForCode: no mapping for code', code)
   return null
 }

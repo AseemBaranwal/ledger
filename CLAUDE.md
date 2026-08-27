@@ -45,6 +45,11 @@ instead of reading the whole file.
 - **Strava gotchas** — the single-athlete API cap, the `external_id`
   reuse/silent-delete trap, structured-upload requirements, and the
   `utc_offset` sign-convention bug.
+- **Exercise codes are the Strava exercise_type, everywhere, always** — the
+  retired short-code + `exercise_substitutions` redirect layer, the exact
+  data-integrity bug it caused (the `SQ`/`BARBELL_BACK_SQUAT` saga), and the
+  standing rule that a manual in-session swap must never touch the
+  persistent schedule — only a Coach-accepted swap can.
 - **Exercise swap / add / custom** (`src/services/exerciseCatalog.ts`) —
   how exercise codes work, `resolveExerciseDisplay()` as the single source
   of truth for what to show, `draftDefs` vs. the static program, and the
@@ -397,25 +402,21 @@ Practical pattern established in `tests/unit/`:
     catalog never enters its context. Resolution happens server-side via
     `resolveExerciseQuery()` in the shared `api/_lib/exerciseCatalog.ts` —
     same module the frontend's manual swap picker uses, so a swap the Coach
-    proposes and one picked by hand resolve identically. Unlike weight/reps/
-    sets (written into the program's own `routine_config`), a swap doesn't
-    touch the program definition itself — it's stored as a standing
-    substitution on `profiles.exercise_substitutions` instead (see
-    `supabase/exercise_substitutions.sql` — a jsonb column, not a new
-    table, same reasoning as `routine_config`: a per-user setting, not an
-    append-only log). Accepting one **always** writes that persistent
-    substitution (regardless of whether a session is open) via
-    `api/chat/apply-exercise-swap.ts`, *and* additionally patches the live
-    draft immediately if one's open with that exercise right now — same
-    dual-write pattern weight/reps/sets already used, just with a different
-    storage target. `TodayTab.tsx`'s `withSubstitutions()` applies the
-    standing map at both session-start and in the week-preview, so what you
-    see before starting matches what you get after. The starting weight for
-    a swapped-in exercise prefers the live `program` target over historical
-    session logs — a same-conversation weight-suggestion accept updates
-    `program` in memory immediately, but wouldn't show up in `sessions`
-    (past logged workouts), so checking `sessions` alone would show a stale
-    number.
+    proposes and one picked by hand resolve identically. `api/chat/apply-
+    exercise-swap.ts` finds the matching `ex.k` directly inside
+    `profiles.routine_config.program` and mutates `k`/`n`/`group`/`u` in
+    place — same read-modify-write pattern `apply-exercise-change.ts` uses
+    for weight/reps/sets — then `chatStore`'s `acceptSwap` additionally
+    patches the live draft immediately if one's open with that exercise
+    right now. This is the **only** path allowed to change the persistent
+    program; see "Exercise codes are the Strava exercise_type, everywhere,
+    always" below for why a `profiles.exercise_substitutions` redirect
+    layer used to sit here instead and why it was retired. The starting
+    weight for a swapped-in exercise prefers the live `program` target over
+    historical session logs — a same-conversation weight-suggestion accept
+    updates `program` in memory immediately, but wouldn't show up in
+    `sessions` (past logged workouts), so checking `sessions` alone would
+    show a stale number.
 - **A suggestion's accept/dismiss status must be persisted server-side, not
   just in local zustand state** — `chat_messages.suggestions` is a jsonb
   column with no partial-array-element update in supabase-js, so
@@ -438,14 +439,16 @@ Practical pattern established in `tests/unit/`:
   the tool again. Adding an explicit "never describe a suggestion you
   didn't actually propose" rule to the system prompt reduced but did
   **not** eliminate it — it recurred in the same session after that fix
-  shipped. The more durable fix: `get_training_data` now also returns
-  `activeSwaps` (from `profiles.exercise_substitutions`) so the model has
-  the actual ground truth instead of needing to infer or hedge — since
-  removing the *uncertainty* the hedging was protecting against works
-  better than just forbidding the hedge. Lesson for future prompt work:
-  don't assume one instruction-based fix is sufficient for a tool-call-
-  skipping failure mode — verify against `chat_logs.tool_calls` after the
-  fix ships, not just that the wording looks right.
+  shipped. The fix that actually held: `get_training_data`'s rows always
+  show the current, correct exercise code directly (no separate "active
+  swap" state to reconcile against, now that `exercise_substitutions` is
+  retired — see below), so the model never needs to infer or hedge about
+  whether an earlier swap actually landed. Removing the *uncertainty* the
+  hedging was protecting against worked better than just forbidding the
+  hedge. Lesson for future prompt work: don't assume one instruction-based
+  fix is sufficient for a tool-call-skipping failure mode — verify against
+  `chat_logs.tool_calls` after the fix ships, not just that the wording
+  looks right.
 - **`get_training_data`'s `limit` caps session ROWS fetched, not occurrences
   of a filtered `exerciseCode`** — and a single exercise only appears on
   ~1 of the ~5-6 session codes in the weekly rotation (e.g. Chest Supported
@@ -623,12 +626,90 @@ Practical pattern established in `tests/unit/`:
   string directly, which reads as literally-that-wall-clock-time to Strava
   since the field is documented as a naive local timestamp.
 
+## Exercise codes are the Strava exercise_type, everywhere, always
+
+There used to be a second, short-code convention (`SQ`, `SCR`, `LPD`, ...)
+alongside descriptive Strava codes, plus an `exercise_substitutions` jsonb
+column on `profiles` that mapped a short code to a "currently swapped-in"
+replacement. **Both are retired.** Every exercise `k` — in every program
+slot, every historical `sessions` row, every Coach tool response, the Sheet
+export — is now the real Strava `exercise_type` constant (or a `CUSTOM_...`
+slug for a genuine free-text entry with no Strava match) and nothing else.
+There is no lookup table and no redirect layer standing between "the code
+on a row" and "what that row actually means."
+
+- **Why the short-code + substitution layer got retired**: it caused a real
+  data-integrity bug, not just a style inconsistency. The owner swapped
+  Squat (`SQ`) for Leg Press via the swap picker, which wrote
+  `exercise_substitutions.SQ = {code: 'LEG_PRESS', ...}`. Swapping back to
+  Back Squat re-resolved through the exercise catalog to the descriptive
+  code `BARBELL_BACK_SQUAT` — a *different* code from the original `SQ` —
+  so the "revert" actually created a new substitution
+  (`exercise_substitutions.SQ = {code: 'BARBELL_BACK_SQUAT', ...}`) instead
+  of clearing one. This repeated three times across real chat history
+  before anyone noticed, because **no removal capability existed anywhere
+  in the codebase, only ever `setSubstitution`** — a caller could add or
+  overwrite an entry but never delete one. The visible symptom was a Coach
+  suggestion for `SQ` 404ing on Accept, since the program itself had long
+  since been mutated to `BARBELL_BACK_SQUAT` and `SQ` no longer existed
+  anywhere for the suggestion to attach to. Root cause, once traced through
+  the full chat history rather than just the most recent messages: a
+  redirect/substitution layer is a second source of truth for "what code is
+  this really," and every extra hop between the map and the thing it maps
+  *from* is a place the two can silently diverge. Retiring the layer
+  entirely (one code, stored directly, no indirection) removes the
+  divergence risk structurally instead of patching the specific missing
+  `removeSubstitution` gap.
+- **`stravaExerciseTypeForCode(code)` in `api/_lib/stravaMapping.ts`** used
+  to hand-map ~26 short codes to their Strava equivalents; it's now just
+  `STRAVA_EXERCISE_TYPES.has(code) ? code : null` — a genuinely unmapped
+  code (a stale fixture, a typo) returns `null` and logs a console error
+  rather than silently mapping to something wrong. If you see
+  `"stravaExerciseTypeForCode: no mapping for code X"` in a test run or in
+  production logs, `X` is not a real Strava `exercise_type` and needs to be
+  fixed at its source (the row/fixture/program slot that has it), not
+  patched into a mapping table — there is no mapping table to patch into
+  anymore.
+- **A swap is exactly one of two things, and they behave completely
+  differently — know which one you're building before touching either
+  path:**
+  - **A manual, in-session swap** ("different machine today, same slot") —
+    `TodayTab`'s `ExercisePicker` in `mode === 'swap'` calls only
+    `swapExercise` on `sessionStore`'s `draftDefs`. This is session-only by
+    design and must **never** write to the persistent program — reloading
+    the app after a manual swap should show the original scheduled
+    exercise again next time. Confirmed live: this is a deliberate,
+    explicit product requirement ("I can change the machines based on my
+    own preference for a specific day, but that shouldn't change it for my
+    schedule"), not an oversight to "fix" by making it persist.
+  - **A Coach-accepted `suggest_exercise_swap`** — the only path allowed to
+    change the persistent schedule. Accepting one calls
+    `api/chat/apply-exercise-swap.ts`, which finds the matching `ex.k`
+    inside `profiles.routine_config.program` directly and mutates
+    `k`/`n`/`group`/`u` in place (same read-modify-write pattern
+    `apply-exercise-change.ts` already used for weight/reps/sets), then
+    `chatStore`'s `acceptSwap` does the matching optimistic
+    `useConfigStore` update plus the existing live-draft sync if a session
+    is open. There is no longer a GET endpoint or a separate substitutions
+    table for this — the program *is* the state.
+  - If a change to swap behavior isn't obviously one of these two, stop and
+    figure out which one it actually is — conflating them is exactly how
+    the original bug happened (a manual-feeling swap silently became a
+    schedule change via the substitutions layer).
+- **A genuine muscle-group-changing swap is not a special case** — e.g.
+  swapping lunges for hip abductors, or seated cable rows for adductors,
+  trains a completely different muscle group on purpose and is just as
+  valid as a same-group swap (leg press for squat). Both get their own
+  descriptive code and their own real target computed from that exercise's
+  own logged history — never a target carried over from whatever it
+  replaced. There's no "same muscle group only" constraint anywhere in the
+  data model; don't add one.
+
 ## Exercise swap / add / custom (`src/services/exerciseCatalog.ts`)
 
-- **A logged exercise's `k` is "a code", not "a short code"** — nothing in
-  the type system or the Sheet schema enforces the 2-4 letter convention
-  used by `config.json`'s programmed exercises. The swap/add picker exploits
-  this: picking something from Strava's catalog sets `k` to the Strava
+- **A logged exercise's `k` is a real Strava `exercise_type` constant** (or
+  a `CUSTOM_...` slug — see above). The swap/add picker exploits this:
+  picking something from Strava's catalog sets `k` to the Strava
   `exercise_type` constant itself (e.g. `"LEG_PRESS"`), and a free-text
   custom entry sets `k` to a normalized `CUSTOM_...` slug. Both skip needing
   a separate name-lookup table because `stravaExerciseTypeForCode` in

@@ -9,12 +9,11 @@ import {
   toProgramExercise,
   resolveExerciseDisplay,
   resolveExerciseQuery,
-  applySubstitutions,
   equipmentForType,
   equipmentForCode,
 } from '@/services/exerciseCatalog'
 import { STRAVA_EXERCISE_TYPES } from '../../api/_lib/stravaExerciseCatalog'
-import type { Program, ProgramExercise } from '@/types'
+import type { Program } from '@/types'
 import type { Equipment } from '@/services/exerciseCatalog'
 
 describe('prettifyExerciseType', () => {
@@ -91,10 +90,13 @@ describe('equipmentForType', () => {
 })
 
 describe('equipmentForCode', () => {
-  it('resolves a Ledger program code to its Strava type first, then classifies equipment', () => {
-    expect(equipmentForCode('SQ')).toBe('Barbell') // BARBELL_BACK_SQUAT
-    expect(equipmentForCode('CLR')).toBe('Cable') // CABLE_LATERAL_RAISE
-    expect(equipmentForCode('BSS')).toBe('Dumbbell') // DUMBBELL_BULGARIAN_SPLIT_SQUATS
+  // Every program code IS a real Strava exercise_type now — no separate
+  // short-code system to resolve through first (see CLAUDE.md's exercise-
+  // code section), so this just classifies equipment for the code as-is.
+  it('classifies equipment for a real program code directly', () => {
+    expect(equipmentForCode('BARBELL_BACK_SQUAT')).toBe('Barbell')
+    expect(equipmentForCode('CABLE_LATERAL_RAISE')).toBe('Cable')
+    expect(equipmentForCode('DUMBBELL_BULGARIAN_SPLIT_SQUATS')).toBe('Dumbbell')
   })
 
   it('falls back to Bodyweight for a code with no Strava mapping, rather than throwing', () => {
@@ -116,8 +118,8 @@ describe('alternatesForType', () => {
 })
 
 describe('alternatesForCode', () => {
-  it('resolves a Ledger program code to its Strava type first, then finds alternates', () => {
-    const alts = alternatesForCode('SCR') // Standing Calf Raise
+  it('finds alternates for a real program code directly', () => {
+    const alts = alternatesForCode('STANDING_CALF_RAISE')
     expect(alts.some((a) => a.type === 'SEATED_CALF_RAISE')).toBe(true)
   })
 
@@ -209,42 +211,12 @@ describe('resolveExerciseDisplay', () => {
   })
 })
 
-describe('applySubstitutions', () => {
-  const original: ProgramExercise = { k: 'SQ', n: 'Back Squat', s: 4, r: 5, w: 85, u: 'lb', group: 'Legs', cue: 'x' }
-
-  // Caught live: a session opened with the weight box at 0 despite an
-  // already-accepted 85 lb suggestion for the original exercise. The
-  // substituted def was built via toProgramExercise(), whose defaults
-  // (w: 0) silently won whenever the caller forgot to pass through the
-  // original exercise's current weight target.
-  it("carries the ORIGINAL exercise's current weight into the substituted exercise, not a default of 0", () => {
-    const [result] = applySubstitutions([original], {
-      SQ: { code: 'BARBELL_BACK_SQUAT', name: 'Barbell Back Squat', group: 'Legs', unit: 'lb' },
-    })
-    expect(result.k).toBe('BARBELL_BACK_SQUAT')
-    expect(result.w).toBe(85)
-  })
-
-  it('carries the target sets/reps through unchanged', () => {
-    const [result] = applySubstitutions([original], {
-      SQ: { code: 'LEG_PRESS', name: 'Leg Press', group: 'Legs', unit: 'lb' },
-    })
-    expect(result.s).toBe(4)
-    expect(result.r).toBe(5)
-  })
-
-  it('leaves an exercise with no matching substitution untouched', () => {
-    const [result] = applySubstitutions([original], { BSS: { code: 'LEG_PRESS', name: 'Leg Press', group: 'Legs', unit: 'lb' } })
-    expect(result).toEqual(original)
-  })
-})
-
 describe('resolveExerciseQuery', () => {
   // This is what the Coach chat's swap tool calls server-side to turn a
   // model's plain-language guess ("leg press") into a real exercise_type,
   // without ever putting the ~500-entry catalog in the model's context.
   it('prefers a compatible alternate for the current exercise over a generic search hit', () => {
-    const result = resolveExerciseQuery('leg press', 'SQ') // Back Squat -> Leg Press is a known alternate
+    const result = resolveExerciseQuery('leg press', 'BARBELL_BACK_SQUAT') // Back Squat -> Leg Press is a known alternate
     expect(result?.type).toBe('LEG_PRESS')
   })
 
@@ -254,7 +226,7 @@ describe('resolveExerciseQuery', () => {
   })
 
   it('falls back to a general catalog search when nothing matches the alternates', () => {
-    const result = resolveExerciseQuery('bench press', 'SCR') // not a calf-raise variant
+    const result = resolveExerciseQuery('bench press', 'STANDING_CALF_RAISE') // not a calf-raise variant
     expect(result?.type).toContain('BENCH_PRESS')
   })
 

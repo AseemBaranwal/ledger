@@ -6,12 +6,12 @@ import { useSessionStore } from '@/store/sessionStore'
 import { useUIStore } from '@/store/uiStore'
 import type { ProgramExercise } from '@/types'
 
-const SQ_DEF: ProgramExercise = { k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: 'Depth over ego.' }
+const SQ_DEF: ProgramExercise = { k: 'BARBELL_BACK_SQUAT', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: 'Depth over ego.' }
 
 function setupDraft(overrides: Partial<{ r: number[]; ws: number[]; ef: Array<'e' | 'o' | 'h' | null> }> = {}) {
   useSessionStore.setState({
     sessions: [],
-    draftEx: [{ k: 'SQ', w: 75, r: overrides.r ?? [], ws: overrides.ws ?? [], ef: overrides.ef }],
+    draftEx: [{ k: 'BARBELL_BACK_SQUAT', w: 75, r: overrides.r ?? [], ws: overrides.ws ?? [], ef: overrides.ef }],
   })
 }
 

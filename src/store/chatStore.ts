@@ -258,16 +258,13 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      // Exercise swaps have no config.json-level storage (that file is
-      // genuinely static, not writable by this app) — so a swap is instead
-      // recorded as a standing substitution on the user's profile (see
-      // supabase/exercise_substitutions.sql), applied at session-start time
-      // for every future occurrence of the original exercise, exactly like
-      // weight/reps/sets suggestions are a persistent "next time" target.
-      // On top of that persistent write, if a session is open RIGHT NOW
-      // with the original exercise active, the swap also applies to that
-      // live draft immediately — so accepting works the same way whether
-      // or not you happen to be mid-session when you ask for it.
+      // Exercise swaps write directly into the SAME profiles.routine_config
+      // record weight/reps/sets suggestions do (see apply-exercise-swap.ts)
+      // — the program's own k/n/group/u ARE the swap, not a separate
+      // redirect layer. If a session is open RIGHT NOW with the original
+      // exercise active, the swap also applies to that live draft
+      // immediately — so accepting works the same way whether or not
+      // you're mid-session when you ask for it.
       acceptSwap: async (messageId, suggestionIndex) => {
         const message = get().messages.find((m) => m.id === messageId)
         const suggestion = message?.suggestions?.[suggestionIndex]
@@ -276,22 +273,25 @@ export const useChatStore = create<ChatStore>()(
         const newDef = toProgramExercise(suggestion.newExerciseCode, { n: suggestion.newExerciseName })
         const replacement = { code: newDef.k, name: newDef.n, group: newDef.group, unit: newDef.u }
 
-        // If exerciseCode is itself a currently-substituted-TO code (e.g.
-        // this is the second swap in a chain — SQ was already substituted
-        // with LEG_PRESS, and this suggestion swaps LEG_PRESS for something
-        // else), anchor the write to the ORIGINAL program code instead.
-        // Substitutions are looked up at session-start against the static
-        // program's real codes (see TodayTab's withSubstitutions) — storing
-        // this under the intermediate code would create an entry nothing
-        // ever checks, silently no-op'ing every swap after the first one.
-        const existingSubstitutions = useConfigStore.getState().substitutions
-        const anchorCode =
-          Object.keys(existingSubstitutions).find((original) => existingSubstitutions[original].code === suggestion.exerciseCode) ??
-          suggestion.exerciseCode
-
         try {
-          await applyExerciseSwap(anchorCode, replacement)
-          useConfigStore.getState().setSubstitution(anchorCode, replacement)
+          await applyExerciseSwap(suggestion.exerciseCode, replacement)
+
+          // Optimistic local update, same pattern acceptSuggestion uses for
+          // weight/reps/sets — mutate the matching program entry in place
+          // so the swap shows up immediately without a full profile reload.
+          useConfigStore.setState((state) => {
+            const program = { ...state.program }
+            Object.values(program).forEach((session) => {
+              session.ex?.forEach((ex) => {
+                if (ex.k !== suggestion.exerciseCode) return
+                ex.k = newDef.k
+                ex.n = newDef.n
+                ex.group = newDef.group
+                ex.u = newDef.u
+              })
+            })
+            return { program }
+          })
 
           const { draftDefs, sessions, swapExercise } = useSessionStore.getState()
           const activeIndex = draftDefs?.findIndex((d) => d.k === suggestion.exerciseCode) ?? -1

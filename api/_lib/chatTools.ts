@@ -35,7 +35,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone. A run of identical sets is collapsed to one entry with a trailing ' xN' (e.g. \"105x6(o) x4\" means four identical sets, not one) — this is pure compression, not fewer real sets than logged. A row may also carry notes — whatever the owner wrote down for that session (form, energy, anything worth remembering) — attached once per session on its first row, not repeated on every row. Ground observations in these notes directly rather than guessing at context the owner already told you. `trends` is `{exerciseCode: {sessionCode: {...}}}` — nested by session code, NOT flat by exercise alone, because the SAME exercise code can appear in two different program slots with genuinely different loading (e.g. a per-arm variant in one session vs. a different scheme in another) — blending those would produce a misleading combined trend. Look up the specific session's entry (matching a row's own `session` field) for the exercise you're evaluating. Each entry gives a precomputed `weightTrend` ('flat'/'rising'/'falling'/'mixed'/'n/a') and `recentEffort` ('clean'/'mixed'/'hard'/'n/a') from that exercise-in-that-session's last 2-3 occurrences, plus its current `lastWorkingWeight` (the mode weight of the most recent occurrence, not necessarily the session's single heaviest set) — use this as your primary signal for whether an exercise has room to progress rather than re-deriving the same comparison yourself from the raw `sets` strings across many rows. Only (exercise, session) pairs with 2+ occurrences in this window get an entry; fewer than that has nothing to compare yet (you can already see that directly from `rows`) so it's simply absent from `trends`, not included as an empty/n-a entry. It is a mechanical summary, not a final verdict: still weigh it together with any relevant `notes` (an equipment mixup, home vs. gym, an off day already explained) before proposing a change.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row). Every exercise code here IS the owner's real, current exercise for that program slot — an accepted suggest_exercise_swap changes it directly, there's no separate 'active swap' state to reconcile, so a code you see here is always current, never a stale pre-swap identity. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone. A run of identical sets is collapsed to one entry with a trailing ' xN' (e.g. \"105x6(o) x4\" means four identical sets, not one) — this is pure compression, not fewer real sets than logged. A row may also carry notes — whatever the owner wrote down for that session (form, energy, anything worth remembering) — attached once per session on its first row, not repeated on every row. Ground observations in these notes directly rather than guessing at context the owner already told you. `trends` is `{exerciseCode: {sessionCode: {...}}}` — nested by session code, NOT flat by exercise alone, because the SAME exercise code can appear in two different program slots with genuinely different loading (e.g. a per-arm variant in one session vs. a different scheme in another) — blending those would produce a misleading combined trend. Look up the specific session's entry (matching a row's own `session` field) for the exercise you're evaluating. Each entry gives a precomputed `weightTrend` ('flat'/'rising'/'falling'/'mixed'/'n/a') and `recentEffort` ('clean'/'mixed'/'hard'/'n/a') from that exercise-in-that-session's last 2-3 occurrences, plus its current `lastWorkingWeight` (the mode weight of the most recent occurrence, not necessarily the session's single heaviest set) — use this as your primary signal for whether an exercise has room to progress rather than re-deriving the same comparison yourself from the raw `sets` strings across many rows. Only (exercise, session) pairs with 2+ occurrences in this window get an entry; fewer than that has nothing to compare yet (you can already see that directly from `rows`) so it's simply absent from `trends`, not included as an empty/n-a entry. It is a mechanical summary, not a final verdict: still weigh it together with any relevant `notes` (an equipment mixup, home vs. gym, an off day already explained) before proposing a change.",
     input_schema: {
       type: 'object',
       properties: {
@@ -257,32 +257,26 @@ function classifyEffort(hardCount: number, totalCount: number): EffortCharacter 
   return 'mixed'
 }
 
-interface ActiveSwap {
-  originalCode: string
-  currentCode: string
-  currentName: string
-}
-
-// Reads the owner's standing exercise substitutions from their profile, and
-// their logged sessions directly from Supabase's `sessions` table (see
-// supabase/sessions.sql) — the same table sessionStore.ts writes to
-// client-side, just queried from the backend so tool results are grounded
-// in real data rather than trusting anything the client sends.
+// Reads the owner's logged sessions directly from Supabase's `sessions`
+// table (see supabase/sessions.sql) — the same table sessionStore.ts writes
+// to client-side, just queried from the backend so tool results are
+// grounded in real data rather than trusting anything the client sends.
 //
-// Including activeSwaps here (not a separate tool) matters for a specific
-// failure mode caught in live testing: without knowing whether an earlier
-// swap suggestion actually took effect, the model would sometimes hedge —
-// describing a suggestion in prose ("queued... ready to accept") instead of
-// actually calling suggest_exercise_swap again, because it wasn't sure if
-// a duplicate was needed. Since this tool is already called before any
-// claim about current state (per the system prompt), giving it the ground
-// truth here removes the uncertainty at the source rather than just
-// instructing the model not to hedge.
+// There is no separate "active swap" concept to reconcile here — a swap
+// (suggest_exercise_swap, accepted) writes directly into the SAME program
+// record this reads exerciseName from (see api/chat/apply-exercise-swap.ts
+// and CLAUDE.md's exercise-code section), so the program is always already
+// current. An earlier design routed swaps through a separate redirect
+// table (profiles.exercise_substitutions) and surfaced it here as
+// `activeSwaps` specifically so the model could tell whether an earlier
+// swap suggestion had actually taken effect — that whole class of
+// uncertainty doesn't exist anymore now that there's only one place a
+// swap's result ever lives.
 export async function getTrainingData(
   ownerUserId: string,
   args: { exerciseCode?: string; sinceDate?: string; limit?: number }
 ): Promise<
-  | { rows: TrainingDataRow[]; today: string; activeSwaps?: ActiveSwap[]; trends?: Record<string, Record<string, ExerciseTrendSummary>> }
+  | { rows: TrainingDataRow[]; today: string; trends?: Record<string, Record<string, ExerciseTrendSummary>> }
   | { error: string }
 > {
   const sinceDate = args.sinceDate
@@ -310,22 +304,15 @@ export async function getTrainingData(
     .limit(sessionFetchLimit)
   if (sinceDate) sessionsQuery = sessionsQuery.gte('d', sinceDate)
 
-  // The profile fetch (for substitutions/program names) and the sessions
-  // fetch don't depend on each other's results — running them concurrently
-  // instead of two sequential awaits saves a full Supabase round-trip on
-  // this hot path (get_training_data is called on essentially every Coach
-  // turn, per the system prompt's DATA HONESTY rule).
+  // The profile fetch (for program names) and the sessions fetch don't
+  // depend on each other's results — running them concurrently instead of
+  // two sequential awaits saves a full Supabase round-trip on this hot path
+  // (get_training_data is called on essentially every Coach turn, per the
+  // system prompt's DATA HONESTY rule).
   const [{ data: profile }, { data: sessionRows, error }] = await Promise.all([
-    supabaseAdmin().from('profiles').select('exercise_substitutions, routine_config').eq('id', ownerUserId).single(),
+    supabaseAdmin().from('profiles').select('routine_config').eq('id', ownerUserId).single(),
     sessionsQuery,
   ])
-
-  const substitutions = (profile as { exercise_substitutions?: Record<string, { code: string; name: string }> } | null)?.exercise_substitutions || {}
-  const activeSwaps: ActiveSwap[] = Object.entries(substitutions).map(([originalCode, sub]) => ({
-    originalCode,
-    currentCode: sub.code,
-    currentName: sub.name,
-  }))
 
   // Real exercise names, keyed by code, straight from the owner's own
   // program — without this the model has no grounded source for a human-
@@ -448,7 +435,6 @@ export async function getTrainingData(
   return {
     rows,
     today,
-    ...(activeSwaps.length ? { activeSwaps } : {}),
     ...(Object.keys(trends).length ? { trends } : {}),
   }
 }

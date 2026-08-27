@@ -4,41 +4,47 @@ import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 // See exchange.ts for why this is pinned to the Edge Runtime.
 export const config = { runtime: 'edge' }
 
-// The ONLY code path that can write a persistent exercise substitution.
-// Distinct from apply-exercise-change.ts (weight/reps/sets targets on the
-// SAME exercise) — this replaces which exercise an occurrence resolves to,
-// a completely different payload shape, so it gets its own dedicated
-// write endpoint per this app's established one-endpoint-per-write-type
-// pattern.
+interface ProgramExerciseLike {
+  k: string
+  n?: string
+  group?: string
+  u?: string
+  w?: number
+  r?: number
+  s?: number
+}
+
+// The ONLY code path that can write a persistent exercise swap. Distinct
+// from apply-exercise-change.ts (weight/reps/sets targets on the SAME
+// exercise) — this replaces which exercise a program slot resolves to.
 //
-// Stored on profiles.exercise_substitutions (see
-// supabase/exercise_substitutions.sql), keyed by the ORIGINAL exercise
-// code — not a new table, since this is a per-user setting like sheet_url,
-// not an append-only log. GET returns the current map so the client can
-// apply it at session-start time (see TodayTab.tsx) without a dedicated
-// fetch on every render.
+// Writes directly into profiles.routine_config's own stored exercise
+// entry — NOT a separate redirect table. Previously this wrote to
+// profiles.exercise_substitutions (see supabase/exercise_substitutions.sql,
+// now unused everywhere in this codebase — the column is left in place but
+// nothing reads or writes it anymore), keyed by the original code, with
+// the program's own entry left permanently stale. That split-source-of-
+// truth design was the root cause of a real, live data bug (issue #89):
+// a swapped exercise's PROGRAM entry (used by, among other things, the
+// accept-flow for weight/reps/sets changes) never agreed with what a swap
+// had actually changed it to, and there was no way to ever undo a mistaken
+// swap short of another swap. Now the program's own `k`/`n`/`group`/`u`
+// ARE the swap — one field to update, one thing to read, everywhere.
+// weight/reps/sets are deliberately left as whatever the slot already had
+// — a rough starting point for a genuinely new exercise, self-correcting
+// via a real suggest_exercise_adjustment once actual data exists, same as
+// today's UX for a brand new exercise added to the program.
 export default async function handler(req: Request): Promise<Response> {
+  if (req.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405 })
+  }
+
   const user = await requireUser(req)
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
   }
   if (!isOwner(user.id)) {
     return new Response(JSON.stringify({ error: 'Not available for this account' }), { status: 403 })
-  }
-
-  if (req.method === 'GET') {
-    const { data } = await (supabaseAdmin().from('profiles') as any)
-      .select('exercise_substitutions')
-      .eq('id', user.id)
-      .single()
-    return new Response(JSON.stringify({ substitutions: data?.exercise_substitutions || {} }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
-
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
   }
 
   let payload: { originalCode?: string; newCode?: string; newName?: string; newGroup?: string; newUnit?: string }
@@ -53,25 +59,41 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Missing originalCode, newCode, or newName' }), { status: 400 })
   }
 
-  const { data: profile, error } = await (supabaseAdmin().from('profiles') as any)
-    .select('exercise_substitutions')
+  const { data: profile, error } = await supabaseAdmin()
+    .from('profiles')
+    .select('routine_config')
     .eq('id', user.id)
     .single()
-  if (error) {
-    return new Response(JSON.stringify({ error: 'Could not load profile' }), { status: 500 })
+
+  const routineConfig = (profile as { routine_config?: { program?: Record<string, { ex?: ProgramExerciseLike[] }> } } | null)?.routine_config
+  if (error || !routineConfig || !routineConfig.program) {
+    return new Response(JSON.stringify({ error: 'No training program found for this account' }), { status: 404 })
   }
 
-  const substitutions = { ...(profile?.exercise_substitutions || {}) }
-  substitutions[originalCode] = { code: newCode, name: newName, group: newGroup || 'Other', unit: newUnit || 'lb' }
+  let found = false
+  for (const session of Object.values(routineConfig.program)) {
+    for (const ex of session.ex || []) {
+      if (ex.k !== originalCode) continue
+      found = true
+      ex.k = newCode
+      ex.n = newName
+      if (newGroup) ex.group = newGroup
+      if (newUnit) ex.u = newUnit
+    }
+  }
+
+  if (!found) {
+    return new Response(JSON.stringify({ error: `"${originalCode}" isn't in your current program` }), { status: 404 })
+  }
 
   const { error: updateError } = await (supabaseAdmin().from('profiles') as any)
-    .update({ exercise_substitutions: substitutions })
+    .update({ routine_config: routineConfig })
     .eq('id', user.id)
   if (updateError) {
     return new Response(JSON.stringify({ error: 'Could not save the swap' }), { status: 500 })
   }
 
-  return new Response(JSON.stringify({ success: true, substitutions }), {
+  return new Response(JSON.stringify({ success: true }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })

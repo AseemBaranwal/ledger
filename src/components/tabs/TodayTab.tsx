@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSessionStore, useConfigStore, useUIStore, useUnitStore } from '@/store'
 import { ExerciseLogger, ExercisePicker } from '@/components/session'
-import { applySubstitutions, resolveExerciseDisplay } from '@/services/exerciseCatalog'
+import { resolveExerciseDisplay } from '@/services/exerciseCatalog'
 import { useCustomExerciseStore } from '@/store/customExerciseStore'
-import { saveSubstitution } from '@/services/exerciseSubstitutionsApi'
 import { doneThisWeek, owedThisWeek, tgtStr } from '@/services/weekProgress'
 import { lastDialedWeight, formatLastSets, lastOf } from '@/services/trendCalculations'
-import type { ProgramExercise, RestDayConfig } from '@/types'
+import type { RestDayConfig } from '@/types'
 import appStyles from '../../styles/App.module.css'
 import styles from '../../styles/components.module.css'
 import { StarIcon, CheckIcon, ChevronIcon, PlusIcon } from '@/components/icons/Icons'
@@ -35,7 +34,6 @@ export function TodayTab() {
   const restDays = useConfigStore((s) => s.restDays)
   const colours = useConfigStore((s) => s.colours)
   const schedule = useConfigStore((s) => s.schedule)
-  const substitutions = useConfigStore((s) => s.substitutions)
   const customExercises = useCustomExerciseStore((s) => s.customExercises)
 
   const openWeekDay = useUIStore((s) => s.openWeekDay)
@@ -59,8 +57,6 @@ export function TodayTab() {
 
   const codesForDay = (dow: number) => Object.keys(program).filter((k) => program[k].day === dow)
 
-  const withSubstitutions = (exList: ProgramExercise[]): ProgramExercise[] => applySubstitutions(exList, substitutions)
-
   // saveDraft() already computes which exercises hit a new PR this session
   // via checkPRs(), but nothing surfaces it in-app — a toast is the
   // smallest change that closes the loop from "detected" to "seen."
@@ -74,7 +70,7 @@ export function TodayTab() {
 
   const handleStart = (code: string) => {
     const p = program[code]
-    const defs = withSubstitutions(p.ex)
+    const defs = p.ex
     startSession(
       code,
       defs.map((e) => ({ k: e.k, w: lastDialedWeight(sessions, e.k) ?? e.w })),
@@ -231,20 +227,18 @@ export function TodayTab() {
               currentCode={picker.mode === 'swap' && picker.index != null ? defs[picker.index]?.k : undefined}
               onSelect={(def, startWeight) => {
                 if (picker.mode === 'swap' && picker.index != null) {
+                  // Deliberately today-only — mutates draftDefs for this one
+                  // session and nothing else. A manual, in-session swap
+                  // (e.g. the usual machine is taken today) must never
+                  // change the program's own schedule; only a Coach-
+                  // accepted suggest_exercise_swap does that (see
+                  // chatStore.acceptSwap / api/chat/apply-exercise-swap.ts,
+                  // which write the program directly). Before this, every
+                  // manual swap here ALSO persisted a standing substitution
+                  // — silently turning "just today" into "forever" was a
+                  // real source of confusion (see CLAUDE.md's exercise-code
+                  // section).
                   swapExercise(picker.index, def, startWeight)
-                  // Keyed by the BASE program's code at this slot (not
-                  // whatever's currently in draftDefs, which may already
-                  // reflect an earlier swap) — applySubstitutions() matches
-                  // against p.ex, so this is the key handleStart() will
-                  // actually look up next time this session comes around.
-                  const originalCode = p.ex[picker.index]?.k
-                  if (originalCode) {
-                    const replacement = { code: def.k, name: def.n, group: def.group, unit: def.u }
-                    useConfigStore.getState().setSubstitution(originalCode, replacement)
-                    saveSubstitution(originalCode, replacement).catch(() => {
-                      useUIStore.getState().showNotification('Swap saved for today, but may not carry over to next week — will retry', 'error')
-                    })
-                  }
                 } else {
                   addExercise(def, startWeight)
                 }
@@ -368,7 +362,7 @@ export function TodayTab() {
                           {p.full}
                           <span className={`${styles.wdGym} mono`}>{p.gym}</span>
                         </div>
-                        {withSubstitutions(p.ex).map((e) => {
+                        {p.ex.map((e) => {
                           // Was a hand-rolled flatMap of every exercise
                           // across the ENTIRE session history, rebuilt from
                           // scratch on every render this expanded day was

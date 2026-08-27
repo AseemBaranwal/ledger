@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { topWeightOf, formatSets, TOOLS, resolveExerciseSwap, getTrainingData } from '../../api/_lib/chatTools'
+import {
+  topWeightOf,
+  modeWeightOf,
+  formatSets,
+  TOOLS,
+  resolveExerciseSwap,
+  getTrainingData,
+} from '../../api/_lib/chatTools'
 import { supabaseAdmin } from '../../api/_lib/supabaseAdmin'
 
 vi.mock('../../api/_lib/supabaseAdmin', () => ({ supabaseAdmin: vi.fn() }))
@@ -35,8 +42,36 @@ describe('formatSets', () => {
     expect(formatSets({ k: 'SQ', r: [5, 5, 5], ws: [100, 100, 100], ef: ['h', null, 'e'] })).toBe('100x5(h),100x5,100x5(e)')
   })
 
-  it('omits the effort suffix entirely when nothing was tagged', () => {
-    expect(formatSets({ k: 'SQ', r: [5, 5], ws: [100, 100] })).toBe('100x5,100x5')
+  // Regression test for the token-efficiency pass: a run of identical sets
+  // now collapses to one '…xN' entry rather than repeating the same
+  // substring — pure compression, same information, fewer tokens.
+  it("collapses a run of identical sets into one '…xN' entry", () => {
+    expect(formatSets({ k: 'SQ', r: [5, 5], ws: [100, 100] })).toBe('100x5 x2')
+  })
+
+  it('only collapses the actually-identical run, keeping varied sets separate', () => {
+    expect(formatSets({ k: 'SQ', r: [7, 6, 6, 5], ws: [105, 105, 105, 115] })).toBe('105x7,105x6 x2,115x5')
+  })
+
+  it('does not collapse sets that differ only by effort tag', () => {
+    expect(formatSets({ k: 'SQ', r: [5, 5], ws: [100, 100], ef: ['h', 'o'] })).toBe('100x5(h),100x5(o)')
+  })
+})
+
+describe('modeWeightOf', () => {
+  it('returns the most common per-set weight, not the max', () => {
+    // One heavier single (115) among three sets at the real working
+    // weight (105) — the working weight is what a trend should compare,
+    // not an occasional top single.
+    expect(modeWeightOf({ k: 'SQ', r: [7, 6, 6, 5], ws: [105, 105, 105, 115] })).toBe(105)
+  })
+
+  it('falls back to the single legacy weight field when no per-set weights exist', () => {
+    expect(modeWeightOf({ k: 'SQ', r: [5], w: 80 })).toBe(80)
+  })
+
+  it('returns null for a bodyweight exercise with no weight tracked at all', () => {
+    expect(modeWeightOf({ k: 'HLR', r: [10, 12] })).toBeNull()
   })
 })
 
@@ -172,7 +207,7 @@ describe('getTrainingData', () => {
     const result = await getTrainingData('user-1', {})
 
     expect(result).toMatchObject({
-      rows: [{ date: '2026-07-14', session: 'LA', exercise: 'SQ', sets: '80x5,80x5', topWeight: 80 }],
+      rows: [{ date: '2026-07-14', session: 'LA', exercise: 'SQ', sets: '80x5 x2', topWeight: 80 }], // identical sets collapse
     })
   })
 
@@ -276,5 +311,92 @@ describe('getTrainingData', () => {
     limitSpy.mockClear()
     await getTrainingData('user-1', {})
     expect(limitSpy).toHaveBeenCalledWith(12) // unfiltered calls are unaffected
+  })
+
+  describe('trends', () => {
+    // Mock rows must already be most-recent-first, matching the real
+    // query's own `.order('d', {ascending:false})` — getTrainingData
+    // assumes that ordering rather than re-sorting.
+
+    it('flags flat weight + clean effort as a ready-to-progress signal', async () => {
+      mockSupabase({ exercise_substitutions: {} }, [
+        { d: '2026-08-24', s: 'LA', ex: [{ k: 'SQ', r: [6, 6, 6, 6], ws: [105, 105, 105, 105] }] },
+        { d: '2026-08-17', s: 'LA', ex: [{ k: 'SQ', r: [6, 6, 6], ws: [105, 105, 105], ef: [null, null, 'h'] }] },
+        { d: '2026-08-10', s: 'LA', ex: [{ k: 'SQ', r: [7, 6, 6, 5], ws: [105, 105, 105, 115] }] },
+      ])
+
+      const result = await getTrainingData('user-1', {})
+
+      expect(result).toMatchObject({
+        trends: { SQ: { occurrences: 3, lastWorkingWeight: 105, weightTrend: 'flat', recentEffort: 'clean' } },
+      })
+    })
+
+    it('flags flat weight + all-hard effort as a stuck plateau', async () => {
+      mockSupabase({ exercise_substitutions: {} }, [
+        { d: '2026-08-25', s: 'PU', ex: [{ k: 'DBL', r: [13, 13, 13, 13], ws: [15, 15, 15, 15], ef: ['h', 'h', 'h', 'h'] }] },
+        { d: '2026-08-19', s: 'PU', ex: [{ k: 'DBL', r: [15, 15], ws: [15, 15] }] },
+      ])
+
+      const result = await getTrainingData('user-1', {})
+
+      expect(result).toMatchObject({
+        trends: { DBL: { occurrences: 2, lastWorkingWeight: 15, weightTrend: 'flat', recentEffort: 'hard' } },
+      })
+    })
+
+    it('marks a single occurrence as too-new (n/a) rather than guessing a trend', async () => {
+      mockSupabase({ exercise_substitutions: {} }, [
+        { d: '2026-08-24', s: 'LA', ex: [{ k: 'MACHINE_HIP_ABDUCTION', r: [15, 15], ws: [50, 50] }] },
+      ])
+
+      const result = await getTrainingData('user-1', {})
+
+      expect(result).toMatchObject({ trends: { MACHINE_HIP_ABDUCTION: { occurrences: 1, weightTrend: 'n/a' } } })
+    })
+
+    it('flags rising working weight across occurrences', async () => {
+      mockSupabase({ exercise_substitutions: {} }, [
+        { d: '2026-08-24', s: 'LA', ex: [{ k: 'RDL', r: [8], ws: [100] }] },
+        { d: '2026-08-17', s: 'LA', ex: [{ k: 'RDL', r: [8], ws: [95] }] },
+      ])
+
+      const result = await getTrainingData('user-1', {})
+
+      expect(result).toMatchObject({ trends: { RDL: { weightTrend: 'rising' } } })
+    })
+
+    it("uses the MODE weight, not the max, so one heavier single doesn't skew the trend", async () => {
+      // Real-world case: three sets at 105, one heavier single at 115 —
+      // the working weight is 105, not 115.
+      mockSupabase({ exercise_substitutions: {} }, [
+        { d: '2026-08-10', s: 'LA', ex: [{ k: 'SQ', r: [7, 6, 6, 5], ws: [105, 105, 105, 115] }] },
+      ])
+
+      const result = await getTrainingData('user-1', {})
+
+      expect(result).toMatchObject({ trends: { SQ: { lastWorkingWeight: 105 } } })
+    })
+
+    it('caps trend occurrences at the most recent 3, even with a wider fetch window', async () => {
+      mockSupabase({ exercise_substitutions: {} }, [
+        { d: '2026-08-24', s: 'PL', ex: [{ k: 'WPU', r: [5], w: 5 }] },
+        { d: '2026-08-20', s: 'PL', ex: [{ k: 'WPU', r: [5], w: 0 }] },
+        { d: '2026-08-13', s: 'PL', ex: [{ k: 'WPU', r: [5], w: 0 }] },
+        { d: '2026-08-06', s: 'PL', ex: [{ k: 'WPU', r: [5], w: 0 }] },
+      ])
+
+      const result = await getTrainingData('user-1', {})
+
+      expect(result).toMatchObject({ trends: { WPU: { occurrences: 3 } } })
+    })
+
+    it('omits trends entirely when there are no rows at all', async () => {
+      mockSupabase({ exercise_substitutions: {} }, [])
+
+      const result = await getTrainingData('user-1', {})
+
+      expect(result).not.toHaveProperty('trends')
+    })
   })
 })

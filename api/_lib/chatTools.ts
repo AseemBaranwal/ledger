@@ -18,7 +18,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_training_data',
     description:
-      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone. A row may also carry notes — whatever the owner wrote down for that session (form, energy, anything worth remembering) — attached once per session on its first row, not repeated on every row. Ground observations in these notes directly rather than guessing at context the owner already told you.",
+      "Reads the owner's logged training sessions. Always call this before answering any question about current weights, trends, or PRs — never answer from memory. Returns a compact list of recent sessions, each row carrying both the exercise code and its real exerciseName from the owner's own program — always use that exerciseName verbatim (e.g. for suggest_exercise_adjustment) rather than guessing a name from the code, since abbreviations like \"SLC\" or \"SU\" are genuinely ambiguous and guessing produces wrong names. Also returns the real current date as `today` (use this for any this-week/last-week reasoning — don't infer today's date from the most recent session row), and activeSwaps (only present if non-empty) listing any exercise currently substituted via an earlier accepted suggest_exercise_swap — trust this as the ground truth for what's currently swapped in, rather than inferring it from earlier turns in this conversation. A set in the sets string may carry a trailing (e)/(o)/(h) for easy/ok/hard — a real effort tag the owner gave that specific set at the time; a set with no suffix simply wasn't tagged, not necessarily 'ok'. Use tagged effort directly when it's there instead of inferring difficulty from rep counts alone. A run of identical sets is collapsed to one entry with a trailing ' xN' (e.g. \"105x6(o) x4\" means four identical sets, not one) — this is pure compression, not fewer real sets than logged. A row may also carry notes — whatever the owner wrote down for that session (form, energy, anything worth remembering) — attached once per session on its first row, not repeated on every row. Ground observations in these notes directly rather than guessing at context the owner already told you. `trends` (one entry per exercise code that appears in the results) gives a precomputed `weightTrend` ('flat'/'rising'/'falling'/'mixed'/'n/a') and `recentEffort` ('clean'/'mixed'/'hard'/'n/a') from that exercise's last 2-3 occurrences, plus its current `lastWorkingWeight` (the mode weight of the most recent occurrence, not necessarily the session's single heaviest set) — use this as your primary signal for whether an exercise has room to progress rather than re-deriving the same comparison yourself from the raw `sets` strings across many rows. It is a mechanical summary, not a final verdict: still weigh it together with any relevant `notes` (an equipment mixup, home vs. gym, an off day already explained) before proposing a change.",
     input_schema: {
       type: 'object',
       properties: {
@@ -135,19 +135,97 @@ export function topWeightOf(ex: SheetExercise): number | null {
   return typeof ex.w === 'number' ? ex.w : null
 }
 
+// The MODE (most-common) weight across a session's sets, not the max —
+// used only by the trend computation below, never for the row's own
+// `topWeight` field. A session's max set is often a single deliberately
+// heavier top set (e.g. one 115 lb single among four 105 lb sets), which
+// isn't the actual working weight that session was built around — mode
+// reflects what was really trained, which is what a weight-trend signal
+// needs to compare occurrence to occurrence. Ties break toward whichever
+// weight was seen first (stable, deterministic).
+export function modeWeightOf(ex: SheetExercise): number | null {
+  const weights = ex.ws ? ex.ws.filter((w): w is number => typeof w === 'number') : typeof ex.w === 'number' ? [ex.w] : []
+  if (!weights.length) return null
+  const counts = new Map<number, number>()
+  for (const w of weights) counts.set(w, (counts.get(w) || 0) + 1)
+  let bestWeight = weights[0]
+  let bestCount = 0
+  for (const [w, count] of counts) {
+    if (count > bestCount) {
+      bestCount = count
+      bestWeight = w
+    }
+  }
+  return bestWeight
+}
+
 export function formatSets(ex: SheetExercise): string {
-  return ex.r
-    .map((reps, i) => {
-      const w = ex.ws ? ex.ws[i] : ex.w
-      const base = typeof w === 'number' ? `${w}x${reps}` : `${reps}`
-      // Only append a suffix for sets the owner actually tagged — most
-      // sets (all historical ones, and any set today's owner skips
-      // tagging) have no effort recorded, and leaving those bare keeps
-      // the string from bloating with a marker that means nothing.
-      const effort = ex.ef?.[i]
-      return effort ? `${base}(${effort})` : base
-    })
-    .join(',')
+  const tokens = ex.r.map((reps, i) => {
+    const w = ex.ws ? ex.ws[i] : ex.w
+    const base = typeof w === 'number' ? `${w}x${reps}` : `${reps}`
+    // Only append a suffix for sets the owner actually tagged — most
+    // sets (all historical ones, and any set today's owner skips
+    // tagging) have no effort recorded, and leaving those bare keeps
+    // the string from bloating with a marker that means nothing.
+    const effort = ex.ef?.[i]
+    return effort ? `${base}(${effort})` : base
+  })
+
+  // Collapse a run of consecutive identical set entries into one "…xN"
+  // entry (e.g. four straight 105x6(o) sets → "105x6(o) x4") — pure
+  // compression, no information lost, and it matters in practice: most
+  // working sets within one exercise ARE identical, so the uncompressed
+  // form repeated the same substring 3-4 times per exercise for zero
+  // informational gain, across every exercise in every returned session.
+  const runs: string[] = []
+  let i = 0
+  while (i < tokens.length) {
+    let j = i
+    while (j < tokens.length && tokens[j] === tokens[i]) j++
+    const count = j - i
+    runs.push(count > 1 ? `${tokens[i]} x${count}` : tokens[i])
+    i = j
+  }
+  return runs.join(',')
+}
+
+export type WeightTrend = 'flat' | 'rising' | 'falling' | 'mixed' | 'n/a'
+export type EffortCharacter = 'clean' | 'mixed' | 'hard' | 'n/a'
+
+export interface ExerciseTrendSummary {
+  // How many of the last (up to 3) occurrences in this response window this
+  // is based on — 1 means there's nothing to compare yet.
+  occurrences: number
+  // The working weight (mode, not max — see modeWeightOf) from the most
+  // recent occurrence.
+  lastWorkingWeight: number | null
+  // Direction of the working weight across the sampled occurrences,
+  // earliest to latest. 'n/a' with fewer than 2 occurrences, or if any
+  // sampled occurrence has no trackable weight (a bodyweight exercise).
+  weightTrend: WeightTrend
+  // Effort character of the MOST RECENT occurrence only (fraction of its
+  // sets tagged 'h'): 0% = 'clean', 100% = 'hard', anything between =
+  // 'mixed'. 'n/a' if that occurrence has no sets at all.
+  recentEffort: EffortCharacter
+}
+
+function classifyWeightTrend(weightsMostRecentFirst: number[]): WeightTrend {
+  if (weightsMostRecentFirst.length < 2) return 'n/a'
+  const chronological = [...weightsMostRecentFirst].reverse()
+  if (chronological.every((w) => w === chronological[0])) return 'flat'
+  const nonDecreasing = chronological.every((w, i) => i === 0 || w >= chronological[i - 1])
+  const nonIncreasing = chronological.every((w, i) => i === 0 || w <= chronological[i - 1])
+  if (nonDecreasing) return 'rising'
+  if (nonIncreasing) return 'falling'
+  return 'mixed'
+}
+
+function classifyEffort(hardCount: number, totalCount: number): EffortCharacter {
+  if (totalCount === 0) return 'n/a'
+  const ratio = hardCount / totalCount
+  if (ratio === 0) return 'clean'
+  if (ratio === 1) return 'hard'
+  return 'mixed'
 }
 
 interface ActiveSwap {
@@ -174,7 +252,10 @@ interface ActiveSwap {
 export async function getTrainingData(
   ownerUserId: string,
   args: { exerciseCode?: string; sinceDate?: string; limit?: number }
-): Promise<{ rows: TrainingDataRow[]; today: string; activeSwaps?: ActiveSwap[] } | { error: string }> {
+): Promise<
+  | { rows: TrainingDataRow[]; today: string; activeSwaps?: ActiveSwap[]; trends?: Record<string, ExerciseTrendSummary> }
+  | { error: string }
+> {
   const sinceDate = args.sinceDate
   const exerciseCode = args.exerciseCode
   const limit = args.limit && args.limit > 0 ? Math.min(args.limit, 30) : 12
@@ -238,6 +319,13 @@ export async function getTrainingData(
   const sessions = (sessionRows || []) as SheetSession[]
 
   const rows: TrainingDataRow[] = []
+  // Collected alongside `rows` in the same pass — `sessions` is already
+  // ordered most-recent-first (the query's own `.order('d', {ascending:
+  // false})`), so capping each code's list at 3 naturally keeps exactly
+  // the last (up to) 3 occurrences the trend below is meant to summarize,
+  // with no second pass or extra query needed.
+  const trendOccurrences = new Map<string, { modeWeight: number | null; hardCount: number; totalCount: number }[]>()
+
   for (const session of sessions) {
     let noteAttached = false
     for (const ex of session.ex || []) {
@@ -257,6 +345,34 @@ export async function getTrainingData(
         topWeight: topWeightOf(ex),
         ...(notes ? { notes } : {}),
       })
+
+      const occurrences = trendOccurrences.get(ex.k) ?? []
+      if (occurrences.length < 3) {
+        const hardCount = (ex.ef || []).filter((e) => e === 'h').length
+        occurrences.push({ modeWeight: modeWeightOf(ex), hardCount, totalCount: ex.r.length })
+        trendOccurrences.set(ex.k, occurrences)
+      }
+    }
+  }
+
+  // A precomputed signal, same philosophy as get_recovery_data's flags/
+  // readiness (see recoveryData.ts's own comment on this) — the model
+  // should reason from an already-summarized weightTrend/recentEffort
+  // pair instead of re-deriving it itself by scanning every row's raw
+  // `sets` string for each exercise, every single turn. Deliberately
+  // stops short of a final "progress/hold" verdict, unlike recovery's
+  // readiness: a training-weight call also depends on context this
+  // function doesn't have (an equipment mixup noted in `notes`, home vs.
+  // gym) that the model still needs to weigh itself.
+  const trends: Record<string, ExerciseTrendSummary> = {}
+  for (const [code, occurrences] of trendOccurrences) {
+    const weights = occurrences.map((o) => o.modeWeight).filter((w): w is number => w != null)
+    const latest = occurrences[0]
+    trends[code] = {
+      occurrences: occurrences.length,
+      lastWorkingWeight: latest.modeWeight,
+      weightTrend: weights.length === occurrences.length ? classifyWeightTrend(weights) : 'n/a',
+      recentEffort: classifyEffort(latest.hardCount, latest.totalCount),
     }
   }
 
@@ -269,7 +385,12 @@ export async function getTrainingData(
   // isn't cached, so this is where a reliable date anchor actually belongs.
   const today = new Date().toISOString().slice(0, 10)
 
-  return activeSwaps.length ? { rows, today, activeSwaps } : { rows, today }
+  return {
+    rows,
+    today,
+    ...(activeSwaps.length ? { activeSwaps } : {}),
+    ...(Object.keys(trends).length ? { trends } : {}),
+  }
 }
 
 export interface ResolvedSwap {

@@ -43,11 +43,9 @@ describe('supportsStructuredSets', () => {
 })
 
 describe('stravaExerciseTypeForCode', () => {
-  // Every exercise code in this app is a real Strava exercise_type — there
-  // used to be a separate short-code system (SQ, HLR, ...) hand-mapped to
-  // its Strava equivalent here, retired for causing a real data-integrity
-  // bug (see CLAUDE.md's exercise-code section): a short code is now
-  // treated the same as any other genuinely unmapped code, below.
+  // Every exercise code in this app is a real Strava exercise_type — see
+  // CLAUDE.md's "Exercise codes are the Strava exercise_type, everywhere"
+  // section for the standing rule.
   it('returns null for a genuinely unmapped code rather than throwing', () => {
     // Regression test for issue #68: this used to return the string
     // "CORE_GENERIC" as an overloaded "unmapped" sentinel, which made a

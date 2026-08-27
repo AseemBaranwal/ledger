@@ -41,7 +41,7 @@ export const TOOLS: ToolDefinition[] = [
       properties: {
         exerciseCode: {
           type: 'string',
-          description: 'Optional exercise code (e.g. "SQ", "BSS") to filter to just that exercise across all sessions.',
+          description: 'Optional exercise code (e.g. "BARBELL_BACK_SQUAT") to filter to just that exercise across all sessions.',
         },
         sinceDate: {
           type: 'string',
@@ -94,7 +94,7 @@ export const TOOLS: ToolDefinition[] = [
     input_schema: {
       type: 'object',
       properties: {
-        exerciseCode: { type: 'string', description: 'The exercise code, e.g. "SQ".' },
+        exerciseCode: { type: 'string', description: 'The exercise code, e.g. "BARBELL_BACK_SQUAT".' },
         exerciseName: { type: 'string', description: 'The human-readable exercise name, e.g. "Back Squat".' },
         currentWeight: { type: 'number', description: 'Current target weight in lb, from the training data. Omit if not proposing a weight change.' },
         suggestedWeight: { type: 'number', description: 'Proposed new weight in lb. Omit if not proposing a weight change.' },
@@ -114,7 +114,7 @@ export const TOOLS: ToolDefinition[] = [
     input_schema: {
       type: 'object',
       properties: {
-        currentExerciseCode: { type: 'string', description: 'The code of the exercise being replaced, e.g. "SQ".' },
+        currentExerciseCode: { type: 'string', description: 'The code of the exercise being replaced, e.g. "BARBELL_BACK_SQUAT".' },
         currentExerciseName: { type: 'string', description: 'Human-readable name of the exercise being replaced.' },
         replacementQuery: { type: 'string', description: 'Plain-language description of the desired replacement, e.g. "leg press".' },
         reasoning: { type: 'string', description: 'One or two sentences on why this swap makes sense.' },
@@ -266,12 +266,7 @@ function classifyEffort(hardCount: number, totalCount: number): EffortCharacter 
 // (suggest_exercise_swap, accepted) writes directly into the SAME program
 // record this reads exerciseName from (see api/chat/apply-exercise-swap.ts
 // and CLAUDE.md's exercise-code section), so the program is always already
-// current. An earlier design routed swaps through a separate redirect
-// table (profiles.exercise_substitutions) and surfaced it here as
-// `activeSwaps` specifically so the model could tell whether an earlier
-// swap suggestion had actually taken effect — that whole class of
-// uncertainty doesn't exist anymore now that there's only one place a
-// swap's result ever lives.
+// current and every row's code below is the real, current one.
 export async function getTrainingData(
   ownerUserId: string,
   args: { exerciseCode?: string; sinceDate?: string; limit?: number }
@@ -316,11 +311,10 @@ export async function getTrainingData(
 
   // Real exercise names, keyed by code, straight from the owner's own
   // program — without this the model has no grounded source for a human-
-  // readable name and has to guess one from the code alone (e.g. "SLC"
-  // guessed as "Seated Leg Curl" when the program's real name is
-  // "Single-Leg Calf Raise"). Falls back to the bare code for anything not
-  // in the current program (e.g. a since-removed exercise still showing up
-  // in older logged sessions).
+  // readable display name and would have to reconstruct one from the code
+  // alone, which may not match the program's own phrasing exactly. Falls
+  // back to the bare code for anything not in the current program (e.g. a
+  // since-removed exercise still showing up in older logged sessions).
   type RoutineProgram = Record<string, { ex?: Array<{ k: string; n?: string }> }>
   const program = (profile as { routine_config?: { program?: RoutineProgram } } | null)?.routine_config?.program || {}
   const exerciseNames: Record<string, string> = {}
@@ -341,15 +335,13 @@ export async function getTrainingData(
   // keeps exactly the last (up to) 3 occurrences the trend below is meant
   // to summarize, with no second pass or extra query needed.
   //
-  // Keyed by (session code, exercise code), NOT exercise code alone —
-  // confirmed against a real 4-week window that the same exercise code can
-  // appear in two genuinely different program slots with different loading
-  // (e.g. "SLC" is a per-arm single-leg calf raise in one session and a
-  // completely different loading scheme in another — real data showed
-  // ~195 lb there vs ~40 lb in the other). Blending those into one trend
-  // produced a real, wrong "falling" signal that was actually just two
-  // unrelated numbers from two different slots, not an actual regression.
-  // The program config itself (`routine_config.program`) already keys
+  // Keyed by (session code, exercise code), NOT exercise code alone — the
+  // same exercise code can appear in two genuinely different program slots
+  // with very different loading (e.g. SINGLE_LEG_STANDING_CALF_RAISE is
+  // programmed at 40 lb in one session and 220 lb in another). Blending
+  // those into one trend would produce a misleading signal from two
+  // unrelated numbers, not an actual progression or regression. The
+  // program config itself (`routine_config.program`) already keys
   // exercises per session slot this same way, so this mirrors the real
   // data model rather than assuming a code means one consistent thing.
   const trendOccurrences = new Map<string, Map<string, { modeWeight: number | null; hardCount: number; totalCount: number }[]>>()

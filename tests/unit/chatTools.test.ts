@@ -127,12 +127,12 @@ describe('TOOLS', () => {
 
 describe('resolveExerciseSwap', () => {
   it('resolves a plain-language replacement into a real exercise_type + label', () => {
-    const result = resolveExerciseSwap('SQ', 'leg press')
+    const result = resolveExerciseSwap('BARBELL_BACK_SQUAT', 'leg press')
     expect(result).toEqual({ code: 'LEG_PRESS', name: 'Leg Press' })
   })
 
   it('returns null when nothing matches', () => {
-    expect(resolveExerciseSwap('SQ', 'zzz_not_a_real_exercise_zzz')).toBeNull()
+    expect(resolveExerciseSwap('BARBELL_BACK_SQUAT', 'zzz_not_a_real_exercise_zzz')).toBeNull()
   })
 })
 
@@ -163,28 +163,6 @@ describe('getTrainingData', () => {
       },
     } as any)
   }
-
-  // Caught live: without visibility into whether an earlier swap actually
-  // took effect, the model would sometimes hedge in prose instead of
-  // calling suggest_exercise_swap again. activeSwaps gives it the real
-  // current state instead of making it guess from conversation history.
-  it('includes activeSwaps when the profile has standing substitutions', async () => {
-    mockSupabase({ exercise_substitutions: { SQ: { code: 'BARBELL_BACK_SQUAT', name: 'Barbell Back Squat' } } }, [])
-
-    const result = await getTrainingData('user-1', {})
-
-    expect(result).toMatchObject({
-      activeSwaps: [{ originalCode: 'SQ', currentCode: 'BARBELL_BACK_SQUAT', currentName: 'Barbell Back Squat' }],
-    })
-  })
-
-  it('omits activeSwaps entirely when there are none, rather than sending an empty array', async () => {
-    mockSupabase({ exercise_substitutions: {} }, [])
-
-    const result = await getTrainingData('user-1', {})
-
-    expect(result).not.toHaveProperty('activeSwaps')
-  })
 
   // The system prompt is deliberately static/cached so it can never carry
   // today's date — without this, the model had to infer "today" from the

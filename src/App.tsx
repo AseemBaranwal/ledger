@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
-import { useConfigStore, useUIStore, useSessionStore, useAuthStore, useStravaStore, useGoogleHealthStore, useUnitStore } from '@/store'
+import { useUIStore, useSessionStore, useAuthStore, useStravaStore, useGoogleHealthStore, useUnitStore } from '@/store'
 import { Header, BottomNav, Toast } from '@/components/layout'
 import { TodayTab, HistoryTab, TrendsTab, SyncTab } from '@/components/tabs'
 
@@ -25,7 +25,6 @@ export default function App() {
   const activeTab = useUIStore((s) => s.activeTab)
   const setTab = useUIStore((s) => s.setTab)
   const timerActive = useUIStore((s) => s.timerActive)
-  const loadSubstitutions = useConfigStore((s) => s.loadSubstitutions)
   const clearDraft = useSessionStore((s) => s.clearDraft)
   const sessions = useSessionStore((s) => s.sessions)
   const authLoading = useAuthStore((s) => s.loading)
@@ -85,15 +84,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Per-user bootstrap: once signed in, load standing exercise
-  // substitutions, pull down sessions from Supabase if this device's local
-  // cache is empty (e.g. a fresh browser/device), and retry any sessions
-  // that failed to save.
+  // Per-user bootstrap: once signed in, pull down sessions from Supabase if
+  // this device's local cache is empty (e.g. a fresh browser/device), and
+  // retry any sessions that failed to save.
   useEffect(() => {
     if (!user?.id) return
     const userId = user.id
 
-    loadSubstitutions(userId)
     useUnitStore.getState().resolveDefault()
 
     const autoRestore = async () => {

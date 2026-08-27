@@ -43,11 +43,11 @@ describe('supportsStructuredSets', () => {
 })
 
 describe('stravaExerciseTypeForCode', () => {
-  it('maps a known Ledger code to its Strava exercise_type', () => {
-    expect(stravaExerciseTypeForCode('SQ')).toBe('BARBELL_BACK_SQUAT')
-    expect(stravaExerciseTypeForCode('HLR')).toBe('HANGING_LEG_RAISE')
-  })
-
+  // Every exercise code in this app is a real Strava exercise_type — there
+  // used to be a separate short-code system (SQ, HLR, ...) hand-mapped to
+  // its Strava equivalent here, retired for causing a real data-integrity
+  // bug (see CLAUDE.md's exercise-code section): a short code is now
+  // treated the same as any other genuinely unmapped code, below.
   it('returns null for a genuinely unmapped code rather than throwing', () => {
     // Regression test for issue #68: this used to return the string
     // "CORE_GENERIC" as an overloaded "unmapped" sentinel, which made a
@@ -72,7 +72,7 @@ describe('stravaExerciseTypeForCode', () => {
 
 describe('buildStravaSets', () => {
   it('flattens per-exercise reps/weights into one set per rep, converting lb to kg', () => {
-    const sets = buildStravaSets([{ k: 'SQ', r: [5, 5], ws: [100, 100] }])
+    const sets = buildStravaSets([{ k: 'BARBELL_BACK_SQUAT', r: [5, 5], ws: [100, 100] }])
     expect(sets).toHaveLength(2)
     expect(sets[0].exercise_type).toBe('BARBELL_BACK_SQUAT')
     expect(sets[0].repetitions).toBe(5)
@@ -81,15 +81,15 @@ describe('buildStravaSets', () => {
   })
 
   it('omits weight entirely for bodyweight sets rather than sending 0', () => {
-    const sets = buildStravaSets([{ k: 'HLR', r: [10, 12], w: null }])
+    const sets = buildStravaSets([{ k: 'HANGING_LEG_RAISE', r: [10, 12], w: null }])
     expect(sets).toHaveLength(2)
     expect(sets[0].weight).toBeUndefined()
   })
 
   it('preserves set order across multiple exercises', () => {
     const sets = buildStravaSets([
-      { k: 'SQ', r: [5], ws: [100] },
-      { k: 'BSS', r: [8], ws: [40] },
+      { k: 'BARBELL_BACK_SQUAT', r: [5], ws: [100] },
+      { k: 'DUMBBELL_BULGARIAN_SPLIT_SQUATS', r: [8], ws: [40] },
     ])
     expect(sets.map((s) => s.exercise_type)).toEqual(['BARBELL_BACK_SQUAT', 'DUMBBELL_BULGARIAN_SPLIT_SQUATS'])
   })

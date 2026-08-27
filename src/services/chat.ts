@@ -1,5 +1,11 @@
 import { supabase } from './supabaseClient'
-import type { ExerciseSubstitution } from './exerciseSubstitutionsApi'
+
+interface ExerciseSwapReplacement {
+  code: string
+  name: string
+  group: string
+  unit: string
+}
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -198,7 +204,7 @@ export async function updateSuggestionStatus(
 // flow). A manual swap from the in-session picker is a general feature for
 // every user, so it goes through exerciseSubstitutionsApi.ts's direct RLS
 // write instead, not this one.
-export async function applyExerciseSwap(originalCode: string, replacement: ExerciseSubstitution): Promise<void> {
+export async function applyExerciseSwap(originalCode: string, replacement: ExerciseSwapReplacement): Promise<void> {
   const res = await authedFetch('/api/chat/apply-exercise-swap', {
     originalCode,
     newCode: replacement.code,

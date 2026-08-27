@@ -47,6 +47,5 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('`get_training_data`')
     expect(prompt).toContain('`suggest_exercise_adjustment`')
     expect(prompt).toContain('`suggest_exercise_swap`')
-    expect(prompt).toContain('`activeSwaps`')
   })
 })

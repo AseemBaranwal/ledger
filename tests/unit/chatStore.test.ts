@@ -391,7 +391,7 @@ describe('chatStore', () => {
         ],
       })
       useSessionStore.setState({ sessions: [], draft: null, draftEx: null, draftDefs: null, draftItems: null })
-      useConfigStore.setState({ program: {}, substitutions: {} })
+      useConfigStore.setState({ program: {} })
     })
 
     it('swaps the exercise in the active draft session and marks the suggestion accepted', async () => {
@@ -407,7 +407,17 @@ describe('chatStore', () => {
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
     })
 
-    it('persists the swap as a standing substitution and marks it accepted even with no active session', async () => {
+    // The program IS the swap now — no separate redirect table (see
+    // CLAUDE.md's exercise-code section on why that split source of truth
+    // was retired). api/chat/apply-exercise-swap.ts writes routine_config
+    // directly; this just checks the client calls it with the right
+    // exerciseCode and mirrors the change into the local program state
+    // optimistically, same pattern acceptSuggestion already uses.
+    it('writes the swap and marks it accepted even with no active session', async () => {
+      useConfigStore.setState({
+        program: { LA: { name: 'Lower A', full: '', colour: 'legs', gym: '', day: 1, ex: [{ k: 'SQ', n: 'Back Squat', s: 4, r: 6, w: 75, u: 'lb', group: 'Legs', cue: '' }] } },
+      })
+
       await useChatStore.getState().acceptSwap('a1', 0)
 
       expect(chatService.applyExerciseSwap).toHaveBeenCalledWith('SQ', {
@@ -416,40 +426,9 @@ describe('chatStore', () => {
         group: 'Legs',
         unit: 'lb',
       })
-      expect(useConfigStore.getState().substitutions.SQ).toMatchObject({ code: 'LEG_PRESS', name: 'Leg Press' })
+      expect(useConfigStore.getState().program.LA.ex[0]).toMatchObject({ k: 'LEG_PRESS', n: 'Leg Press' })
       expect(useChatStore.getState().messages[0].suggestions![0].status).toBe('accepted')
       expect(useChatStore.getState().error).toBeNull()
-    })
-
-    it('collapses a second swap in a chain onto the original program code, not the intermediate one', async () => {
-      // SQ was already substituted with LEG_PRESS by an earlier accept.
-      // Now the Coach proposes swapping LEG_PRESS itself for something
-      // else — the write must land on SQ (what TodayTab actually checks
-      // at session-start), not a new "LEG_PRESS" entry nothing reads.
-      useConfigStore.setState({
-        program: {},
-        substitutions: { SQ: { code: 'LEG_PRESS', name: 'Leg Press', group: 'Legs', unit: 'lb' } },
-      })
-      useChatStore.setState({
-        messages: [
-          {
-            id: 'a2',
-            serverId: 43,
-            role: 'assistant',
-            content: 'Swap back',
-            suggestions: [
-              { kind: 'swap', exerciseCode: 'LEG_PRESS', exerciseName: 'Leg Press', newExerciseCode: 'BARBELL_BACK_SQUAT', newExerciseName: 'Barbell Back Squat', reasoning: 'x', status: 'pending' },
-            ],
-          },
-        ],
-      })
-
-      await useChatStore.getState().acceptSwap('a2', 0)
-
-      expect(chatService.applyExerciseSwap).toHaveBeenCalledWith('SQ', expect.objectContaining({ code: 'BARBELL_BACK_SQUAT' }))
-      const substitutions = useConfigStore.getState().substitutions
-      expect(substitutions.SQ).toMatchObject({ code: 'BARBELL_BACK_SQUAT' })
-      expect(substitutions.LEG_PRESS).toBeUndefined()
     })
 
     it('persists the accepted status server-side too', async () => {
@@ -470,7 +449,6 @@ describe('chatStore', () => {
     it('prefers the live program weight target over stale session history when syncing an active draft', async () => {
       useConfigStore.setState({
         program: { LA: { name: 'Lower A', full: '', colour: 'legs', gym: '', day: 1, ex: [{ k: 'LEG_PRESS', n: 'Leg Press', s: 3, r: 10, w: 120, u: 'lb', group: 'Legs', cue: '' }] } },
-        substitutions: {},
       })
       useSessionStore.setState({
         draft: { d: '2026-01-01', s: 'LA', g: 'Gym', n: '', type: 'PROGRAM' },

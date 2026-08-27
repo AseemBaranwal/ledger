@@ -9,18 +9,31 @@ export const config = { runtime: 'edge' }
 // Edge Functions must send their first response byte within 25s (see
 // CLAUDE.md's Edge Functions section) — a real limit this handler hit in
 // production once weight/recovery sync were added on top of sessions: a
-// first-ever sync can have a 90-day backlog in EACH of three phases, each
-// row costing its own synchronous POST to the (often slow, sometimes
-// cold-starting) Apps Script Web App. A per-phase row cap would still risk
-// blowing the budget if any one POST is slow; a shared wall-clock deadline
-// across all three phases is what actually bounds total latency regardless
-// of per-request variance. 18s leaves a real margin under the 25s hard
-// limit for the sessions-read query and response serialization that still
-// have to happen after the loops. Stopping early is safe and lossless: the
-// exact same per-row checkpoint that already protects against a crash
-// mid-batch also means an early stop just continues seamlessly on the next
-// call — nothing already exported gets re-sent, nothing pending is skipped.
-const SYNC_TIME_BUDGET_MS = 18000
+// backlog can build up in any of the three phases, each row costing its
+// own synchronous POST to the (often slow, sometimes cold-starting) Apps
+// Script Web App. A per-phase row cap would still risk blowing the budget
+// if any one POST is slow; a shared wall-clock deadline across all three
+// phases is what actually bounds total latency regardless of per-request
+// variance. 15s leaves real margin under the 25s hard limit for the
+// sessions-read query, response serialization, and — critically — one
+// POST_TIMEOUT_MS-bounded call still in flight when the deadline trips.
+// Stopping early is safe and lossless: the exact same per-row checkpoint
+// that already protects against a crash mid-batch also means an early
+// stop just continues seamlessly on the next call — nothing already
+// exported gets re-sent, nothing pending is skipped.
+const SYNC_TIME_BUDGET_MS = 15000
+
+// The wall-clock deadline above only gets checked BETWEEN rows — it can't
+// stop a single fetch() that's already in flight, and a plain fetch() has
+// no timeout of its own. A real backlog synced 42 recovery rows in one
+// production run and still hit the platform's hard 25s kill with only 1-3
+// rows actually written: at least one Apps Script call was taking many
+// seconds, well past what the between-row check could react to. Every
+// call to the script now carries this as its own abort signal so one slow
+// or hanging call can never itself consume the whole budget — a timeout
+// is caught by the same try/catch as any other network failure and just
+// counts as a failed row, retried on the next sync.
+const POST_TIMEOUT_MS = 5000
 
 function pastDeadline(deadline: number): boolean {
   return Date.now() >= deadline
@@ -93,6 +106,7 @@ async function syncWeightToSheet(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'body', d: row.d, wt: row.weight_lb }),
+        signal: AbortSignal.timeout(POST_TIMEOUT_MS),
       })
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {
@@ -174,6 +188,7 @@ async function syncRecoveryToSheet(
           sleepMinutes: row.sleep_minutes,
           sleepQualityIndex: row.sleep_quality_index,
         }),
+        signal: AbortSignal.timeout(POST_TIMEOUT_MS),
       })
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {
@@ -289,6 +304,7 @@ export default async function handler(req: Request): Promise<Response> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'session', d: session.d, s: session.s, g: session.g, ex: session.ex, n: session.n }),
+        signal: AbortSignal.timeout(POST_TIMEOUT_MS),
       })
       const text = await res.text()
       if (!res.ok || text.startsWith('error')) {
